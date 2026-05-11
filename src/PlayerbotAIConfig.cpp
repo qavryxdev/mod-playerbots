@@ -76,6 +76,12 @@ bool PlayerbotAIConfig::Initialize()
     dispelAuraDuration = sConfigMgr->GetOption<int32>("AiPlayerbot.DispelAuraDuration", 700);
     reactDelay = sConfigMgr->GetOption<int32>("AiPlayerbot.ReactDelay", 100);
     dynamicReactDelay = sConfigMgr->GetOption<bool>("AiPlayerbot.DynamicReactDelay", true);
+    idleBotAiThrottle = sConfigMgr->GetOption<bool>("AiPlayerbot.IdleBotAiThrottle", false);
+    skipIdleBotMinimalAI = sConfigMgr->GetOption<bool>("AiPlayerbot.SkipIdleBotMinimalAI", false);
+    idleBotReactDelayMin = sConfigMgr->GetOption<uint32>("AiPlayerbot.IdleBotReactDelayMin", 50);
+    idleBotReactDelayMax = sConfigMgr->GetOption<uint32>("AiPlayerbot.IdleBotReactDelayMax", 150);
+    if (idleBotReactDelayMax < idleBotReactDelayMin)
+        idleBotReactDelayMax = idleBotReactDelayMin;
     passiveDelay = sConfigMgr->GetOption<int32>("AiPlayerbot.PassiveDelay", 10000);
     repeatDelay = sConfigMgr->GetOption<int32>("AiPlayerbot.RepeatDelay", 2000);
     errorDelay = sConfigMgr->GetOption<int32>("AiPlayerbot.ErrorDelay", 100);
@@ -188,6 +194,7 @@ bool PlayerbotAIConfig::Initialize()
         sConfigMgr->GetOption<std::string>("AiPlayerbot.AttunementQuests", "10279,10277,10282,10283,10284,10285,10296,"
                                            "10297,10298,11481,11482,11488,11490,11492,10901,10888,10445,10985"),
         attunementQuests);
+    ignoreDungeonAccessRequirements = sConfigMgr->GetOption<bool>("AiPlayerbot.IgnoreDungeonAccessRequirements", false);
 
     LoadSet<std::set<uint32>>(
         sConfigMgr->GetOption<std::string>("AiPlayerbot.UnobtainableItems", "12468,46978"),

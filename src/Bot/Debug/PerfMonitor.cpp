@@ -7,7 +7,7 @@
 
 #include "Playerbots.h"
 
-PerfMonitorOperation* PerfMonitor::start(PerformanceMetric metric, std::string const name,
+PerfMonitorOperation* PerfMonitor::start(PerformanceMetric metric, std::string const& name,
                                                        PerformanceStack* stack)
 {
     if (!sPlayerbotAIConfig.perfMonEnabled)
@@ -265,7 +265,7 @@ void PerfMonitor::Reset()
     }
 }
 
-PerfMonitorOperation::PerfMonitorOperation(PerformanceData* data, std::string const name,
+PerfMonitorOperation::PerfMonitorOperation(PerformanceData* data, std::string const& name,
                                                          PerformanceStack* stack)
     : data(data), name(name), stack(stack)
 {

@@ -359,6 +359,15 @@ AiPlayerbot.ReactDelay = 100
 # Dynamically adjust react delay for bots in different status to reduce server lags
 AiPlayerbot.DynamicReactDelay = 1
 
+# Slow down only random bots that are inactive by BotActiveAlone rules.
+# Combat, BG/arena, real-player-owned, nearby, grouped, LFG, guild/friend, and other forced-active bots keep normal delay.
+# Delay is ReactDelay multiplied by a random value in this range.
+# Default: 0 disabled, 50..150 = 5..15 seconds with ReactDelay 100
+AiPlayerbot.IdleBotAiThrottle = 0
+AiPlayerbot.SkipIdleBotMinimalAI = 0
+AiPlayerbot.IdleBotReactDelayMin = 50
+AiPlayerbot.IdleBotReactDelayMax = 150
+
 # Inactivity delay
 AiPlayerbot.PassiveDelay = 10000
 
@@ -621,6 +630,12 @@ AiPlayerbot.BotCheats = "food,taxi,raid"
 # - 10985, A Distraction for Akama
 #
 AiPlayerbot.AttunementQuests = 10279,10277,10282,10283,10284,10285,10296,10297,10298,11481,11482,11488,11490,11492,10901,10888,10445,10985
+
+# Ignore dungeon/raid access requirements for bots only.
+# This bypasses level, item/key, quest/attunement, achievement, and average item level checks for bot portal entry and LFG locks.
+# Normal player characters still use the server's regular dungeon_access_template and dungeon_access_requirements rules.
+# Default: 0 (disabled)
+AiPlayerbot.IgnoreDungeonAccessRequirements = 0
 
 #
 #

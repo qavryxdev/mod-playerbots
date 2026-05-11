@@ -87,6 +87,9 @@ public:
     uint32 globalCoolDown, reactDelay, maxWaitForMove, disableMoveSplinePath, maxMovementSearchTime, expireActionTime,
         dispelAuraDuration, passiveDelay, repeatDelay, errorDelay, rpgDelay, sitDelay, returnDelay, lootDelay;
     bool dynamicReactDelay;
+    bool idleBotAiThrottle;
+    bool skipIdleBotMinimalAI;
+    uint32 idleBotReactDelayMin, idleBotReactDelayMax;
     float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, shootDistance, fleeDistance,
         tooCloseDistance, meleeDistance, followDistance, whisperDistance, contactDistance, aoeRadius, rpgDistance,
         targetPosRecalcDistance, farDistance, healDistance, aggroDistance;
@@ -100,6 +103,7 @@ public:
     bool tellWhenAvoidAoe;
     std::set<uint32> disallowedGameObjects;
     std::set<uint32> attunementQuests;
+    bool ignoreDungeonAccessRequirements;
     std::set<uint32> unobtainableItems;
 
     uint32 openGoSpell;

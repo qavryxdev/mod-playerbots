@@ -36,7 +36,7 @@ enum PerformanceMetric
 class PerfMonitorOperation
 {
 public:
-    PerfMonitorOperation(PerformanceData* data, std::string const name, PerformanceStack* stack);
+    PerfMonitorOperation(PerformanceData* data, std::string const& name, PerformanceStack* stack);
     void finish();
 
 private:
@@ -56,7 +56,7 @@ public:
         return instance;
     }
 
-    PerfMonitorOperation* start(PerformanceMetric metric, std::string const name,
+    PerfMonitorOperation* start(PerformanceMetric metric, std::string const& name,
                                        PerformanceStack* stack = nullptr);
     void PrintStats(bool perTick = false, bool fullStack = false);
     void Reset();

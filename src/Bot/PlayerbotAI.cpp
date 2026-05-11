@@ -263,6 +263,9 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
     AllowActivity();
 
+    if (bot->GetGroupInvite())
+        nextAICheckDelay = 0;
+
     if (!CanUpdateAI())
         return;
 
@@ -474,10 +477,12 @@ void PlayerbotAI::UpdateAIInternal([[maybe_unused]] uint32 elapsed, bool minimal
     if (!bot->GetMap())
         return; // instances are created and destroyed on demand
 
-    // kinda expensive call to make on every single updateAI, do we really need this information?
-    std::string const mapString = WorldPosition(bot).isOverworld() ? std::to_string(bot->GetMapId()) : "I";
-    PerfMonitorOperation* pmo =
-        sPerfMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAIInternal " + mapString);
+    PerfMonitorOperation* pmo = nullptr;
+    if (sPlayerbotAIConfig.perfMonEnabled)
+    {
+        std::string const mapString = WorldPosition(bot).isOverworld() ? std::to_string(bot->GetMapId()) : "I";
+        pmo = sPerfMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAIInternal " + mapString);
+    }
 
     ExternalEventHelper helper(aiObjectContext);
 
@@ -1504,6 +1509,57 @@ void PlayerbotAI::DoNextAction(bool min)
     }
 
     bool minimal = !this->AllowActivity();
+
+    auto queuedContentNeedsMinimalAI = [&]() -> bool
+    {
+        if (bot->GetGroupInvite())
+            return true;
+
+        if (sPlayerbotAIConfig.randomBotJoinLfg && bot->GetLevel() >= 15)
+        {
+            auto lfgDungeons = sRandomPlayerbotMgr.LfgDungeons.find(bot->GetTeamId());
+            if (lfgDungeons != sRandomPlayerbotMgr.LfgDungeons.end() && !lfgDungeons->second.empty())
+                return true;
+        }
+
+        if (sPlayerbotAIConfig.randomBotJoinBG && bot->GetLevel() >= 10)
+        {
+            for (auto const& queueData : sRandomPlayerbotMgr.BattlegroundData)
+            {
+                for (auto const& bracketData : queueData.second)
+                {
+                    BattlegroundInfo const& bgInfo = bracketData.second;
+                    if (!bgInfo.activeBgQueue && !bgInfo.activeSkirmishArenaQueue && !bgInfo.activeRatedArenaQueue)
+                        continue;
+
+                    if (bgInfo.minLevel && bot->GetLevel() < bgInfo.minLevel)
+                        continue;
+
+                    if (bgInfo.maxLevel && bot->GetLevel() > bgInfo.maxLevel)
+                        continue;
+
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
+    if (minimal && sPlayerbotAIConfig.skipIdleBotMinimalAI && bot->IsAlive() &&
+        currentEngine == engines[BOT_STATE_NON_COMBAT] && sRandomPlayerbotMgr.IsRandomBot(bot) && !bot->IsInCombat() &&
+        !bot->InBattleground() && !bot->InArena() && !HasRealPlayerMaster() && !queuedContentNeedsMinimalAI())
+    {
+        if (!bot->isAFK())
+            bot->ToggleAFK();
+
+        uint32 delay = GetReactDelay();
+        if (delay < sPlayerbotAIConfig.passiveDelay)
+            delay = sPlayerbotAIConfig.passiveDelay;
+
+        SetNextCheckDelay(delay);
+        return;
+    }
 
     currentEngine->DoNextAction(nullptr, 0, (minimal || min));
 
@@ -6572,6 +6628,32 @@ uint32 PlayerbotAI::GetReactDelay()
 {
     uint32 base = sPlayerbotAIConfig.reactDelay;  // Default 100(ms)
 
+    auto idleRandomBotDelay = [&]() -> uint32
+    {
+        if (!sPlayerbotAIConfig.idleBotAiThrottle || !bot || !sRandomPlayerbotMgr.IsRandomBot(bot))
+            return 0;
+
+        if (bot->IsInCombat() || currentState == BOT_STATE_COMBAT || bot->InBattleground() || bot->InArena())
+            return 0;
+
+        if (HasRealPlayerMaster())
+            return 0;
+
+        if (AllowActivity(ALL_ACTIVITY))
+            return 0;
+
+        uint32 minMultiplier = sPlayerbotAIConfig.idleBotReactDelayMin;
+        uint32 maxMultiplier = sPlayerbotAIConfig.idleBotReactDelayMax;
+
+        if (!minMultiplier)
+            minMultiplier = 1;
+
+        if (maxMultiplier < minMultiplier)
+            maxMultiplier = minMultiplier;
+
+        return base * urand(minMultiplier, maxMultiplier);
+    };
+
     // If dynamic react delay is disabled, use a static calculation
     if (!sPlayerbotAIConfig.dynamicReactDelay)
     {
@@ -6586,7 +6668,12 @@ uint32 PlayerbotAI::GetReactDelay()
         bool inCombat = bot->IsInCombat();
 
         if (!inCombat)
+        {
+            if (uint32 idleDelay = idleRandomBotDelay())
+                return idleDelay;
+
             return base * 10;
+        }
 
         else if (inCombat)
             return static_cast<uint32>(base * 2.5f);
@@ -6616,6 +6703,9 @@ uint32 PlayerbotAI::GetReactDelay()
     // When in combat, return 5 times the base
     if (bot->IsInCombat() || currentState == BOT_STATE_COMBAT)
         return base * 5;
+
+    if (uint32 idleDelay = idleRandomBotDelay())
+        return idleDelay;
 
     // When not resting, return 10-30 times the base
     if (!bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING))

@@ -22,7 +22,9 @@
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "DatabaseLoader.h"
+#include "GlobalScript.h"
 #include "GuildTaskMgr.h"
+#include "LFG.h"
 #include "PlayerScript.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotGuildMgr.h"
@@ -89,8 +91,25 @@ public:
         PLAYERHOOK_CAN_PLAYER_USE_GUILD_CHAT,
         PLAYERHOOK_CAN_PLAYER_USE_CHANNEL_CHAT,
         PLAYERHOOK_ON_GIVE_EXP,
-        PLAYERHOOK_ON_BEFORE_TELEPORT
+        PLAYERHOOK_ON_BEFORE_TELEPORT,
+        PLAYERHOOK_NOT_AVOID_SATISFY
     }) {}
+
+    bool ShouldBypassDungeonAccess(Player* player) const
+    {
+        if (!sPlayerbotAIConfig.ignoreDungeonAccessRequirements)
+            return false;
+
+        PlayerbotAI* botAI = PlayerbotsMgr::instance().GetPlayerbotAI(player);
+        return botAI && !botAI->IsRealPlayer();
+    }
+
+    bool OnPlayerNotAvoidSatisfy(Player* player, DungeonProgressionRequirements const* /*ar*/, uint32 /*target_map*/,
+                                 bool /*report*/) override
+    {
+        // Return false here to let Player::Satisfy bypass missing dungeon requirements.
+        return !ShouldBypassDungeonAccess(player);
+    }
 
     void OnPlayerLogin(Player* player) override
     {
@@ -336,6 +355,40 @@ public:
     }
 };
 
+class PlayerbotsGlobalScript : public GlobalScript
+{
+public:
+    PlayerbotsGlobalScript() : GlobalScript("PlayerbotsGlobalScript", { GLOBALHOOK_ON_INITIALIZE_LOCKED_DUNGEONS }) {}
+
+    void OnInitializeLockedDungeons(Player* player, uint8& /*level*/, uint32& lockData,
+                                    lfg::LFGDungeonData const* /*dungeon*/) override
+    {
+        if (!sPlayerbotAIConfig.ignoreDungeonAccessRequirements)
+            return;
+
+        PlayerbotAI* botAI = PlayerbotsMgr::instance().GetPlayerbotAI(player);
+        if (!botAI || botAI->IsRealPlayer())
+            return;
+
+        switch (lockData)
+        {
+            case lfg::LFG_LOCKSTATUS_TOO_LOW_LEVEL:
+            case lfg::LFG_LOCKSTATUS_TOO_HIGH_LEVEL:
+            case lfg::LFG_LOCKSTATUS_TOO_LOW_GEAR_SCORE:
+            case lfg::LFG_LOCKSTATUS_TOO_HIGH_GEAR_SCORE:
+            case lfg::LFG_LOCKSTATUS_ATTUNEMENT_TOO_LOW_LEVEL:
+            case lfg::LFG_LOCKSTATUS_ATTUNEMENT_TOO_HIGH_LEVEL:
+            case lfg::LFG_LOCKSTATUS_QUEST_NOT_COMPLETED:
+            case lfg::LFG_LOCKSTATUS_MISSING_ITEM:
+            case lfg::LFG_LOCKSTATUS_MISSING_ACHIEVEMENT:
+                lockData = 0;
+                break;
+            default:
+                break;
+        }
+    }
+};
+
 class PlayerbotsWorldScript : public WorldScript
 {
 public:
@@ -532,6 +585,7 @@ void AddPlayerbotsScripts()
     new PlayerbotsBattlefieldScript();
     new PlayerbotsDatabaseScript();
     new PlayerbotsPlayerScript();
+    new PlayerbotsGlobalScript();
     new PlayerbotsMiscScript();
     new PlayerbotsServerScript();
     new PlayerbotsWorldScript();
