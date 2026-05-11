@@ -1246,6 +1246,16 @@ static std::vector<std::pair<uint8, uint32>> AV_DefendObjectives_Alliance = {
     {BG_AV_NODES_STONEHEART_GRAVE, BG_AV_OBJECT_FLAG_A_STONEHEART_GRAVE},
 };
 
+static std::vector<std::pair<uint8, uint32>> AV_AllianceGraveyardRecapObjectives = {
+    {BG_AV_NODES_FIRSTAID_STATION, BG_AV_OBJECT_FLAG_C_H_FIRSTAID_STATION},
+    {BG_AV_NODES_STORMPIKE_GRAVE, BG_AV_OBJECT_FLAG_C_H_STORMPIKE_GRAVE},
+    {BG_AV_NODES_STONEHEART_GRAVE, BG_AV_OBJECT_FLAG_C_H_STONEHEART_GRAVE},
+    {BG_AV_NODES_SNOWFALL_GRAVE, BG_AV_OBJECT_FLAG_C_H_SNOWFALL_GRAVE},
+    {BG_AV_NODES_ICEBLOOD_GRAVE, BG_AV_OBJECT_FLAG_C_H_ICEBLOOD_GRAVE},
+    {BG_AV_NODES_FROSTWOLF_GRAVE, BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_GRAVE},
+    {BG_AV_NODES_FROSTWOLF_HUT, BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_HUT},
+};
+
 static uint32 AB_AttackObjectives[] = {
     BG_AB_NODE_STABLES,
     BG_AB_NODE_BLACKSMITH,
@@ -1921,6 +1931,37 @@ bool BGTactics::selectObjective(bool reset)
                     isDefender = false;
             }
 
+            auto selectAllianceRecapObjective = [&](float maxDistance) -> GameObject*
+            {
+                if (team != TEAM_ALLIANCE)
+                    return nullptr;
+
+                std::vector<GameObject*> recapObjectives;
+                for (auto const& [nodeId, goId] : AV_AllianceGraveyardRecapObjectives)
+                {
+                    BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+                    if (node.State != POINT_ASSAULTED || node.OwnerId != TEAM_HORDE || node.PrevOwnerId != TEAM_ALLIANCE)
+                        continue;
+
+                    GameObject* go = bg->GetBGObject(goId);
+                    if (!go || !go->isSpawned())
+                        continue;
+
+                    if (maxDistance > 0.0f && bot->GetDistance(go) > maxDistance)
+                        continue;
+
+                    recapObjectives.push_back(go);
+                }
+
+                if (recapObjectives.empty())
+                    return nullptr;
+
+                return recapObjectives[urand(0, recapObjectives.size() - 1)];
+            };
+
+            if (!BgObjective)
+                BgObjective = selectAllianceRecapObjective(isDefender ? 0.0f : 160.0f);
+
             // --- Mine Capture (rarely works, needs some improvement) ---
             if (!BgObjective && enableMineCapture && role == 0)
             {
@@ -1966,7 +2007,7 @@ bool BGTactics::selectObjective(bool reset)
                     {
                         Position objPos = go->GetPosition();
                         float rx, ry, rz;
-                        bot->GetRandomPoint(objPos, frand(5.0f, 15.0f), rx, ry, rz);
+                        bot->GetRandomPoint(objPos, frand(2.0f, 4.0f), rx, ry, rz);
                         if (Map* map = bot->GetMap())
                         {
                             float groundZ = map->GetHeight(rx, ry, rz);
@@ -1982,7 +2023,8 @@ bool BGTactics::selectObjective(bool reset)
             }
 
             // --- Captain ---
-            if (!BgObjective && urand(0, 99) < 90)
+            uint32 const captainChance = team == TEAM_ALLIANCE ? 60 : 90;
+            if (!BgObjective && (team != TEAM_ALLIANCE || !isDefender) && urand(0, 99) < captainChance)
             {
                 if (av->IsCaptainAlive(team == TEAM_HORDE ? TEAM_ALLIANCE : TEAM_HORDE))
                 {
@@ -2123,7 +2165,8 @@ bool BGTactics::selectObjective(bool reset)
                 if (linkedNodeId && AVNodeMovementTargets.count(*linkedNodeId))
                 {
                     const AVNodePositionData& data = AVNodeMovementTargets[*linkedNodeId];
-                    bot->GetRandomPoint(data.pos, frand(-data.maxRadius, data.maxRadius), rx, ry, rz);
+                    float const radius = data.maxRadius > 0.0f ? frand(0.5f, data.maxRadius) : 0.0f;
+                    bot->GetRandomPoint(data.pos, radius, rx, ry, rz);
                 }
                 else
                     bot->GetRandomPoint(objPos, frand(-2.0f, 2.0f), rx, ry, rz);
