@@ -1256,6 +1256,101 @@ static std::vector<std::pair<uint8, uint32>> AV_AllianceGraveyardRecapObjectives
     {BG_AV_NODES_FROSTWOLF_HUT, BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_HUT},
 };
 
+static std::vector<std::pair<uint8, uint32>> AV_AllianceTowerRecapObjectives = {
+    {BG_AV_NODES_DUNBALDAR_SOUTH, BG_AV_OBJECT_FLAG_C_H_DUNBALDAR_SOUTH},
+    {BG_AV_NODES_DUNBALDAR_NORTH, BG_AV_OBJECT_FLAG_C_H_DUNBALDAR_NORTH},
+    {BG_AV_NODES_ICEWING_BUNKER, BG_AV_OBJECT_FLAG_C_H_ICEWING_BUNKER},
+    {BG_AV_NODES_STONEHEART_BUNKER, BG_AV_OBJECT_FLAG_C_H_STONEHEART_BUNKER},
+};
+
+static std::vector<std::pair<uint8, uint32>> AV_AllianceHomeGraveyardReclaimObjectives = {
+    {BG_AV_NODES_FIRSTAID_STATION, BG_AV_OBJECT_FLAG_H_FIRSTAID_STATION},
+    {BG_AV_NODES_STORMPIKE_GRAVE, BG_AV_OBJECT_FLAG_H_STORMPIKE_GRAVE},
+    {BG_AV_NODES_STONEHEART_GRAVE, BG_AV_OBJECT_FLAG_H_STONEHEART_GRAVE},
+    {BG_AV_NODES_SNOWFALL_GRAVE, BG_AV_OBJECT_FLAG_H_SNOWFALL_GRAVE},
+};
+
+static bool IsAllianceHomeGraveyard(uint8 nodeId)
+{
+    return nodeId == BG_AV_NODES_FIRSTAID_STATION || nodeId == BG_AV_NODES_STORMPIKE_GRAVE ||
+           nodeId == BG_AV_NODES_STONEHEART_GRAVE || nodeId == BG_AV_NODES_SNOWFALL_GRAVE;
+}
+
+static GameObject* SelectAllianceAVEmergencyDefenseObjective(Player* bot, Battleground* bg, BattlegroundAV* av,
+                                                             uint8 role, bool isDefender, AVBotStrategy strategy)
+{
+    if (!bot || !bg || !av || bot->GetTeamId() != TEAM_ALLIANCE)
+        return nullptr;
+
+    struct Candidate
+    {
+        GameObject* go = nullptr;
+        uint8 priority = 0;
+        uint32 timer = 0;
+        float distance = 0.0f;
+    };
+
+    std::vector<Candidate> candidates;
+
+    auto addCandidate = [&](uint8 nodeId, uint32 goId, uint8 priority)
+    {
+        GameObject* go = bg->GetBGObject(goId);
+        if (!go || !go->isSpawned())
+            return;
+
+        float const distance = bot->GetDistance(go);
+        bool const shouldRespond = isDefender || strategy == AV_STRATEGY_DEFENSIVE ||
+            (priority == 0 && (role < 8 || distance < 850.0f)) ||
+            (priority == 1 && (role < 7 || distance < 650.0f)) ||
+            (priority == 2 && (role < 6 || distance < 500.0f)) ||
+            (priority >= 3 && (role < 5 || distance < 350.0f));
+
+        if (!shouldRespond)
+            return;
+
+        BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+        candidates.push_back({go, priority, node.Timer, distance});
+    };
+
+    for (auto const& [nodeId, goId] : AV_AllianceTowerRecapObjectives)
+    {
+        BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+        if (node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE && node.PrevOwnerId == TEAM_ALLIANCE &&
+            node.TotalOwnerId == TEAM_ALLIANCE)
+            addCandidate(nodeId, goId, 0);
+    }
+
+    for (auto const& [nodeId, goId] : AV_AllianceGraveyardRecapObjectives)
+    {
+        BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+        if (node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE && node.PrevOwnerId == TEAM_ALLIANCE)
+            addCandidate(nodeId, goId, IsAllianceHomeGraveyard(nodeId) ? 1 : 3);
+    }
+
+    for (auto const& [nodeId, goId] : AV_AllianceHomeGraveyardReclaimObjectives)
+    {
+        BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+        if (node.State == POINT_CONTROLLED && node.OwnerId == TEAM_HORDE)
+            addCandidate(nodeId, goId, 2);
+    }
+
+    if (candidates.empty())
+        return nullptr;
+
+    std::sort(candidates.begin(), candidates.end(), [](Candidate const& left, Candidate const& right)
+    {
+        if (left.priority != right.priority)
+            return left.priority < right.priority;
+
+        if (left.priority == 0 && left.timer != right.timer)
+            return left.timer < right.timer;
+
+        return left.distance < right.distance;
+    });
+
+    return candidates.front().go;
+}
+
 static uint32 AB_AttackObjectives[] = {
     BG_AB_NODE_STABLES,
     BG_AB_NODE_BLACKSMITH,
@@ -1960,6 +2055,9 @@ bool BGTactics::selectObjective(bool reset)
             };
 
             if (!BgObjective)
+                BgObjective = SelectAllianceAVEmergencyDefenseObjective(bot, bg, av, role, isDefender, strategy);
+
+            if (!BgObjective)
                 BgObjective = selectAllianceRecapObjective(isDefender ? 0.0f : 160.0f);
 
             // --- Mine Capture (rarely works, needs some improvement) ---
@@ -2157,6 +2255,27 @@ bool BGTactics::selectObjective(bool reset)
                 if (!linkedNodeId)
                 {
                     for (auto const& [nodeId, goId] : defendObjectives)
+                        if (bg->GetBGObject(goId) == BgObjective)
+                            linkedNodeId = nodeId;
+                }
+
+                if (team == TEAM_ALLIANCE && !linkedNodeId)
+                {
+                    for (auto const& [nodeId, goId] : AV_AllianceTowerRecapObjectives)
+                        if (bg->GetBGObject(goId) == BgObjective)
+                            linkedNodeId = nodeId;
+                }
+
+                if (team == TEAM_ALLIANCE && !linkedNodeId)
+                {
+                    for (auto const& [nodeId, goId] : AV_AllianceGraveyardRecapObjectives)
+                        if (bg->GetBGObject(goId) == BgObjective)
+                            linkedNodeId = nodeId;
+                }
+
+                if (team == TEAM_ALLIANCE && !linkedNodeId)
+                {
+                    for (auto const& [nodeId, goId] : AV_AllianceHomeGraveyardReclaimObjectives)
                         if (bg->GetBGObject(goId) == BgObjective)
                             linkedNodeId = nodeId;
                 }
@@ -3232,6 +3351,22 @@ bool BGTactics::moveToObjective(bool ignoreDist)
         return selectObjective();
     else
     {
+        if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        {
+            BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+            uint8 const role = context->GetValue<uint32>("bg role")->Get();
+            AVBotStrategy const strategy = static_cast<AVBotStrategy>(GetBotStrategyForTeam(bg, TEAM_ALLIANCE));
+            bool const isDefender = role < (strategy == AV_STRATEGY_DEFENSIVE ? 9 : strategy == AV_STRATEGY_OFFENSIVE ? 1 : 4);
+
+            if (GameObject* emergency = SelectAllianceAVEmergencyDefenseObjective(bot, bg, av, role, isDefender, strategy))
+            {
+                float const dx = emergency->GetPositionX() - pos.x;
+                float const dy = emergency->GetPositionY() - pos.y;
+                if ((dx * dx + dy * dy) > 1600.0f)
+                    return resetObjective();
+            }
+        }
+
         // Use portals in Isle of Conquest Base
         if (bgType == BATTLEGROUND_IC)
         {
@@ -3740,6 +3875,14 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
 
         targetFlag = go;
         break;
+    }
+
+    if (targetFlag && bgType == BATTLEGROUND_AV)
+    {
+        float const dist = bot->GetDistance(targetFlag);
+        if (dist > flagRange)
+            return MoveNear(bot->GetMapId(), targetFlag->GetPositionX(), targetFlag->GetPositionY(),
+                            targetFlag->GetPositionZ(), 1.5f);
     }
 
     // If we found a valid flag/base to interact with
