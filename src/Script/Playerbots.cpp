@@ -36,6 +36,70 @@
 #include "cmath"
 #include "BattleGroundTactics.h"
 
+namespace
+{
+bool IsBotOutgoingPacketHandled(uint16 opcode)
+{
+    switch (opcode)
+    {
+        case SMSG_SPELL_FAILURE:
+        case SMSG_SPELL_DELAYED:
+        case SMSG_EMOTE:
+        case SMSG_MESSAGECHAT:
+        case SMSG_FORCE_MOVE_ROOT:
+        case SMSG_FORCE_MOVE_UNROOT:
+        case SMSG_MOVE_KNOCK_BACK:
+        case SMSG_PETITION_SHOW_SIGNATURES:
+        case SMSG_GROUP_INVITE:
+        case SMSG_GUILD_INVITE:
+        case BUY_ERR_NOT_ENOUGHT_MONEY:
+        case BUY_ERR_REPUTATION_REQUIRE:
+        case SMSG_GROUP_SET_LEADER:
+        case SMSG_FORCE_RUN_SPEED_CHANGE:
+        case SMSG_RESURRECT_REQUEST:
+        case SMSG_INVENTORY_CHANGE_FAILURE:
+        case SMSG_TRADE_STATUS:
+        case SMSG_TRADE_STATUS_EXTENDED:
+        case SMSG_LOOT_RESPONSE:
+        case SMSG_ITEM_PUSH_RESULT:
+        case SMSG_LOOT_ROLL_WON:
+        case SMSG_PARTY_COMMAND_RESULT:
+        case SMSG_LEVELUP_INFO:
+        case SMSG_LOG_XPGAIN:
+        case SMSG_CAST_FAILED:
+        case SMSG_DUEL_REQUESTED:
+        case SMSG_BATTLEFIELD_STATUS:
+        case SMSG_LFG_ROLE_CHECK_UPDATE:
+        case SMSG_LFG_PROPOSAL_UPDATE:
+        case SMSG_TEXT_EMOTE:
+        case SMSG_LOOT_START_ROLL:
+        case SMSG_ARENA_TEAM_INVITE:
+        case SMSG_GROUP_DESTROYED:
+        case SMSG_GROUP_LIST:
+        case SMSG_QUESTUPDATE_COMPLETE:
+        case SMSG_QUESTUPDATE_ADD_KILL:
+        case SMSG_QUEST_CONFIRM_ACCEPT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool IsMasterOutgoingPacketHandled(uint16 opcode)
+{
+    switch (opcode)
+    {
+        case SMSG_PARTY_COMMAND_RESULT:
+        case MSG_RAID_READY_CHECK:
+        case MSG_RAID_READY_CHECK_FINISHED:
+        case SMSG_QUESTGIVER_OFFER_REWARD:
+            return true;
+        default:
+            return false;
+    }
+}
+}  // namespace
+
 class PlayerbotsDatabaseScript : public DatabaseScript
 {
 public:
@@ -489,23 +553,16 @@ public:
         if (player == nullptr || packet == nullptr)
             return;
 
-        if (player->GetSession() && player->GetSession()->IsBot())
+        uint16 opcode = packet->GetOpcode();
+        if (player->GetSession() && player->GetSession()->IsBot() && IsBotOutgoingPacketHandled(opcode))
         {
             PlayerbotAI* botAI = PlayerbotsMgr::instance().GetPlayerbotAI(player);
             if (botAI != nullptr)
                 botAI->HandleBotOutgoingPacket(*packet);
         }
 
-        switch (packet->GetOpcode())
-        {
-            case SMSG_PARTY_COMMAND_RESULT:
-            case MSG_RAID_READY_CHECK:
-            case MSG_RAID_READY_CHECK_FINISHED:
-            case SMSG_QUESTGIVER_OFFER_REWARD:
-                break;
-            default:
-                return;
-        }
+        if (!IsMasterOutgoingPacketHandled(opcode))
+            return;
 
         if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(player))
             playerbotMgr->HandleMasterOutgoingPacket(*packet);
