@@ -622,8 +622,8 @@ public:
                 data.hordeStrategy = urand(0, AB_STRATEGY_MAX - 1);
                 break;
             case BATTLEGROUND_AV:
-                data.allianceStrategy = urand(0, AV_STRATEGY_MAX - 1);
-                data.hordeStrategy = urand(0, AV_STRATEGY_MAX - 1);
+                data.allianceStrategy = AV_STRATEGY_ALLIANCE_CONTROL_TEMPO;
+                data.hordeStrategy = urand(AV_STRATEGY_BALANCED, AV_STRATEGY_DEFENSIVE);
                 break;
             case BATTLEGROUND_EY:
                 data.allianceStrategy = urand(0, EY_STRATEGY_MAX - 1);

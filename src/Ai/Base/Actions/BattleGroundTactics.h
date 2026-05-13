@@ -37,7 +37,8 @@ enum AVBotStrategy : uint8
     AV_STRATEGY_BALANCED      = 0,
     AV_STRATEGY_OFFENSIVE     = 1,
     AV_STRATEGY_DEFENSIVE     = 2,
-    AV_STRATEGY_MAX           = 3,
+    AV_STRATEGY_ALLIANCE_CONTROL_TEMPO = 3,
+    AV_STRATEGY_MAX           = 4,
 };
 
 enum EYBotStrategy : uint8
