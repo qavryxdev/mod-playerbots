@@ -486,13 +486,26 @@ public:
 
     void OnPlayerbotPacketSent(Player* player, WorldPacket const* packet) override
     {
-        if (player == nullptr)
+        if (player == nullptr || packet == nullptr)
             return;
 
-        PlayerbotAI* botAI = PlayerbotsMgr::instance().GetPlayerbotAI(player);
+        if (player->GetSession() && player->GetSession()->IsBot())
+        {
+            PlayerbotAI* botAI = PlayerbotsMgr::instance().GetPlayerbotAI(player);
+            if (botAI != nullptr)
+                botAI->HandleBotOutgoingPacket(*packet);
+        }
 
-        if (botAI != nullptr)
-            botAI->HandleBotOutgoingPacket(*packet);
+        switch (packet->GetOpcode())
+        {
+            case SMSG_PARTY_COMMAND_RESULT:
+            case MSG_RAID_READY_CHECK:
+            case MSG_RAID_READY_CHECK_FINISHED:
+            case SMSG_QUESTGIVER_OFFER_REWARD:
+                break;
+            default:
+                return;
+        }
 
         if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(player))
             playerbotMgr->HandleMasterOutgoingPacket(*packet);
