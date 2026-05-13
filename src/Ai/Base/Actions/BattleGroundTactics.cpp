@@ -66,6 +66,7 @@ uint32 const AV_CREATURE_A_CAPTAIN = AV_CPLACE_TRIGGER16;
 uint32 const AV_CREATURE_A_BOSS = AV_CPLACE_A_BOSS;
 uint32 const AV_CREATURE_H_CAPTAIN = AV_CPLACE_TRIGGER18;
 uint32 const AV_CREATURE_H_BOSS = AV_CPLACE_H_BOSS;
+uint32 const AV_NPC_DREKTHAR_ENTRY = 11946;
 
 Position const AV_CAVE_SPAWN_ALLIANCE = {872.460f, -491.571f, 96.546f, 0.0f};
 Position const AV_CAVE_SPAWN_HORDE = {-1437.127f, -608.382f, 51.185f, 0.0f};
@@ -1545,6 +1546,38 @@ static bool AllianceDBTowerTimerLow(BattlegroundAV* av, uint8 nodeId)
     return node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE && node.Timer > 0 && node.Timer <= 90000;
 }
 
+static bool AllianceHasForwardDrekRespawn(BattlegroundAV* av)
+{
+    return AllianceAVNodeControlledBy(av, BG_AV_NODES_FROSTWOLF_GRAVE, TEAM_ALLIANCE) ||
+           AllianceAVNodeControlledBy(av, BG_AV_NODES_FROSTWOLF_HUT, TEAM_ALLIANCE);
+}
+
+static bool AllianceHasAnySouthRespawn(BattlegroundAV* av)
+{
+    return AllianceHasForwardDrekRespawn(av) ||
+           AllianceAVNodeControlledBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+}
+
+static bool AllianceDunBaldarBaseActuallyLost(BattlegroundAV* av)
+{
+    if (!av)
+        return false;
+
+    bool const bothDbBunkersLow = AllianceDBTowerTimerLow(av, BG_AV_NODES_DUNBALDAR_SOUTH) &&
+                                  AllianceDBTowerTimerLow(av, BG_AV_NODES_DUNBALDAR_NORTH);
+    bool const firstAidLost = AllianceAVNodeControlledBy(av, BG_AV_NODES_FIRSTAID_STATION, TEAM_HORDE);
+    return bothDbBunkersLow || firstAidLost;
+}
+
+static bool AllianceHasFinalDrekWindow(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo, uint32 towersDown)
+{
+    if (!av || towersDown < 4 || !AllianceHasAnySouthRespawn(av))
+        return false;
+
+    uint32 const minimumSouthCore = AllianceHasForwardDrekRespawn(av) ? 6 : 14;
+    return rushInfo.allianceSouth >= minimumSouthCore;
+}
+
 static AllianceAVThreatLevel GetAllianceAVThreatLevel(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo)
 {
     if (!av)
@@ -1590,6 +1623,11 @@ static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(BattlegroundAV* av
     if (!av)
         return AV_MODE_OPENING_CONTROL;
 
+    uint32 const towersDown = GetAllianceDestroyedHordeTowerCount(av);
+    bool const finalDrekWindow = AllianceHasFinalDrekWindow(av, rushInfo, towersDown);
+    if (finalDrekWindow)
+        return AV_MODE_DREK_PUSH;
+
     bool const dbEmergency = threat == AV_THREAT_CRITICAL &&
         (AllianceAVNodeAssaultedBy(av, BG_AV_NODES_DUNBALDAR_SOUTH, TEAM_HORDE) ||
          AllianceAVNodeAssaultedBy(av, BG_AV_NODES_DUNBALDAR_NORTH, TEAM_HORDE) ||
@@ -1603,23 +1641,24 @@ static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(BattlegroundAV* av
 
     bool const icebloodControlled = AllianceAVNodeControlledBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const icebloodAssaulted = AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
-    if (AllianceHordeCaptainAlive(av) && (icebloodControlled || icebloodAssaulted) &&
-        rushInfo.elapsedMs >= 3 * 60 * 1000)
-        return AV_MODE_GALVANGAR_STRIKE;
-
     if (!icebloodControlled)
     {
+        if (AllianceHordeCaptainAlive(av) && icebloodAssaulted && rushInfo.elapsedMs >= 3 * 60 * 1000)
+            return AV_MODE_GALVANGAR_STRIKE;
+
         if (icebloodAssaulted)
             return AV_MODE_IBGY_GUARD;
 
         return rushInfo.elapsedMs < 90 * 1000 ? AV_MODE_OPENING_CONTROL : AV_MODE_IBGY_PUSH;
     }
 
-    bool const ownsForwardGY = AllianceAVNodeControlledBy(av, BG_AV_NODES_FROSTWOLF_GRAVE, TEAM_ALLIANCE) ||
-                               AllianceAVNodeControlledBy(av, BG_AV_NODES_FROSTWOLF_HUT, TEAM_ALLIANCE);
-    if (!AllianceHordeCaptainAlive(av) && threat < AV_THREAT_HIGH &&
-        (ownsForwardGY || GetAllianceDestroyedHordeTowerCount(av) >= 3))
+    bool const ownsForwardGY = AllianceHasForwardDrekRespawn(av);
+    bool const captainGateOpen = !AllianceHordeCaptainAlive(av) || towersDown >= 4;
+    if (captainGateOpen && threat < AV_THREAT_HIGH && (ownsForwardGY || towersDown >= 3))
         return AV_MODE_DREK_PUSH;
+
+    if (AllianceHordeCaptainAlive(av) && rushInfo.elapsedMs >= 3 * 60 * 1000)
+        return AV_MODE_GALVANGAR_STRIKE;
 
     return AV_MODE_SOUTH_TOWER_SPLIT;
 }
@@ -1691,6 +1730,13 @@ static uint8 GetAllianceAVRushDefenderLimit(BattlegroundAV* av, AllianceAVRushIn
 
         if (hordeStrategy == AV_STRATEGY_OFFENSIVE && threat != AV_THREAT_NONE && limit < 6)
             ++limit;
+
+        uint32 const towersDown = GetAllianceDestroyedHordeTowerCount(av);
+        if (AllianceHasFinalDrekWindow(av, rushInfo, towersDown))
+        {
+            uint8 const finalDefenseCap = AllianceDunBaldarBaseActuallyLost(av) ? 7 : 6;
+            limit = std::min<uint8>(limit, finalDefenseCap);
+        }
 
         return std::min<uint8>(limit, 8);
     }
@@ -2233,8 +2279,75 @@ static uint32 CountBattlegroundPlayersNear(Battleground* bg, TeamId teamId, Worl
     return count;
 }
 
+static Creature* GetAllianceHordeBoss(Player* bot, Battleground* bg)
+{
+    Creature* boss = bg ? bg->GetBGCreature(AV_CREATURE_H_BOSS) : nullptr;
+    if (boss && boss->IsAlive())
+        return boss;
+
+    if (!bot)
+        return nullptr;
+
+    boss = bot->FindNearestCreature(AV_NPC_DREKTHAR_ENTRY, 300.0f, true);
+    return boss && boss->IsAlive() ? boss : nullptr;
+}
+
+static Creature* SelectAllianceDrekPushObjective(Player* bot, Battleground* bg, BattlegroundAV* av,
+                                                  AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode,
+                                                  AllianceAVRushInfo const& rushInfo, uint32 towersDown,
+                                                  uint32 defensivePressure)
+{
+    if (!bot || !bg || !av)
+        return nullptr;
+
+    bool const hasForwardRespawn = AllianceHasForwardDrekRespawn(av);
+    bool const captainGateOpen = !AllianceHordeCaptainAlive(av) || towersDown >= 4;
+    bool const finalPushWindow = AllianceHasFinalDrekWindow(av, rushInfo, towersDown);
+    bool const northSafeForBoss = threat < AV_THREAT_HIGH && (defensivePressure == 0 || towersDown >= 4);
+
+    if (!captainGateOpen || (!northSafeForBoss && !finalPushWindow))
+        return nullptr;
+
+    if (mode != AV_MODE_DREK_PUSH && !finalPushWindow && !hasForwardRespawn && towersDown < 3)
+        return nullptr;
+
+    Creature* boss = GetAllianceHordeBoss(bot, bg);
+    if (!boss || !boss->IsAlive())
+        return nullptr;
+
+    if (hasForwardRespawn || towersDown >= 4)
+        return boss;
+
+    if (towersDown >= 3 && CountBattlegroundPlayersNear(bg, TEAM_ALLIANCE, boss, 200.0f, false) >= 12)
+        return boss;
+
+    return nullptr;
+}
+
+static bool SetAllianceDrekPushRallyPosition(Player* bot, PositionMap& posMap, PositionInfo& pos,
+                                             char const*& objectiveReason)
+{
+    if (!bot)
+        return false;
+
+    float rx, ry, rz;
+    bot->GetRandomPoint(AV_BOSS_WAIT_A, 4.0f, rx, ry, rz);
+
+    if (Map* map = bot->GetMap())
+    {
+        float groundZ = map->GetHeight(rx, ry, rz);
+        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
+            rz = groundZ;
+    }
+
+    pos.Set(rx, ry, rz, bot->GetMapId());
+    posMap["bg objective"] = pos;
+    objectiveReason = "alliance committed drek rally";
+    return true;
+}
+
 static bool ShouldAllianceStrikeHordeCaptain(uint8 role, AllianceAVRushInfo const& rushInfo,
-                                             AllianceAVBattlefieldMode mode)
+                                              AllianceAVBattlefieldMode mode)
 {
     if (mode != AV_MODE_GALVANGAR_STRIKE)
         return false;
@@ -2276,6 +2389,15 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
         return SelectAllianceIcebloodGraveyardObjective(bg, av);
     }
 
+    uint32 const towersDown = GetAllianceDestroyedHordeTowerCount(av);
+    uint32 const defensivePressure = GetAllianceDefensivePressure(av);
+
+    if (Creature* boss = SelectAllianceDrekPushObjective(bot, bg, av, threat, mode, rushInfo, towersDown, defensivePressure))
+    {
+        objectiveReason = towersDown >= 4 ? "control tempo drek final push" : "control tempo drek push";
+        return boss;
+    }
+
     if (ShouldAllianceStrikeHordeCaptain(role, rushInfo, mode))
     {
         if (Creature* captain = GetAllianceHordeCaptain(bg, av))
@@ -2299,11 +2421,6 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
         objectiveReason = "control tempo guard assault";
         return guard;
     }
-
-    uint32 const towersDown = GetAllianceDestroyedHordeTowerCount(av);
-
-    uint32 const defensivePressure = GetAllianceDefensivePressure(av);
-    bool const northSafeForBoss = threat < AV_THREAT_HIGH && defensivePressure == 0;
 
     std::vector<std::pair<uint8, uint32>> roleObjectives;
     switch (role)
@@ -2368,26 +2485,10 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
         return target;
     }
 
-    bool const ownsFrostwolfGrave = AllianceControlsNode(av, BG_AV_NODES_FROSTWOLF_GRAVE);
-    bool const ownsFrostwolfHut = AllianceControlsNode(av, BG_AV_NODES_FROSTWOLF_HUT);
-    uint32 bossId = AV_CREATURE_H_BOSS;
-    if (!AllianceHordeCaptainAlive(av) && (mode == AV_MODE_DREK_PUSH || northSafeForBoss))
+    if (Creature* boss = SelectAllianceDrekPushObjective(bot, bg, av, threat, mode, rushInfo, towersDown, defensivePressure))
     {
-        if (Creature* boss = bg->GetBGCreature(bossId))
-        {
-            if (boss->IsAlive())
-            {
-                uint32 nearbyCount = CountBattlegroundPlayersNear(bg, TEAM_ALLIANCE, boss, 200.0f, false);
-                bool const hasForwardRespawn = ownsFrostwolfGrave || ownsFrostwolfHut;
-                bool const enoughTowerPressure = towersDown >= 3 || (towersDown >= 2 && hasForwardRespawn);
-                if (northSafeForBoss && (hasForwardRespawn || enoughTowerPressure) &&
-                    (nearbyCount >= 14 || hasForwardRespawn))
-                {
-                    objectiveReason = "control tempo drek push";
-                    return boss;
-                }
-            }
-        }
+        objectiveReason = towersDown >= 4 ? "control tempo drek final fallback" : "control tempo drek fallback";
+        return boss;
     }
 
     objectiveReason = "control tempo hold forward";
@@ -2460,17 +2561,23 @@ static void LogAllianceAVState(Battleground* bg, BattlegroundAV* av, AllianceAVR
     BG_AV_NodeInfo const& dbNorth = av->GetAVNodeInfo(BG_AV_NODES_DUNBALDAR_NORTH);
     BG_AV_NodeInfo const& dbSouth = av->GetAVNodeInfo(BG_AV_NODES_DUNBALDAR_SOUTH);
     BG_AV_NodeInfo const& ibGy = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
+    BG_AV_NodeInfo const& fwGy = av->GetAVNodeInfo(BG_AV_NODES_FROSTWOLF_GRAVE);
+    BG_AV_NodeInfo const& fwHut = av->GetAVNodeInfo(BG_AV_NODES_FROSTWOLF_HUT);
+    uint32 const towersDown = GetAllianceDestroyedHordeTowerCount(av);
+    bool const finalDrek = AllianceHasFinalDrekWindow(av, rushInfo, towersDown);
 
     LOG_INFO("playerbots",
-             "AV alliance state instance={} elapsed={}s AStrategy={} HStrategy={} mode={} threat={} rush={} Hnorth={} Hdeep={} Hdb={} Asouth={} defenders={} towersDown={} galvAlive={} SHGY={}/{} SPGY={}/{} DBN={}/{} DBS={}/{} IBGY={}/{}",
+             "AV alliance state instance={} elapsed={}s AStrategy={} HStrategy={} mode={} threat={} rush={} Hnorth={} Hdeep={} Hdb={} Asouth={} defenders={} towersDown={} finalDrek={} galvAlive={} SHGY={}/{} SPGY={}/{} DBN={}/{} DBS={}/{} IBGY={}/{} FWGY={}/{} FWHut={}/{}",
              instanceId, elapsedMs / 1000, static_cast<uint32>(allianceStrategy), static_cast<uint32>(hordeStrategy),
              GetAllianceAVBattlefieldModeName(mode), GetAllianceAVThreatLevelName(threat),
              GetAllianceAVRushLevelName(rushInfo.level), rushInfo.hordeNorth, rushInfo.hordeDeepNorth,
              rushInfo.hordeDunBaldar, rushInfo.allianceSouth, static_cast<uint32>(defendersLimit),
-             GetAllianceDestroyedHordeTowerCount(av), AllianceHordeCaptainAlive(av) ? 1 : 0, static_cast<uint32>(shGy.State),
+             towersDown, finalDrek ? 1 : 0, AllianceHordeCaptainAlive(av) ? 1 : 0, static_cast<uint32>(shGy.State),
              static_cast<uint32>(shGy.OwnerId), static_cast<uint32>(spGy.State), static_cast<uint32>(spGy.OwnerId),
              static_cast<uint32>(dbNorth.State), static_cast<uint32>(dbNorth.OwnerId), static_cast<uint32>(dbSouth.State),
-             static_cast<uint32>(dbSouth.OwnerId), static_cast<uint32>(ibGy.State), static_cast<uint32>(ibGy.OwnerId));
+             static_cast<uint32>(dbSouth.OwnerId), static_cast<uint32>(ibGy.State), static_cast<uint32>(ibGy.OwnerId),
+             static_cast<uint32>(fwGy.State), static_cast<uint32>(fwGy.OwnerId), static_cast<uint32>(fwHut.State),
+             static_cast<uint32>(fwHut.OwnerId));
 }
 
 static uint32 AB_AttackObjectives[] = {
@@ -3131,6 +3238,16 @@ bool BGTactics::selectObjective(bool reset)
                 defendersProhab = std::max<uint8>(defendersProhab,
                                                   GetAllianceAVRushDefenderLimit(av, allianceRushInfo, strategyAlliance,
                                                                                  strategyHorde));
+            uint32 const allianceHordeTowersDown = team == TEAM_ALLIANCE ? GetAllianceDestroyedHordeTowerCount(av) : 0;
+            bool const allianceFinalDrekPush = team == TEAM_ALLIANCE &&
+                                               strategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO &&
+                                               AllianceHasFinalDrekWindow(av, allianceRushInfo, allianceHordeTowersDown);
+            if (allianceFinalDrekPush)
+            {
+                uint8 const finalDefenseCap = AllianceDunBaldarBaseActuallyLost(av) ? 7 : 6;
+                defendersProhab = std::min<uint8>(defendersProhab, finalDefenseCap);
+            }
+
             bool isDefender = role < defendersProhab;
             bool isAdvanced = !isDefender && role > 8;
 
@@ -3187,6 +3304,26 @@ bool BGTactics::selectObjective(bool reset)
 
                 return recapObjectives[urand(0, recapObjectives.size() - 1)];
             };
+
+            if (!BgObjective && allianceFinalDrekPush && !isDefender)
+            {
+                uint32 const defensivePressure = GetAllianceDefensivePressure(av);
+                BgObjective = SelectAllianceDrekPushObjective(bot, bg, av, allianceThreat, allianceMode,
+                                                              allianceRushInfo, allianceHordeTowersDown,
+                                                              defensivePressure);
+                if (BgObjective)
+                    objectiveReason = "alliance committed drek";
+                else if (SetAllianceDrekPushRallyPosition(bot, posMap, pos, objectiveReason))
+                {
+                    LOG_DEBUG("playerbots",
+                              "AV objective bot={} role={} strategy={} enemyStrategy={} reason={} towersDown={} Asouth={} threat={} defenders={}",
+                              bot->GetName(), static_cast<uint32>(role), static_cast<uint32>(strategy),
+                              static_cast<uint32>(enemyStrategy), objectiveReason, allianceHordeTowersDown,
+                              allianceRushInfo.allianceSouth, GetAllianceAVThreatLevelName(allianceThreat),
+                              static_cast<uint32>(defendersProhab));
+                    return true;
+                }
+            }
 
             if (!BgObjective)
             {
