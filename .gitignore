@@ -50,3 +50,11 @@ local.properties
 .cproject
 .vscode
 .idea
+
+#
+# Local history helpers
+#
+/generuj_historii.py
+/git_historie.bat
+/git_historie.html
+/git_history.html
