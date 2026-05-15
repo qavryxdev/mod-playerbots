@@ -155,6 +155,30 @@ struct AllianceAVObjectiveStallState
 
 static std::unordered_map<uint64, AllianceAVObjectiveStallState> avAllianceObjectiveStallStates;
 
+static bool IsInvalidBattleGroundZ(float z)
+{
+    return z == VMAP_INVALID_HEIGHT_VALUE || z <= -99999.0f;
+}
+
+static void ResolveBattleGroundGroundZ(Player* bot, float x, float y, float& z)
+{
+    if (!bot)
+        return;
+
+    if (IsInvalidBattleGroundZ(z))
+        z = bot->GetPositionZ();
+
+    if (Map* map = bot->GetMap())
+    {
+        float const groundZ = map->GetHeight(x, y, z);
+        if (!IsInvalidBattleGroundZ(groundZ))
+            z = groundZ;
+    }
+
+    if (IsInvalidBattleGroundZ(z))
+        z = bot->GetPositionZ();
+}
+
 std::vector<uint32> const vFlagsAV = {
     BG_AV_OBJECTID_BANNER_H_B,      BG_AV_OBJECTID_BANNER_H,      BG_AV_OBJECTID_BANNER_A_B,
     BG_AV_OBJECTID_BANNER_A,        BG_AV_OBJECTID_BANNER_CONT_A, BG_AV_OBJECTID_BANNER_CONT_A_B,
@@ -3075,12 +3099,7 @@ static bool SetAllianceIcebloodBeachheadPosition(Player* bot, Battleground* bg, 
 
     float rx, ry, rz;
     bot->GetRandomPoint(*target, radius, rx, ry, rz);
-    if (Map* map = bot->GetMap())
-    {
-        float const groundZ = map->GetHeight(rx, ry, rz);
-        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
-            rz = groundZ;
-    }
+    ResolveBattleGroundGroundZ(bot, rx, ry, rz);
 
     pos.Set(rx, ry, rz, bot->GetMapId());
     posMap["bg objective"] = pos;
@@ -3112,12 +3131,7 @@ static bool SetAllianceNorthReservePosition(Player* bot, PositionMap& posMap, Po
 
     float rx, ry, rz;
     bot->GetRandomPoint(*target, 10.0f, rx, ry, rz);
-    if (Map* map = bot->GetMap())
-    {
-        float const groundZ = map->GetHeight(rx, ry, rz);
-        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
-            rz = groundZ;
-    }
+    ResolveBattleGroundGroundZ(bot, rx, ry, rz);
 
     pos.Set(rx, ry, rz, bot->GetMapId());
     posMap["bg objective"] = pos;
@@ -3184,13 +3198,7 @@ static bool SetAllianceDrekPushRallyPosition(Player* bot, PositionMap& posMap, P
 
     float rx, ry, rz;
     bot->GetRandomPoint(AV_BOSS_WAIT_A, 4.0f, rx, ry, rz);
-
-    if (Map* map = bot->GetMap())
-    {
-        float groundZ = map->GetHeight(rx, ry, rz);
-        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
-            rz = groundZ;
-    }
+    ResolveBattleGroundGroundZ(bot, rx, ry, rz);
 
     pos.Set(rx, ry, rz, bot->GetMapId());
     posMap["bg objective"] = pos;
@@ -4486,12 +4494,7 @@ bool BGTactics::selectObjective(bool reset)
                         Position objPos = go->GetPosition();
                         float rx, ry, rz;
                         bot->GetRandomPoint(objPos, frand(2.0f, 4.0f), rx, ry, rz);
-                        if (Map* map = bot->GetMap())
-                        {
-                            float groundZ = map->GetHeight(rx, ry, rz);
-                            if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
-                                rz = groundZ;
-                        }
+                        ResolveBattleGroundGroundZ(bot, rx, ry, rz);
 
                         pos.Set(rx, ry, rz, go->GetMapId());
                         posMap["bg objective"] = pos;
@@ -4639,13 +4642,7 @@ bool BGTactics::selectObjective(bool reset)
 
                     float rx, ry, rz;
                     bot->GetRandomPoint(waitPos, 5.0f, rx, ry, rz);
-
-                    if (Map* map = bot->GetMap())
-                    {
-                        float groundZ = map->GetHeight(rx, ry, rz);
-                        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
-                            rz = groundZ;
-                    }
+                    ResolveBattleGroundGroundZ(bot, rx, ry, rz);
 
                     pos.Set(rx, ry, rz, bot->GetMapId());
                     posMap["bg objective"] = pos;
@@ -4724,6 +4721,14 @@ bool BGTactics::selectObjective(bool reset)
                             linkedNodeId = nodeId;
                 }
 
+                if (!linkedNodeId)
+                {
+                    if (team == TEAM_ALLIANCE && BgObjective == GetAllianceHordeCaptain(bg, av))
+                        objPos = AV_ICEBLOOD_GARRISON_ATTACKING_ALLIANCE;
+                    else if (IsInvalidBattleGroundZ(objPos.GetPositionZ()))
+                        objPos.Relocate(objPos.GetPositionX(), objPos.GetPositionY(), bot->GetPositionZ());
+                }
+
                 float rx, ry, rz;
                 if (linkedNodeId && AVNodeMovementTargets.count(*linkedNodeId))
                 {
@@ -4734,12 +4739,7 @@ bool BGTactics::selectObjective(bool reset)
                 else
                     bot->GetRandomPoint(objPos, frand(-2.0f, 2.0f), rx, ry, rz);
 
-                if (Map* map = bot->GetMap())
-                {
-                    float groundZ = map->GetHeight(rx, ry, rz);
-                    if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
-                        rz = groundZ;
-                }
+                ResolveBattleGroundGroundZ(bot, rx, ry, rz);
 
                 pos.Set(rx, ry, rz, BgObjective->GetMapId());
                 posMap["bg objective"] = pos;
