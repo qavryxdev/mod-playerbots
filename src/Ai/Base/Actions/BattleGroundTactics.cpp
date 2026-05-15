@@ -1881,8 +1881,11 @@ static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsHordeTowerRun(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsBeyondIcebloodBeachhead(Battleground* bg, PositionInfo const& pos);
+static bool AllianceAVPositionIsIcebloodHoldPerimeter(Battleground* bg, PositionInfo const& pos, bool strictAssault);
 static bool AllianceAVPositionIsAntiRushRally(PositionInfo const& pos);
 static bool AllianceAVPositionIsAllianceDefenseRun(Battleground* bg, PositionInfo const& pos);
+static bool AllianceAVPositionIsContestedAllianceDefenseObjective(Battleground* bg, BattlegroundAV* av,
+                                                                  PositionInfo const& pos);
 static bool AllianceAVIsIcebloodGraveFlag(Battleground* bg, GameObject* go);
 static bool AllianceAVIsSnowfallFlag(Battleground* bg, GameObject* go);
 static bool AllianceAVIsHordeTowerFlag(Battleground* bg, GameObject* go);
@@ -2000,6 +2003,13 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
         return true;
 
     AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE));
+    bool const allianceAssaultingIBGY = AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    bool const southernIcebloodGroup = bot->GetPositionX() < -180.0f;
+    if (allianceAssaultingIBGY && southernIcebloodGroup &&
+        !AllianceAVPositionIsIcebloodHoldPerimeter(bg, objectivePos, true) &&
+        !AllianceAVPositionIsSnowfallRun(bg, objectivePos))
+        return true;
+
     if (!isDefender && AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy) &&
         AllianceAVPositionIsBeyondIcebloodBeachhead(bg, objectivePos))
         return true;
@@ -2012,8 +2022,11 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
         if (objectiveIsRushEnemy)
             return false;
 
+        bool const contestedDefenseObjective =
+            AllianceAVPositionIsContestedAllianceDefenseObjective(bg, av, objectivePos);
         bool const staticObjective = AllianceAVPositionIsAntiRushRally(objectivePos) ||
-                                     AllianceAVPositionIsAllianceDefenseRun(bg, objectivePos);
+                                     (AllianceAVPositionIsAllianceDefenseRun(bg, objectivePos) &&
+                                      !contestedDefenseObjective);
         if (staticObjective)
             return true;
     }
@@ -2252,6 +2265,29 @@ static bool AllianceAVPositionIsNearPosition(PositionInfo const& pos, Position c
     return dx * dx + dy * dy <= radius * radius;
 }
 
+static bool AllianceAVPositionIsIcebloodHoldPerimeter(Battleground* bg, PositionInfo const& pos, bool strictAssault)
+{
+    if (!pos.valueSet || AllianceAVPositionIsHordeTowerRun(bg, pos))
+        return false;
+
+    if (strictAssault)
+    {
+        if (pos.x < -675.0f || pos.y > -335.0f || pos.y < -475.0f)
+            return false;
+
+        return AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_FLAG_HOLD, 96.0f) ||
+               AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_NORTH_LOCKDOWN, 32.0f) ||
+               AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN, 42.0f);
+    }
+
+    if (AllianceAVPositionIsBeyondIcebloodBeachhead(bg, pos))
+        return false;
+
+    return AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_FLAG_HOLD, 130.0f) ||
+           AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_NORTH_LOCKDOWN, 55.0f) ||
+           AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN, 55.0f);
+}
+
 static bool AllianceAVPositionIsAntiRushRally(PositionInfo const& pos)
 {
     return AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_ANTIRUSH_STONEHEARTH_ROAD, 24.0f) ||
@@ -2272,6 +2308,28 @@ static bool AllianceAVPositionIsAllianceDefenseRun(Battleground* bg, PositionInf
 
         auto itr = AVNodeMovementTargets.find(nodeId);
         if (itr != AVNodeMovementTargets.end() && AllianceAVPositionIsNearPosition(pos, itr->second.pos, 26.0f))
+            return true;
+    }
+
+    return false;
+}
+
+static bool AllianceAVPositionIsContestedAllianceDefenseObjective(Battleground* bg, BattlegroundAV* av,
+                                                                  PositionInfo const& pos)
+{
+    if (!bg || !av || !pos.valueSet)
+        return false;
+
+    for (auto const& [nodeId, goId] : AV_DefendObjectives_Alliance)
+    {
+        if (!IsAllianceNodeUnderHordePressure(av, nodeId))
+            continue;
+
+        if (AllianceAVPositionNearBGObject(bg, pos, goId, 75.0f))
+            return true;
+
+        auto itr = AVNodeMovementTargets.find(nodeId);
+        if (itr != AVNodeMovementTargets.end() && AllianceAVPositionIsNearPosition(pos, itr->second.pos, 36.0f))
             return true;
     }
 
@@ -2877,6 +2935,11 @@ static Player* SelectAllianceNorthRushEnemy(Player* bot, Battleground* bg, Allia
 
     bool const northernBot = bot->GetPositionX() > -180.0f;
     bool const reserveRole = defenderLimit > 0 && role < std::min<uint8>(9, defenderLimit + 2);
+    BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+    if (AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE) &&
+        !AllianceAVShouldFullRecallNorth(av, threat) && !northernBot)
+        return nullptr;
+
     if (!isDefender && !reserveRole && !northernBot && threat < AV_THREAT_MEDIUM)
         return nullptr;
 
@@ -3006,7 +3069,7 @@ static Player* SelectAllianceIcebloodBeachheadEnemy(Player* bot, Battleground* b
         centerY = center->GetPositionY();
     }
 
-    float const defenseRadius = allianceAssaulting ? 145.0f : 125.0f;
+    float const defenseRadius = allianceAssaulting ? 100.0f : 125.0f;
     float const defenseRadiusSq = defenseRadius * defenseRadius;
     float const maxBotDistance = bot->GetPositionX() <= -180.0f ? 260.0f : 320.0f;
     Player* bestEnemy = nullptr;
@@ -3016,6 +3079,11 @@ static Player* SelectAllianceIcebloodBeachheadEnemy(Player* bot, Battleground* b
     {
         Player* enemy = playerPair.second;
         if (!enemy || !enemy->IsAlive() || enemy->GetTeamId() != TEAM_HORDE)
+            continue;
+
+        PositionInfo enemyPos(enemy->GetPositionX(), enemy->GetPositionY(), enemy->GetPositionZ(),
+                              enemy->GetMapId());
+        if (!AllianceAVPositionIsIcebloodHoldPerimeter(bg, enemyPos, allianceAssaulting))
             continue;
 
         float const centerDx = enemy->GetPositionX() - centerX;
@@ -3070,14 +3138,16 @@ static bool SetAllianceIcebloodBeachheadPosition(Player* bot, Battleground* bg, 
         return false;
 
     BG_AV_NodeInfo const& node = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
+    bool const allianceAssaulting = node.State == POINT_ASSAULTED && node.OwnerId == TEAM_ALLIANCE;
     bool const allianceControlled = node.State == POINT_CONTROLLED && node.OwnerId == TEAM_ALLIANCE;
     uint8 const firstOffenseRole = std::min<uint8>(defenderLimit, 9);
     uint8 const relativeRole = role >= firstOffenseRole ? role - firstOffenseRole : role;
+    uint8 const holdSlot = allianceAssaulting ? relativeRole % 8 : relativeRole % 6;
 
     Position const* target = &AV_ALLIANCE_IBGY_FLAG_HOLD;
     float radius = 6.0f;
 
-    switch (relativeRole % 6)
+    switch (holdSlot)
     {
         case 0:
         case 1:
@@ -3087,10 +3157,30 @@ static bool SetAllianceIcebloodBeachheadPosition(Player* bot, Battleground* bg, 
             radius = allianceControlled ? 7.0f : 5.0f;
             break;
         case 4:
+            if (!allianceAssaulting)
+            {
+                target = &AV_ALLIANCE_IBGY_NORTH_LOCKDOWN;
+                radius = 6.0f;
+                break;
+            }
+            target = &AV_ALLIANCE_IBGY_FLAG_HOLD;
+            radius = 5.0f;
+            break;
+        case 5:
+            if (!allianceAssaulting)
+            {
+                target = &AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN;
+                radius = 6.0f;
+                break;
+            }
+            target = &AV_ALLIANCE_IBGY_FLAG_HOLD;
+            radius = 5.0f;
+            break;
+        case 6:
             target = &AV_ALLIANCE_IBGY_NORTH_LOCKDOWN;
             radius = 6.0f;
             break;
-        case 5:
+        case 7:
             target = &AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN;
             radius = 6.0f;
             break;
@@ -3505,7 +3595,7 @@ static void LogAllianceAVState(Battleground* bg, BattlegroundAV* av, AllianceAVR
 
 static void LogAllianceAVMoveDebug(Player* bot, Battleground* bg, PositionInfo const& objectivePos,
                                    char const* reason, uint8 role, uint8 defenderLimit, bool isDefender,
-                                   bool hasEnemyTarget, float nearestPathDistance = -1.0f, uint32 pathCount = 0)
+                                   Unit* enemyTarget, float nearestPathDistance = -1.0f, uint32 pathCount = 0)
 {
     if (!sPlayerbotAIConfig.allianceAVMoveDebug)
         return;
@@ -3556,13 +3646,58 @@ static void LogAllianceAVMoveDebug(Player* bot, Battleground* bg, PositionInfo c
         ServerFacade::instance().GetDistance2d(bot, objectivePos.x, objectivePos.y) : -1.0f;
     uint32 const motionType = bot->GetMotionMaster() ?
         static_cast<uint32>(bot->GetMotionMaster()->GetCurrentMovementGeneratorType()) : 0;
+    bool const hasEnemyTarget = enemyTarget != nullptr;
     bool const inCombat = bot->GetVehicle() ? hasEnemyTarget : bot->IsInCombat();
     bool const casting = AllianceAVIsCastingAnySpell(bot);
     uint32 const hordeNear80 = CountBattlegroundPlayersNear(bg, TEAM_HORDE, bot, 80.0f, true);
     uint32 const hordeNear200 = CountBattlegroundPlayersNear(bg, TEAM_HORDE, bot, 200.0f, true);
 
+    Unit* victim = bot->GetVictim();
+    Unit* selected = bot->GetSelectedUnit();
+    Unit* debugTarget = victim ? victim : (enemyTarget ? enemyTarget : selected);
+    char const* targetSource = victim ? "victim" : (enemyTarget ? "enemy" : (selected ? "selected" : "none"));
+    char const* targetType = "none";
+    std::string targetName = "-";
+    uint32 targetEntry = 0;
+    float targetDistance = -1.0f;
+    float targetIcebloodDistance = -1.0f;
+    bool targetTowerRun = false;
+
+    if (debugTarget)
+    {
+        targetDistance = bot->GetDistance(debugTarget);
+        targetIcebloodDistance = debugTarget->GetDistance2d(AV_ALLIANCE_IBGY_FLAG_HOLD.GetPositionX(),
+                                                            AV_ALLIANCE_IBGY_FLAG_HOLD.GetPositionY());
+        targetName = debugTarget->GetName();
+
+        if (Player* targetPlayer = debugTarget->ToPlayer())
+        {
+            targetType = "player";
+            targetEntry = static_cast<uint32>(targetPlayer->GetGUID().GetCounter());
+        }
+        else if (Creature* targetCreature = debugTarget->ToCreature())
+        {
+            targetType = "creature";
+            targetEntry = targetCreature->GetEntry();
+        }
+        else
+            targetType = "unit";
+
+        PositionInfo targetPos(debugTarget->GetPositionX(), debugTarget->GetPositionY(),
+                               debugTarget->GetPositionZ(), debugTarget->GetMapId());
+        targetTowerRun = AllianceAVPositionIsHordeTowerRun(bg, targetPos);
+    }
+
+    PositionInfo botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+    float const botIcebloodDistance = bot->GetDistance2d(AV_ALLIANCE_IBGY_FLAG_HOLD.GetPositionX(),
+                                                         AV_ALLIANCE_IBGY_FLAG_HOLD.GetPositionY());
+    bool const objectiveIcebloodRun = AllianceAVPositionIsIcebloodGraveRun(objectivePos);
+    bool const botIcebloodRun = AllianceAVPositionIsIcebloodGraveRun(botPos);
+    bool const botTowerRun = AllianceAVPositionIsHordeTowerRun(bg, botPos);
+    bool const ibgyLeashBreak = objectiveIcebloodRun && !botIcebloodRun && botIcebloodDistance > 120.0f;
+
     LOG_INFO("playerbots",
-             "AV alliance move-debug reason={} bot={} elapsed={}s role={} defenderLimit={} defender={} AStrategy={} HStrategy={} mode={} threat={} rush={} pos=({:.1f},{:.1f},{:.1f}) objSet={} obj=({:.1f},{:.1f},{:.1f}) objDist={:.1f} moving={} stopped={} combat={} casting={} enemyTarget={} motion={} pathNearest={:.1f} pathCount={} Hnear80={} Hnear200={} Hnorth={} Hdeep={} Hdb={} Asouth={}",
+             "AV alliance move-debug reason={} bot={} elapsed={}s role={} defenderLimit={} defender={} AStrategy={} HStrategy={} mode={} threat={} rush={} pos=({:.1f},{:.1f},{:.1f}) objSet={} obj=({:.1f},{:.1f},{:.1f}) objDist={:.1f} moving={} stopped={} combat={} casting={} enemyTarget={} motion={} pathNearest={:.1f} pathCount={} Hnear80={} Hnear200={} Hnorth={} Hdeep={} Hdb={} Asouth={} botIBGY={:.1f} objIBGY={} botAtIBGY={} botTower={} ibgyLeashBreak={} targetSrc={} targetType={} targetEntry={} targetName={} targetDist={:.1f} targetIBGY={:.1f} targetTower={}",
              reason ? reason : "unknown", bot->GetName(), elapsedMs / 1000, static_cast<uint32>(role),
              static_cast<uint32>(defenderLimit), isDefender ? 1 : 0, static_cast<uint32>(allianceStrategy),
              static_cast<uint32>(hordeStrategy), GetAllianceAVBattlefieldModeName(mode),
@@ -3572,7 +3707,10 @@ static void LogAllianceAVMoveDebug(Player* bot, Battleground* bg, PositionInfo c
              objectiveSet ? objectivePos.z : 0.0f, objectiveDistance, bot->isMoving() ? 1 : 0,
              bot->IsStopped() ? 1 : 0, inCombat ? 1 : 0, casting ? 1 : 0, hasEnemyTarget ? 1 : 0,
              motionType, nearestPathDistance, pathCount, hordeNear80, hordeNear200, rushInfo.hordeNorth,
-             rushInfo.hordeDeepNorth, rushInfo.hordeDunBaldar, rushInfo.allianceSouth);
+             rushInfo.hordeDeepNorth, rushInfo.hordeDunBaldar, rushInfo.allianceSouth, botIcebloodDistance,
+             objectiveIcebloodRun ? 1 : 0, botIcebloodRun ? 1 : 0, botTowerRun ? 1 : 0,
+             ibgyLeashBreak ? 1 : 0, targetSource, targetType, targetEntry, targetName, targetDistance,
+             targetIcebloodDistance, targetTowerRun ? 1 : 0);
 }
 
 static uint32 AB_AttackObjectives[] = {
@@ -4024,7 +4162,7 @@ bool BGTactics::Execute(Event /*event*/)
                     uint8 const role = context->GetValue<uint32>("bg role")->Get();
                     PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
                     LogAllianceAVMoveDebug(bot, bg, objectivePos, "move_false_wp_false_force_false", role, 255,
-                                           false, (bool)AI_VALUE(Unit*, "enemy player target"));
+                                           false, AI_VALUE(Unit*, "enemy player target"));
                 }
                 return moved;
             }
@@ -4042,7 +4180,7 @@ bool BGTactics::Execute(Event /*event*/)
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
                 PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
                 LogAllianceAVMoveDebug(bot, bg, objectivePos, "path_begin_false_force_false", role, 255, false,
-                                       (bool)AI_VALUE(Unit*, "enemy player target"));
+                                       AI_VALUE(Unit*, "enemy player target"));
             }
             return moved;
         }
@@ -4055,7 +4193,7 @@ bool BGTactics::Execute(Event /*event*/)
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
                 PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
                 LogAllianceAVMoveDebug(bot, bg, objectivePos, "path_free_false_force_false", role, 255, false,
-                                       (bool)AI_VALUE(Unit*, "enemy player target"));
+                                       AI_VALUE(Unit*, "enemy player target"));
             }
             return moved;
         }
@@ -4771,7 +4909,7 @@ bool BGTactics::selectObjective(bool reset)
 
             if (team == TEAM_ALLIANCE)
                 LogAllianceAVMoveDebug(bot, bg, pos, "select_objective_none", role, defendersProhab, isDefender,
-                                       (bool)AI_VALUE(Unit*, "enemy player target"));
+                                       AI_VALUE(Unit*, "enemy player target"));
 
             break;
         }
@@ -5825,7 +5963,7 @@ bool BGTactics::moveToObjective(bool ignoreDist)
         {
             uint8 const role = context->GetValue<uint32>("bg role")->Get();
             LogAllianceAVMoveDebug(bot, bg, pos, "no_objective_select_failed", role, 255, false,
-                                   (bool)AI_VALUE(Unit*, "enemy player target"));
+                                   AI_VALUE(Unit*, "enemy player target"));
         }
         return selected;
     }
@@ -5848,7 +5986,7 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             if (AllianceAVShouldResetCurrentObjective(bot, bg, av, pos, role, isDefender, rushInfo, threat, mode))
             {
                 LogAllianceAVMoveDebug(bot, bg, pos, "reset_current_objective", role, defenderLimit, isDefender,
-                                       (bool)AI_VALUE(Unit*, "enemy player target"));
+                                       AI_VALUE(Unit*, "enemy player target"));
                 return resetObjective();
             }
 
@@ -5858,7 +5996,7 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 pos.x < -180.0f && !AllianceAVPositionIsSnowfallRun(bg, pos))
             {
                 LogAllianceAVMoveDebug(bot, bg, pos, "reset_map_state_rush", role, defenderLimit, isDefender,
-                                       (bool)AI_VALUE(Unit*, "enemy player target"));
+                                       AI_VALUE(Unit*, "enemy player target"));
                 return resetObjective();
             }
 
@@ -5870,7 +6008,7 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 if (AllianceAVPositionIsAntiRushRally(pos) || (dx * dx + dy * dy) > 1600.0f)
                 {
                     LogAllianceAVMoveDebug(bot, bg, pos, "reset_emergency_defense", role, defenderLimit, isDefender,
-                                           (bool)AI_VALUE(Unit*, "enemy player target"));
+                                           AI_VALUE(Unit*, "enemy player target"));
                     return resetObjective();
                 }
             }
@@ -5893,7 +6031,7 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             {
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
                 LogAllianceAVMoveDebug(bot, bg, pos, "move_direct_too_far", role, 255, false,
-                                       (bool)AI_VALUE(Unit*, "enemy player target"));
+                                       AI_VALUE(Unit*, "enemy player target"));
             }
             return false;
         }
@@ -5914,7 +6052,7 @@ bool BGTactics::moveToObjective(bool ignoreDist)
         {
             uint8 const role = context->GetValue<uint32>("bg role")->Get();
             LogAllianceAVMoveDebug(bot, bg, pos, moved ? "move_direct_true" : "move_direct_false", role, 255, false,
-                                   (bool)AI_VALUE(Unit*, "enemy player target"));
+                                   AI_VALUE(Unit*, "enemy player target"));
         }
 
         return moved;
@@ -6062,7 +6200,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         {
             uint8 const role = context->GetValue<uint32>("bg role")->Get();
             LogAllianceAVMoveDebug(bot, bg, pos, "select_wp_none", role, 255, false,
-                                   (bool)AI_VALUE(Unit*, "enemy player target"),
+                                   AI_VALUE(Unit*, "enemy player target"),
                                    nearestPathDistance == FLT_MAX ? -1.0f : nearestPathDistance, vPaths.size());
         }
         return false;
@@ -6181,7 +6319,7 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
             PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
             PositionInfo const waypointPos(targetX, targetY, nextPoint.z, bot->GetMapId());
             LogAllianceAVMoveDebug(bot, bg, objectivePos, moved ? "move_wp_true" : "move_wp_false", role, 255, false,
-                                   (bool)AI_VALUE(Unit*, "enemy player target"),
+                                   AI_VALUE(Unit*, "enemy player target"),
                                    ServerFacade::instance().GetDistance2d(bot, waypointPos.x, waypointPos.y),
                                    currentPath->size());
         }
