@@ -1365,6 +1365,11 @@ AiPlayerbot.PvpProhibitedAreaIds = "976,35,392,2268,4161,4010,4317,4312,3649,388
 # Improve reaction speeds in battlegrounds and arenas (may cause lag)
 AiPlayerbot.FastReactInBG = 1
 
+# Enable throttled Alliance Alterac Valley movement/objective debug logging
+# Writes "AV alliance move-debug" lines to Playerbots.log
+# Default: 0 (disabled)
+AiPlayerbot.AllianceAVMoveDebug = 0
+
 #
 #
 #

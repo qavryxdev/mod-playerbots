@@ -88,6 +88,10 @@ Position const AV_ALLIANCE_ANTIRUSH_STONEHEARTH_ROAD = {117.990f, -380.243f, 43.
 Position const AV_ALLIANCE_ANTIRUSH_ICEWING_ROAD = {195.369f, -407.750f, 42.876f, 0.0f};
 Position const AV_ALLIANCE_ANTIRUSH_STORMPIKE_ROAD = {444.974f, -429.032f, 27.276f, 0.0f};
 Position const AV_ALLIANCE_ANTIRUSH_DUNBALDAR_ROAD = {635.941f, -272.053f, 30.130f, 0.0f};
+Position const AV_ALLIANCE_IBGY_FLAG_HOLD = {-617.858f, -400.654f, 59.692f, 0.0f};
+Position const AV_ALLIANCE_IBGY_GALVANGAR_INTERCEPT = {-556.000f, -315.000f, 63.000f, 0.0f};
+Position const AV_ALLIANCE_IBGY_TOWER_POINT_INTERCEPT = {-690.000f, -374.000f, 72.000f, 0.0f};
+Position const AV_ALLIANCE_IBGY_SOUTH_ROAD_INTERCEPT = {-650.000f, -450.000f, 59.000f, 0.0f};
 Position const EY_WAITING_POS_HORDE = {1809.102f, 1540.854f, 1267.142f, 0.0f};
 Position const EY_WAITING_POS_ALLIANCE = {2523.827f, 1596.915f, 1270.204f, 0.0f};
 Position const EY_FLAG_RETURN_POS_RETREAT_HORDE = {1885.529f, 1532.157f, 1200.635f, 0.0f};
@@ -1861,6 +1865,9 @@ static GameObject* SelectAllianceIcebloodGraveyardHoldObjective(Battleground* bg
 static bool AllianceAVShouldHoldIcebloodBeachhead(Battleground* bg, BattlegroundAV* av,
                                                   AllianceAVThreatLevel threat,
                                                   AVBotStrategy hordeStrategy);
+static bool AllianceAVShouldUseIcebloodBeachheadPlan(Battleground* bg, BattlegroundAV* av,
+                                                     AllianceAVThreatLevel threat,
+                                                     AVBotStrategy hordeStrategy);
 static Player* SelectAllianceNorthRushEnemy(Player* bot, Battleground* bg, AllianceAVRushInfo const& rushInfo,
                                             AllianceAVThreatLevel threat, uint8 role, bool isDefender,
                                             uint8 defenderLimit);
@@ -1884,6 +1891,7 @@ static bool AllianceAVCanUseNearbyFlagDuringControlTempo(Player* bot, Battlegrou
     AllianceAVThreatLevel const threat = GetAllianceAVThreatLevel(av, rushInfo);
     AllianceAVBattlefieldMode const mode = GetAllianceAVBattlefieldMode(bg, av, rushInfo, threat);
     bool const holdIcebloodBeachhead = AllianceAVShouldHoldIcebloodBeachhead(bg, av, threat, hordeStrategy);
+    bool const icebloodBeachheadPlan = AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy);
 
     if (AllianceAVIsAllianceRecapOrReclaimFlag(bg, go))
         return true;
@@ -1895,7 +1903,7 @@ static bool AllianceAVCanUseNearbyFlagDuringControlTempo(Player* bot, Battlegrou
         return AllianceAVIsIcebloodGraveFlag(bg, go);
 
     if (AllianceAVIsHordeTowerFlag(bg, go) &&
-        (AllianceAVShouldFullRecallNorth(av, threat) || holdIcebloodBeachhead))
+        (AllianceAVShouldFullRecallNorth(av, threat) || holdIcebloodBeachhead || icebloodBeachheadPlan))
         return false;
 
     return true;
@@ -1963,14 +1971,19 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
         return true;
 
     AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE));
-    if (!isDefender && AllianceAVShouldHoldIcebloodBeachhead(bg, av, threat, hordeStrategy) &&
+    if (!isDefender && AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy) &&
         AllianceAVPositionIsBeyondIcebloodBeachhead(bg, objectivePos))
         return true;
 
-    if (SelectAllianceNorthRushEnemy(bot, bg, rushInfo, threat, role, isDefender, 0))
+    if (Player* rushEnemy = SelectAllianceNorthRushEnemy(bot, bg, rushInfo, threat, role, isDefender, 0))
     {
-        bool const staticObjective = bot->GetDistance(objectivePos.x, objectivePos.y, objectivePos.z) < 18.0f ||
-                                     AllianceAVPositionIsAntiRushRally(objectivePos) ||
+        float const enemyDx = rushEnemy->GetPositionX() - objectivePos.x;
+        float const enemyDy = rushEnemy->GetPositionY() - objectivePos.y;
+        bool const objectiveIsRushEnemy = enemyDx * enemyDx + enemyDy * enemyDy <= 45.0f * 45.0f;
+        if (objectiveIsRushEnemy)
+            return false;
+
+        bool const staticObjective = AllianceAVPositionIsAntiRushRally(objectivePos) ||
                                      AllianceAVPositionIsAllianceDefenseRun(bg, objectivePos);
         if (staticObjective)
             return true;
@@ -2926,6 +2939,124 @@ static bool AllianceAVShouldHoldIcebloodBeachhead(Battleground* bg, Battleground
     return hordeDefensive && hordeNear >= 4 && !allianceLocalControl;
 }
 
+static bool AllianceAVShouldUseIcebloodBeachheadPlan(Battleground* bg, BattlegroundAV* av,
+                                                     AllianceAVThreatLevel threat,
+                                                     AVBotStrategy hordeStrategy)
+{
+    if (!bg || !av || AllianceAVShouldFullRecallNorth(av, threat))
+        return false;
+
+    BG_AV_NodeInfo const& node = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
+    bool const allianceAssaulting = node.State == POINT_ASSAULTED && node.OwnerId == TEAM_ALLIANCE;
+    bool const allianceControlled = node.State == POINT_CONTROLLED && node.OwnerId == TEAM_ALLIANCE;
+
+    if (allianceAssaulting || allianceControlled)
+        return AllianceAVShouldHoldIcebloodBeachhead(bg, av, threat, hordeStrategy);
+
+    return false;
+}
+
+static bool AllianceAVCanCommitToIcebloodBeachhead(Player* bot, uint8 role, bool isDefender, uint8 defenderLimit,
+                                                   AllianceAVRushInfo const& rushInfo,
+                                                   AllianceAVThreatLevel threat)
+{
+    if (!bot || isDefender)
+        return false;
+
+    if (bot->GetPositionX() <= -180.0f)
+        return true;
+
+    if (rushInfo.IsActive() || threat >= AV_THREAT_MEDIUM)
+        return false;
+
+    return role == defenderLimit;
+}
+
+static bool SetAllianceIcebloodBeachheadPosition(Player* bot, Battleground* bg, BattlegroundAV* av,
+                                                 PositionMap& posMap, PositionInfo& pos, uint8 role,
+                                                 uint8 defenderLimit, char const*& objectiveReason)
+{
+    if (!bot || !bg || !av)
+        return false;
+
+    BG_AV_NodeInfo const& node = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
+    bool const allianceControlled = node.State == POINT_CONTROLLED && node.OwnerId == TEAM_ALLIANCE;
+    uint8 const firstOffenseRole = std::min<uint8>(defenderLimit, 9);
+    uint8 const relativeRole = role >= firstOffenseRole ? role - firstOffenseRole : role;
+
+    Position const* target = &AV_ALLIANCE_IBGY_FLAG_HOLD;
+    float radius = 7.0f;
+
+    switch (relativeRole % 4)
+    {
+        case 0:
+            target = &AV_ALLIANCE_IBGY_FLAG_HOLD;
+            radius = 5.0f;
+            break;
+        case 1:
+            target = &AV_ALLIANCE_IBGY_GALVANGAR_INTERCEPT;
+            break;
+        case 2:
+            target = &AV_ALLIANCE_IBGY_TOWER_POINT_INTERCEPT;
+            break;
+        default:
+            target = &AV_ALLIANCE_IBGY_SOUTH_ROAD_INTERCEPT;
+            break;
+    }
+    objectiveReason = allianceControlled ? "alliance iceblood controlled hold" : "alliance iceblood assault hold";
+
+    float rx, ry, rz;
+    bot->GetRandomPoint(*target, radius, rx, ry, rz);
+    if (Map* map = bot->GetMap())
+    {
+        float const groundZ = map->GetHeight(rx, ry, rz);
+        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
+            rz = groundZ;
+    }
+
+    pos.Set(rx, ry, rz, bot->GetMapId());
+    posMap["bg objective"] = pos;
+    return true;
+}
+
+static bool SetAllianceNorthReservePosition(Player* bot, PositionMap& posMap, PositionInfo& pos, uint8 role,
+                                            char const*& objectiveReason)
+{
+    if (!bot)
+        return false;
+
+    Position const* target = &AV_ALLIANCE_ANTIRUSH_STONEHEARTH_ROAD;
+    switch (role % 4)
+    {
+        case 0:
+            target = &AV_ALLIANCE_ANTIRUSH_STONEHEARTH_ROAD;
+            break;
+        case 1:
+            target = &AV_ALLIANCE_ANTIRUSH_ICEWING_ROAD;
+            break;
+        case 2:
+            target = &AV_ALLIANCE_ANTIRUSH_STORMPIKE_ROAD;
+            break;
+        default:
+            target = &AV_ALLIANCE_ANTIRUSH_DUNBALDAR_ROAD;
+            break;
+    }
+
+    float rx, ry, rz;
+    bot->GetRandomPoint(*target, 10.0f, rx, ry, rz);
+    if (Map* map = bot->GetMap())
+    {
+        float const groundZ = map->GetHeight(rx, ry, rz);
+        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
+            rz = groundZ;
+    }
+
+    pos.Set(rx, ry, rz, bot->GetMapId());
+    posMap["bg objective"] = pos;
+    objectiveReason = "alliance north reserve screen";
+    return true;
+}
+
 static Creature* GetAllianceHordeBoss(Player* bot, Battleground* bg)
 {
     Creature* boss = bg ? bg->GetBGCreature(AV_CREATURE_H_BOSS) : nullptr;
@@ -3300,6 +3431,9 @@ static void LogAllianceAVMoveDebug(Player* bot, Battleground* bg, PositionInfo c
                                    char const* reason, uint8 role, uint8 defenderLimit, bool isDefender,
                                    bool hasEnemyTarget, float nearestPathDistance = -1.0f, uint32 pathCount = 0)
 {
+    if (!sPlayerbotAIConfig.allianceAVMoveDebug)
+        return;
+
     if (!bot || !bg || bot->GetTeamId() != TEAM_ALLIANCE)
         return;
 
@@ -4164,6 +4298,48 @@ bool BGTactics::selectObjective(bool reset)
                 {
                     BgObjective = enemy;
                     objectiveReason = "alliance north rush enemy";
+                }
+            }
+
+            if (!BgObjective && team == TEAM_ALLIANCE && !isDefender &&
+                AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, allianceThreat, strategyHorde))
+            {
+                bool const canCommitToIceblood = AllianceAVCanCommitToIcebloodBeachhead(bot, role, isDefender,
+                                                                                        defendersProhab,
+                                                                                        allianceRushInfo,
+                                                                                        allianceThreat);
+                if (!canCommitToIceblood && bot->GetPositionX() > -180.0f)
+                {
+                    BgObjective = SelectAllianceAVDefenderObjective(bot, bg, av, allianceRushInfo);
+                    if (BgObjective)
+                        objectiveReason = "alliance north reserve hold";
+                    else if (SetAllianceNorthReservePosition(bot, posMap, pos, role, objectiveReason))
+                    {
+                        LOG_DEBUG("playerbots",
+                                  "AV objective bot={} role={} strategy={} enemyStrategy={} reason={} node={} state={} owner={} prevOwner={} timer={} distance={:.1f}",
+                                  bot->GetName(), static_cast<uint32>(role), static_cast<uint32>(strategy),
+                                  static_cast<uint32>(enemyStrategy), objectiveReason, 255, 255, 255, 255, 0,
+                                  ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y));
+                        return true;
+                    }
+                }
+                else if (canCommitToIceblood)
+                {
+                    if (SetAllianceIcebloodBeachheadPosition(bot, bg, av, posMap, pos, role, defendersProhab,
+                                                             objectiveReason))
+                    {
+                        LOG_DEBUG("playerbots",
+                                  "AV objective bot={} role={} strategy={} enemyStrategy={} reason={} node={} state={} owner={} prevOwner={} timer={} distance={:.1f}",
+                                  bot->GetName(), static_cast<uint32>(role), static_cast<uint32>(strategy),
+                                  static_cast<uint32>(enemyStrategy), objectiveReason,
+                                  static_cast<uint32>(BG_AV_NODES_ICEBLOOD_GRAVE),
+                                  static_cast<uint32>(av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE).State),
+                                  static_cast<uint32>(av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE).OwnerId),
+                                  static_cast<uint32>(av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE).PrevOwnerId),
+                                  av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE).Timer,
+                                  ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y));
+                        return true;
+                    }
                 }
             }
 
