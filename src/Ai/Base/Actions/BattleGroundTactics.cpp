@@ -92,6 +92,8 @@ Position const AV_ALLIANCE_IBGY_FLAG_HOLD = {-617.858f, -400.654f, 59.692f, 0.0f
 Position const AV_ALLIANCE_IBGY_GALVANGAR_INTERCEPT = {-556.000f, -315.000f, 63.000f, 0.0f};
 Position const AV_ALLIANCE_IBGY_TOWER_POINT_INTERCEPT = {-690.000f, -374.000f, 72.000f, 0.0f};
 Position const AV_ALLIANCE_IBGY_SOUTH_ROAD_INTERCEPT = {-650.000f, -450.000f, 59.000f, 0.0f};
+Position const AV_ALLIANCE_IBGY_NORTH_LOCKDOWN = {-590.000f, -354.000f, 60.000f, 0.0f};
+Position const AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN = {-644.000f, -430.000f, 59.000f, 0.0f};
 Position const EY_WAITING_POS_HORDE = {1809.102f, 1540.854f, 1267.142f, 0.0f};
 Position const EY_WAITING_POS_ALLIANCE = {2523.827f, 1596.915f, 1270.204f, 0.0f};
 Position const EY_FLAG_RETURN_POS_RETREAT_HORDE = {1885.529f, 1532.157f, 1200.635f, 0.0f};
@@ -1868,6 +1870,9 @@ static bool AllianceAVShouldHoldIcebloodBeachhead(Battleground* bg, Battleground
 static bool AllianceAVShouldUseIcebloodBeachheadPlan(Battleground* bg, BattlegroundAV* av,
                                                      AllianceAVThreatLevel threat,
                                                      AVBotStrategy hordeStrategy);
+static Player* SelectAllianceIcebloodBeachheadEnemy(Player* bot, Battleground* bg, BattlegroundAV* av,
+                                                    AllianceAVThreatLevel threat,
+                                                    AVBotStrategy hordeStrategy);
 static Player* SelectAllianceNorthRushEnemy(Player* bot, Battleground* bg, AllianceAVRushInfo const& rushInfo,
                                             AllianceAVThreatLevel threat, uint8 role, bool isDefender,
                                             uint8 defenderLimit);
@@ -2956,6 +2961,60 @@ static bool AllianceAVShouldUseIcebloodBeachheadPlan(Battleground* bg, Battlegro
     return false;
 }
 
+static Player* SelectAllianceIcebloodBeachheadEnemy(Player* bot, Battleground* bg, BattlegroundAV* av,
+                                                    AllianceAVThreatLevel threat,
+                                                    AVBotStrategy hordeStrategy)
+{
+    if (!bot || !bg || !av || !AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy))
+        return nullptr;
+
+    BG_AV_NodeInfo const& node = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
+    bool const allianceAssaulting = node.State == POINT_ASSAULTED && node.OwnerId == TEAM_ALLIANCE;
+    bool const allianceControlled = node.State == POINT_CONTROLLED && node.OwnerId == TEAM_ALLIANCE;
+    if (!allianceAssaulting && !allianceControlled)
+        return nullptr;
+
+    float centerX = AV_ALLIANCE_IBGY_FLAG_HOLD.GetPositionX();
+    float centerY = AV_ALLIANCE_IBGY_FLAG_HOLD.GetPositionY();
+    if (GameObject* center = SelectAllianceIcebloodGraveyardHoldObjective(bg))
+    {
+        centerX = center->GetPositionX();
+        centerY = center->GetPositionY();
+    }
+
+    float const defenseRadius = allianceAssaulting ? 145.0f : 125.0f;
+    float const defenseRadiusSq = defenseRadius * defenseRadius;
+    float const maxBotDistance = bot->GetPositionX() <= -180.0f ? 260.0f : 320.0f;
+    Player* bestEnemy = nullptr;
+    float bestScore = 0.0f;
+
+    for (auto const& playerPair : bg->GetPlayers())
+    {
+        Player* enemy = playerPair.second;
+        if (!enemy || !enemy->IsAlive() || enemy->GetTeamId() != TEAM_HORDE)
+            continue;
+
+        float const centerDx = enemy->GetPositionX() - centerX;
+        float const centerDy = enemy->GetPositionY() - centerY;
+        float const centerDistSq = centerDx * centerDx + centerDy * centerDy;
+        if (centerDistSq > defenseRadiusSq)
+            continue;
+
+        float const botDistance = bot->GetDistance(enemy);
+        if (botDistance > maxBotDistance)
+            continue;
+
+        float const score = centerDistSq + botDistance * botDistance * 0.25f;
+        if (!bestEnemy || score < bestScore)
+        {
+            bestEnemy = enemy;
+            bestScore = score;
+        }
+    }
+
+    return bestEnemy;
+}
+
 static bool AllianceAVCanCommitToIcebloodBeachhead(Player* bot, uint8 role, bool isDefender, uint8 defenderLimit,
                                                    AllianceAVRushInfo const& rushInfo,
                                                    AllianceAVThreatLevel threat)
@@ -2966,10 +3025,17 @@ static bool AllianceAVCanCommitToIcebloodBeachhead(Player* bot, uint8 role, bool
     if (bot->GetPositionX() <= -180.0f)
         return true;
 
-    if (rushInfo.IsActive() || threat >= AV_THREAT_MEDIUM)
+    if (threat >= AV_THREAT_MEDIUM || rushInfo.level == AV_RUSH_DEEP || rushInfo.level == AV_RUSH_DUNBALDAR)
         return false;
 
-    return role == defenderLimit;
+    uint64 const botId = bot->GetGUID().GetCounter();
+    if (threat == AV_THREAT_LOW || rushInfo.IsActive())
+        return role == defenderLimit && botId % 2 == 0;
+
+    if (role == defenderLimit)
+        return true;
+
+    return defenderLimit < 9 && role == defenderLimit + 1 && botId % 4 == 0;
 }
 
 static bool SetAllianceIcebloodBeachheadPosition(Player* bot, Battleground* bg, BattlegroundAV* av,
@@ -2985,22 +3051,24 @@ static bool SetAllianceIcebloodBeachheadPosition(Player* bot, Battleground* bg, 
     uint8 const relativeRole = role >= firstOffenseRole ? role - firstOffenseRole : role;
 
     Position const* target = &AV_ALLIANCE_IBGY_FLAG_HOLD;
-    float radius = 7.0f;
+    float radius = 6.0f;
 
-    switch (relativeRole % 4)
+    switch (relativeRole % 6)
     {
         case 0:
-            target = &AV_ALLIANCE_IBGY_FLAG_HOLD;
-            radius = 5.0f;
-            break;
         case 1:
-            target = &AV_ALLIANCE_IBGY_GALVANGAR_INTERCEPT;
-            break;
         case 2:
-            target = &AV_ALLIANCE_IBGY_TOWER_POINT_INTERCEPT;
+        case 3:
+            target = &AV_ALLIANCE_IBGY_FLAG_HOLD;
+            radius = allianceControlled ? 7.0f : 5.0f;
             break;
-        default:
-            target = &AV_ALLIANCE_IBGY_SOUTH_ROAD_INTERCEPT;
+        case 4:
+            target = &AV_ALLIANCE_IBGY_NORTH_LOCKDOWN;
+            radius = 6.0f;
+            break;
+        case 5:
+            target = &AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN;
+            radius = 6.0f;
             break;
     }
     objectiveReason = allianceControlled ? "alliance iceblood controlled hold" : "alliance iceblood assault hold";
@@ -4325,8 +4393,13 @@ bool BGTactics::selectObjective(bool reset)
                 }
                 else if (canCommitToIceblood)
                 {
-                    if (SetAllianceIcebloodBeachheadPosition(bot, bg, av, posMap, pos, role, defendersProhab,
-                                                             objectiveReason))
+                    if (Player* enemy = SelectAllianceIcebloodBeachheadEnemy(bot, bg, av, allianceThreat, strategyHorde))
+                    {
+                        BgObjective = enemy;
+                        objectiveReason = "alliance iceblood lockdown enemy";
+                    }
+                    else if (SetAllianceIcebloodBeachheadPosition(bot, bg, av, posMap, pos, role, defendersProhab,
+                                                                  objectiveReason))
                     {
                         LOG_DEBUG("playerbots",
                                   "AV objective bot={} role={} strategy={} enemyStrategy={} reason={} node={} state={} owner={} prevOwner={} timer={} distance={:.1f}",
@@ -4416,7 +4489,7 @@ bool BGTactics::selectObjective(bool reset)
                         if (Map* map = bot->GetMap())
                         {
                             float groundZ = map->GetHeight(rx, ry, rz);
-                            if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                            if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
                                 rz = groundZ;
                         }
 
@@ -4570,7 +4643,7 @@ bool BGTactics::selectObjective(bool reset)
                     if (Map* map = bot->GetMap())
                     {
                         float groundZ = map->GetHeight(rx, ry, rz);
-                        if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
                             rz = groundZ;
                     }
 
@@ -4664,7 +4737,7 @@ bool BGTactics::selectObjective(bool reset)
                 if (Map* map = bot->GetMap())
                 {
                     float groundZ = map->GetHeight(rx, ry, rz);
-                    if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                    if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
                         rz = groundZ;
                 }
 
@@ -4947,7 +5020,7 @@ bool BGTactics::selectObjective(bool reset)
                 if (Map* map = bot->GetMap())
                 {
                     float groundZ = map->GetHeight(rx, ry, rz);
-                    if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                    if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
                         rz = groundZ;
                 }
                 pos.Set(rx, ry, rz, bot->GetMapId());
@@ -5038,7 +5111,7 @@ bool BGTactics::selectObjective(bool reset)
                 if (Map* map = bot->GetMap())
                 {
                     float groundZ = map->GetHeight(rx, ry, rz);
-                    if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                    if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
                         rz = groundZ;
                 }
 
@@ -5132,7 +5205,7 @@ bool BGTactics::selectObjective(bool reset)
                     if (Map* map = bot->GetMap())
                     {
                         float groundZ = map->GetHeight(rx, ry, rz);
-                        if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
                             rz = groundZ;
                     }
 
@@ -5160,7 +5233,7 @@ bool BGTactics::selectObjective(bool reset)
                     if (Map* map = bot->GetMap())
                     {
                         float groundZ = map->GetHeight(rx, ry, rz);
-                        if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
                             rz = groundZ;
                     }
 
