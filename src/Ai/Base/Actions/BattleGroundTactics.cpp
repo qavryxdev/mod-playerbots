@@ -140,6 +140,7 @@ struct AllianceAVIcebloodBeachheadState
 {
     bool allianceOwned = false;
     uint32 sinceMs = 0;
+    uint32 controlledSinceMs = 0;
 };
 
 static std::unordered_map<uint32, AllianceAVIcebloodBeachheadState> avAllianceIcebloodBeachheadStates;
@@ -1757,16 +1758,60 @@ static bool AllianceHasCommittedFrostwolfFoothold(BattlegroundAV* av, AllianceAV
            AllianceHasForwardDrekRespawn(av) && rushInfo.allianceSouth >= 10;
 }
 
-static bool AllianceAVCanReleaseIdleNorthReserve(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
-                                                 AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode)
+static bool AllianceAVNorthIsQuiet(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
+                                   AllianceAVThreatLevel threat)
 {
     if (!av || threat != AV_THREAT_NONE || rushInfo.IsActive() || GetAllianceDefensivePressure(av) > 0)
         return false;
 
-    if (rushInfo.hordeNorth > 0 || rushInfo.hordeDeepNorth > 0 || rushInfo.hordeDunBaldar > 0)
+    return rushInfo.hordeNorth == 0 && rushInfo.hordeDeepNorth == 0 && rushInfo.hordeDunBaldar == 0;
+}
+
+static bool AllianceAVNeedsIcebloodMainForce(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
+                                             AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode)
+{
+    if (!AllianceAVNorthIsQuiet(av, rushInfo, threat))
         return false;
 
-    if (rushInfo.allianceSouth < 18)
+    if (mode != AV_MODE_IBGY_PUSH && mode != AV_MODE_IBGY_GUARD)
+        return false;
+
+    if (AllianceHasForwardDrekRespawn(av) && !AllianceHordeCaptainAlive(av))
+        return false;
+
+    if (rushInfo.allianceSouth >= 16)
+        return false;
+
+    bool const icebloodAssaulted = AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    bool const icebloodControlled = AllianceAVNodeControlledBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    return icebloodAssaulted || icebloodControlled || !AllianceHordeCaptainAlive(av);
+}
+
+static bool AllianceAVCanReleaseIdleNorthReserve(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
+                                                 AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode)
+{
+    if (!AllianceAVNorthIsQuiet(av, rushInfo, threat))
+        return false;
+
+    if (AllianceAVNeedsIcebloodMainForce(av, rushInfo, threat, mode))
+        return true;
+
+    return rushInfo.allianceSouth >= 18 &&
+           (mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
+           mode == AV_MODE_SOUTH_TOWER_SPLIT || mode == AV_MODE_DREK_SETUP ||
+           mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_PUSH);
+}
+
+static uint8 GetAllianceAVReleasedDefenderLimit(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
+                                                AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode)
+{
+    return AllianceAVNeedsIcebloodMainForce(av, rushInfo, threat, mode) ? 2 : 1;
+}
+
+static bool AllianceAVShouldScreenIdleNorthReserve(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
+                                                   AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode)
+{
+    if (!AllianceAVNorthIsQuiet(av, rushInfo, threat))
         return false;
 
     return mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
@@ -1933,7 +1978,7 @@ static bool AllianceShouldTakeSnowfall(BattlegroundAV* av, AllianceAVRushInfo co
         return role == 4 && threat == AV_THREAT_NONE && rushInfo.elapsedMs >= 45 * 1000;
 
     if (mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD)
-        return role == 4 && threat <= AV_THREAT_LOW && rushInfo.allianceSouth >= 8;
+        return role == 4 && threat <= AV_THREAT_LOW && rushInfo.allianceSouth >= 4;
 
     if (mode == AV_MODE_GALVANGAR_STRIKE)
         return role == 4 && threat <= AV_THREAT_LOW;
@@ -3145,22 +3190,32 @@ static bool AllianceAVShouldHoldIcebloodBeachhead(Battleground* bg, Battleground
         state.sinceMs = now;
     }
 
+    if (allianceControlled)
+    {
+        if (state.controlledSinceMs == 0)
+            state.controlledSinceMs = now;
+    }
+    else
+        state.controlledSinceMs = 0;
+
     GameObject* center = SelectAllianceIcebloodGraveyardHoldObjective(bg);
     uint32 const hordeNear = CountBattlegroundPlayersNear(bg, TEAM_HORDE, center, 220.0f, true);
     uint32 const allianceNear = CountBattlegroundPlayersNear(bg, TEAM_ALLIANCE, center, 220.0f, true);
     bool const hordeDefensive = hordeStrategy == AV_STRATEGY_DEFENSIVE;
     bool const localHordePressure = hordeNear >= 5 || (allianceAssaulting && hordeNear >= 2);
     bool const allianceLocalControl = allianceNear >= 12 && allianceNear >= hordeNear + 6;
-    uint32 const freshMs = hordeDefensive ? 120000 : 75000;
-    bool const freshBeachhead = now >= state.sinceMs && now - state.sinceMs < freshMs;
+    uint32 const stableMs = hordeDefensive ? 90000 : 60000;
+    bool const controlledFresh = allianceControlled && state.controlledSinceMs > 0 &&
+                                 now >= state.controlledSinceMs &&
+                                 now - state.controlledSinceMs < stableMs;
 
     if (allianceAssaulting)
         return true;
 
-    if (localHordePressure && !allianceLocalControl)
+    if (controlledFresh)
         return true;
 
-    if (hordeDefensive && freshBeachhead)
+    if (localHordePressure && !allianceLocalControl)
         return true;
 
     return hordeDefensive && hordeNear >= 4 && !allianceLocalControl;
@@ -3271,6 +3326,12 @@ static bool AllianceAVCanCommitToIcebloodBeachhead(Player* bot, uint8 role, bool
         return false;
 
     uint64 const botId = bot->GetGUID().GetCounter();
+    bool const quietNorth = threat == AV_THREAT_NONE && !rushInfo.IsActive() &&
+                            rushInfo.hordeNorth == 0 && rushInfo.hordeDeepNorth == 0 &&
+                            rushInfo.hordeDunBaldar == 0;
+    if (quietNorth && rushInfo.allianceSouth < 16)
+        return role >= defenderLimit;
+
     if (threat == AV_THREAT_LOW || rushInfo.IsActive())
         return role == defenderLimit && botId % 2 == 0;
 
@@ -3612,8 +3673,14 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
             }
         }
 
-        if (!AllianceHordeCaptainAlive(av) && role >= 6 &&
-            !AllianceAVShouldThrottlePreIcebloodTowerPressure(bg, av, hordeStrategy))
+        GameObject* icebloodCenter = SelectAllianceIcebloodGraveyardHoldObjective(bg);
+        uint32 const hordeNearIceblood = CountBattlegroundPlayersNear(bg, TEAM_HORDE, icebloodCenter, 220.0f, true);
+        bool const canPressureTowersBeforeIceblood =
+            hordeStrategy != AV_STRATEGY_DEFENSIVE && threat == AV_THREAT_NONE && !rushInfo.IsActive() &&
+            rushInfo.allianceSouth >= 12 && hordeNearIceblood <= 3 &&
+            !AllianceAVShouldThrottlePreIcebloodTowerPressure(bg, av, hordeStrategy);
+
+        if (!AllianceHordeCaptainAlive(av) && role >= 8 && canPressureTowersBeforeIceblood)
         {
             std::vector<std::pair<uint8, uint32>> towerPressureObjectives = {
                 {BG_AV_NODES_ICEBLOOD_TOWER, BG_AV_OBJECT_FLAG_H_ICEBLOOD_TOWER},
@@ -4618,7 +4685,9 @@ bool BGTactics::selectObjective(bool reset)
             else if (team == TEAM_ALLIANCE &&
                      AllianceAVCanReleaseIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode))
             {
-                defendersProhab = std::min<uint8>(defendersProhab, 1);
+                defendersProhab = std::min<uint8>(
+                    defendersProhab,
+                    GetAllianceAVReleasedDefenderLimit(av, allianceRushInfo, allianceThreat, allianceMode));
             }
 
             bool isDefender = role < defendersProhab;
@@ -4743,6 +4812,17 @@ bool BGTactics::selectObjective(bool reset)
                                                                                         allianceThreat);
                 if (!canCommitToIceblood && bot->GetPositionX() > -180.0f)
                 {
+                    if (AllianceAVShouldScreenIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode) &&
+                        SetAllianceNorthReservePosition(bot, posMap, pos, role, objectiveReason))
+                    {
+                        LOG_DEBUG("playerbots",
+                                  "AV objective bot={} role={} strategy={} enemyStrategy={} reason={} node={} state={} owner={} prevOwner={} timer={} distance={:.1f}",
+                                  bot->GetName(), static_cast<uint32>(role), static_cast<uint32>(strategy),
+                                  static_cast<uint32>(enemyStrategy), objectiveReason, 255, 255, 255, 255, 0,
+                                  ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y));
+                        return true;
+                    }
+
                     BgObjective = SelectAllianceAVDefenderObjective(bot, bg, av, allianceRushInfo);
                     if (BgObjective)
                         objectiveReason = "alliance north reserve hold";
@@ -4892,6 +4972,17 @@ bool BGTactics::selectObjective(bool reset)
             {
                 if (team == TEAM_ALLIANCE)
                 {
+                    if (AllianceAVShouldScreenIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode) &&
+                        SetAllianceNorthReservePosition(bot, posMap, pos, role, objectiveReason))
+                    {
+                        LOG_DEBUG("playerbots",
+                                  "AV objective bot={} role={} strategy={} enemyStrategy={} reason={} node={} state={} owner={} prevOwner={} timer={} distance={:.1f}",
+                                  bot->GetName(), static_cast<uint32>(role), static_cast<uint32>(strategy),
+                                  static_cast<uint32>(enemyStrategy), objectiveReason, 255, 255, 255, 255, 0,
+                                  ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y));
+                        return true;
+                    }
+
                     BgObjective = SelectAllianceAVDefenderObjective(bot, bg, av, allianceRushInfo);
                     if (BgObjective)
                         objectiveReason = "alliance defender weighted objective";
@@ -6230,7 +6321,8 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             }
             else if (AllianceAVCanReleaseIdleNorthReserve(av, rushInfo, threat, mode))
             {
-                defenderLimit = std::min<uint8>(defenderLimit, 1);
+                defenderLimit = std::min<uint8>(
+                    defenderLimit, GetAllianceAVReleasedDefenderLimit(av, rushInfo, threat, mode));
             }
             bool isDefender = role < defenderLimit;
             if (isDefender && bot->GetPositionX() <= -462.0f)
