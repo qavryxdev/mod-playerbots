@@ -696,6 +696,21 @@ BattleBotPath vPath_AV_AllianceCaptain_To_HordeCrossroad3 = {
     {-504.724f, -313.745f, 31.938f, nullptr}, {-518.431f, -333.087f, 34.017f, nullptr}
 };
 
+BattleBotPath vPath_AV_AllianceCrossroad2_To_HordeCaptain_Bypass = {
+    {78.143f, -409.215f, 48.040f, nullptr},   {62.663f, -401.117f, 47.686f, nullptr},
+    {44.941f, -391.846f, 46.729f, nullptr},   {23.675f, -380.722f, 46.197f, nullptr},
+    {5.068f, -375.800f, 38.360f, nullptr},    {-20.305f, -381.770f, 23.532f, nullptr},
+    {-47.915f, -377.135f, 14.841f, nullptr},  {-79.438f, -371.629f, 15.242f, nullptr},
+    {-107.020f, -366.811f, 18.567f, nullptr}, {-122.782f, -364.058f, 12.067f, nullptr},
+    {-154.762f, -347.950f, 11.750f, nullptr}, {-186.307f, -330.604f, 9.534f, nullptr},
+    {-221.358f, -311.330f, 7.410f, nullptr},  {-256.408f, -292.056f, 7.330f, nullptr},
+    {-291.458f, -272.782f, 7.387f, nullptr},  {-329.904f, -251.389f, 13.442f, nullptr},
+    {-364.410f, -231.156f, 13.523f, nullptr}, {-399.633f, -212.296f, 24.124f, nullptr},
+    {-430.368f, -203.385f, 27.834f, nullptr}, {-461.102f, -194.474f, 47.983f, nullptr},
+    {-490.680f, -182.415f, 57.973f, nullptr}, {-517.238f, -166.027f, 58.585f, nullptr},
+    {-545.230f, -165.350f, 57.015f, nullptr}
+};
+
 BattleBotPath vPath_AV_StoneheartBunker_To_HordeCrossroad3 = {
     {-507.656f, -342.031f, 33.079f, nullptr}, {-490.580f, -348.193f, 29.170f, nullptr},
     {-458.194f, -343.101f, 31.685f, nullptr}, {-441.632f, -329.773f, 19.349f, nullptr},
@@ -1184,6 +1199,7 @@ std::vector<BattleBotPath*> const vPaths_AV = {
     &vPath_AV_AllianceCrossroad2_To_StoneheartBunker,
     &vPath_AV_AllianceCrossroad2_To_AllianceCaptain,
     &vPath_AV_AllianceCaptain_To_HordeCrossroad3,
+    &vPath_AV_AllianceCrossroad2_To_HordeCaptain_Bypass,
     &vPath_AV_AllianceCrossroads3_To_SnowfallGraveyard,
     &vPath_AV_AllianceCaptain_To_AllianceCrossroad3,
     &vPath_AV_StoneheartBunker_To_HordeCrossroad3,
@@ -2250,6 +2266,32 @@ static bool AllianceAVPositionIsHordeCaptainRun(PositionInfo const& pos)
         return false;
 
     return pos.x <= -430.0f && pos.x >= -620.0f && pos.y >= -270.0f && pos.y <= -120.0f;
+}
+
+static bool AllianceAVIcebloodTowerHasHordeArchers(BattlegroundAV* av)
+{
+    if (!av)
+        return false;
+
+    BG_AV_NodeInfo const& node = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_TOWER);
+    return node.State == POINT_CONTROLLED && node.OwnerId == TEAM_HORDE;
+}
+
+static bool AllianceAVShouldAvoidIcebloodTowerForGalvangar(Battleground* bg, PositionInfo const& pos)
+{
+    if (!bg || !pos.valueSet)
+        return false;
+
+    BattlegroundTypeId bgType = bg->GetBgTypeID();
+    if (bgType == BATTLEGROUND_RB)
+        bgType = bg->GetBgTypeID(true);
+
+    if (bgType != BATTLEGROUND_AV)
+        return false;
+
+    BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+    return AllianceHordeCaptainAlive(av) && AllianceAVIcebloodTowerHasHordeArchers(av) &&
+           AllianceAVPositionIsHordeCaptainRun(pos);
 }
 
 static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos)
@@ -6336,10 +6378,20 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         botDistanceScoreMultiply = 4.0f;
     }
 
+    bool const avoidIcebloodTowerForGalvangar =
+        bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVShouldAvoidIcebloodTowerForGalvangar(bg, pos);
+
     // uint32 index = -1;
     // uint32 chosenPathIndex = -1;
     for (auto const& path : vPaths)
     {
+        if (path == &vPath_AV_AllianceCrossroad2_To_HordeCaptain_Bypass && !avoidIcebloodTowerForGalvangar)
+            continue;
+
+        if (avoidIcebloodTowerForGalvangar &&
+            (path == &vPath_AV_HordeCrossroad3_To_IcebloodTower || path == &vPath_AV_IcebloodTower_To_HordeCaptain))
+            continue;
+
         // index++;
         // TODO need to remove sqrt from these two and distToBot but it totally throws path scoring out of
         // whack if you do that without changing how its implemented (I'm amazed it works as well as it does
