@@ -1372,6 +1372,11 @@ static bool IsAllianceHordeTowerAttackTarget(uint8 nodeId)
            nodeId == BG_AV_NODES_FROSTWOLF_ETOWER || nodeId == BG_AV_NODES_FROSTWOLF_WTOWER;
 }
 
+static bool IsAllianceForwardGraveyardAttackTarget(uint8 nodeId)
+{
+    return nodeId == BG_AV_NODES_FROSTWOLF_GRAVE || nodeId == BG_AV_NODES_FROSTWOLF_HUT;
+}
+
 static bool IsAllianceNodeUnderHordePressure(BattlegroundAV* av, uint8 nodeId)
 {
     if (!av)
@@ -1875,7 +1880,7 @@ static bool AllianceShouldTakeSnowfall(BattlegroundAV* av, AllianceAVRushInfo co
 }
 
 static bool AllianceControlsIcebloodGraveyard(BattlegroundAV* av);
-static bool AllianceAVMustHoldIcebloodBeforeTowers(BattlegroundAV* av);
+static bool AllianceAVMustKillCaptainBeforeTowers(BattlegroundAV* av);
 static bool AllianceAVPositionIsHordeCaptainRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos);
@@ -1931,7 +1936,7 @@ static bool AllianceAVCanUseNearbyFlagDuringControlTempo(Player* bot, Battlegrou
     if (AllianceAVIsSnowfallFlag(bg, go))
         return AllianceShouldTakeSnowfall(av, rushInfo, threat, mode, role);
 
-    if (AllianceAVMustHoldIcebloodBeforeTowers(av))
+    if (AllianceAVMustKillCaptainBeforeTowers(av))
         return AllianceAVIsIcebloodGraveFlag(bg, go);
 
     if (AllianceAVIsHordeTowerFlag(bg, go) &&
@@ -1996,10 +2001,11 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
     if (fullRecall && role < 9 && objectivePos.x < 250.0f)
         return true;
 
-    if (!AllianceHordeCaptainAlive(av) && AllianceAVPositionIsHordeCaptainRun(objectivePos))
+    if (!AllianceHordeCaptainAlive(av) && AllianceAVPositionIsHordeCaptainRun(objectivePos) &&
+        !AllianceAVPositionIsHordeTowerRun(bg, objectivePos))
         return true;
 
-    if (AllianceAVMustHoldIcebloodBeforeTowers(av) && AllianceAVPositionIsHordeTowerRun(bg, objectivePos))
+    if (AllianceAVMustKillCaptainBeforeTowers(av) && AllianceAVPositionIsHordeTowerRun(bg, objectivePos))
         return true;
 
     AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE));
@@ -2036,9 +2042,10 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
         bot->GetDistance(objectivePos.x, objectivePos.y, objectivePos.z) < 24.0f)
         return true;
 
-    if (!isDefender && !AllianceHordeCaptainAlive(av) && !AllianceControlsIcebloodGraveyard(av) &&
+    if (!isDefender && !AllianceHordeCaptainAlive(av) && !AllianceHasAnySouthRespawn(av) &&
         objectivePos.x < -120.0f &&
-        !AllianceAVPositionIsIcebloodGraveRun(objectivePos) && !AllianceAVPositionIsSnowfallRun(bg, objectivePos))
+        !AllianceAVPositionIsIcebloodGraveRun(objectivePos) && !AllianceAVPositionIsSnowfallRun(bg, objectivePos) &&
+        !AllianceAVPositionIsHordeTowerRun(bg, objectivePos))
         return true;
 
     if (AllianceAVPositionIsSnowfallRun(bg, objectivePos) &&
@@ -2163,9 +2170,9 @@ static bool AllianceControlsIcebloodGraveyard(BattlegroundAV* av)
     return AllianceAVNodeControlledBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
 }
 
-static bool AllianceAVMustHoldIcebloodBeforeTowers(BattlegroundAV* av)
+static bool AllianceAVMustKillCaptainBeforeTowers(BattlegroundAV* av)
 {
-    return av && !AllianceControlsIcebloodGraveyard(av);
+    return av && AllianceHordeCaptainAlive(av);
 }
 
 static bool AllianceAVPositionNearBGObject(Battleground* bg, PositionInfo const& pos, uint32 goId, float radius)
@@ -2594,6 +2601,9 @@ static GameObject* SelectAllianceAVEmergencyDefenseObjective(Player* bot, Battle
         BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
         if (node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE && node.PrevOwnerId == TEAM_ALLIANCE)
         {
+            if (!AllianceHasAnySouthRespawn(av) && IsAllianceForwardGraveyardAttackTarget(nodeId))
+                continue;
+
             uint8 priority = 5;
             if (IsAllianceCoreGraveyard(nodeId))
                 priority = 1;
@@ -2674,8 +2684,11 @@ static GameObject* SelectAllianceAssaultGuardObjective(Player* bot, Battleground
         if (node.State != POINT_ASSAULTED || node.OwnerId != TEAM_ALLIANCE)
             continue;
 
-        if ((AllianceAVMustHoldIcebloodBeforeTowers(av) || holdIcebloodBeachhead) &&
+        if ((AllianceAVMustKillCaptainBeforeTowers(av) || holdIcebloodBeachhead) &&
             IsAllianceHordeTowerAttackTarget(nodeId))
+            continue;
+
+        if (!AllianceHasAnySouthRespawn(av) && IsAllianceForwardGraveyardAttackTarget(nodeId))
             continue;
 
         GameObject* go = bg->GetBGObject(goId);
@@ -2866,8 +2879,11 @@ static GameObject* SelectAllianceAttackNodeObjective(Battleground* bg, Battlegro
         node.TotalOwnerId == TEAM_ALLIANCE)
         return nullptr;
 
-    if ((AllianceAVMustHoldIcebloodBeforeTowers(av) || holdIcebloodBeachhead) &&
+    if ((AllianceAVMustKillCaptainBeforeTowers(av) || holdIcebloodBeachhead) &&
         IsAllianceHordeTowerAttackTarget(nodeId))
+        return nullptr;
+
+    if (!AllianceHasAnySouthRespawn(av) && IsAllianceForwardGraveyardAttackTarget(nodeId))
         return nullptr;
 
     if (GameObject* guard = SelectAllianceGuardedAssaultObjectiveForNode(bg, av, nodeId))
@@ -3419,6 +3435,21 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
             {
                 objectiveReason = "control tempo snowfall";
                 return snowfall;
+            }
+        }
+
+        if (!AllianceHordeCaptainAlive(av) && role >= 6)
+        {
+            std::vector<std::pair<uint8, uint32>> towerPressureObjectives = {
+                {BG_AV_NODES_ICEBLOOD_TOWER, BG_AV_OBJECT_FLAG_H_ICEBLOOD_TOWER},
+                {BG_AV_NODES_TOWER_POINT, BG_AV_OBJECT_FLAG_H_TOWER_POINT},
+            };
+
+            if (GameObject* target = SelectFirstAllianceAttackNode(bg, av, towerPressureObjectives, role,
+                                                                   AV_STRATEGY_ALLIANCE_CONTROL_TEMPO))
+            {
+                objectiveReason = "control tempo tower pressure before iceblood";
+                return target;
             }
         }
 
@@ -4454,6 +4485,9 @@ bool BGTactics::selectObjective(bool reset)
                     if (node.State != POINT_ASSAULTED || node.OwnerId != TEAM_HORDE || node.PrevOwnerId != TEAM_ALLIANCE)
                         continue;
 
+                    if (!AllianceHasAnySouthRespawn(av) && IsAllianceForwardGraveyardAttackTarget(nodeId))
+                        continue;
+
                     GameObject* go = bg->GetBGObject(goId);
                     if (!go || !go->isSpawned())
                         continue;
@@ -4748,7 +4782,11 @@ bool BGTactics::selectObjective(bool reset)
                 for (auto const& [nodeId, goId] : attackObjectives)
                 {
                     if (team == TEAM_ALLIANCE && IsAllianceHordeTowerAttackTarget(nodeId) &&
-                        !AllianceControlsIcebloodGraveyard(av))
+                        AllianceAVMustKillCaptainBeforeTowers(av))
+                        continue;
+
+                    if (team == TEAM_ALLIANCE && !AllianceHasAnySouthRespawn(av) &&
+                        IsAllianceForwardGraveyardAttackTarget(nodeId))
                         continue;
 
                     const BG_AV_NodeInfo& node = av->GetAVNodeInfo(nodeId);
@@ -4775,23 +4813,35 @@ bool BGTactics::selectObjective(bool reset)
                 }
                 else
                 {
-                    // Fallback: move to boss wait position
-                    const Position& waitPos = (team == TEAM_HORDE) ? AV_BOSS_WAIT_H : AV_BOSS_WAIT_A;
-
-                    float rx, ry, rz;
-                    bot->GetRandomPoint(waitPos, 5.0f, rx, ry, rz);
-                    ResolveBattleGroundGroundZ(bot, rx, ry, rz);
-
-                    pos.Set(rx, ry, rz, bot->GetMapId());
-                    posMap["bg objective"] = pos;
-
-                    uint32 bossId = (team == TEAM_HORDE) ? AV_CREATURE_A_BOSS : AV_CREATURE_H_BOSS;
-                    if (Creature* boss = bg->GetBGCreature(bossId))
-                        if (boss->IsAlive())
+                    if (team == TEAM_ALLIANCE && !AllianceHasAnySouthRespawn(av))
+                    {
+                        BgObjective = SelectAllianceIcebloodGraveyardObjective(bg, av);
+                        if (BgObjective)
                         {
-                            BgObjective = boss;
-                            objectiveReason = "boss wait fallback";
+                            objectiveReason = "alliance iceblood fallback";
                         }
+                    }
+
+                    if (!BgObjective)
+                    {
+                        // Fallback: move to boss wait position
+                        const Position& waitPos = (team == TEAM_HORDE) ? AV_BOSS_WAIT_H : AV_BOSS_WAIT_A;
+
+                        float rx, ry, rz;
+                        bot->GetRandomPoint(waitPos, 5.0f, rx, ry, rz);
+                        ResolveBattleGroundGroundZ(bot, rx, ry, rz);
+
+                        pos.Set(rx, ry, rz, bot->GetMapId());
+                        posMap["bg objective"] = pos;
+
+                        uint32 bossId = (team == TEAM_HORDE) ? AV_CREATURE_A_BOSS : AV_CREATURE_H_BOSS;
+                        if (Creature* boss = bg->GetBGCreature(bossId))
+                            if (boss->IsAlive())
+                            {
+                                BgObjective = boss;
+                                objectiveReason = "boss wait fallback";
+                            }
+                    }
                 }
             }
 
