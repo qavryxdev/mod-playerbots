@@ -1360,6 +1360,12 @@ static bool IsAllianceDunBaldarTower(uint8 nodeId)
     return nodeId == BG_AV_NODES_DUNBALDAR_SOUTH || nodeId == BG_AV_NODES_DUNBALDAR_NORTH;
 }
 
+static bool IsAllianceDunBaldarCoreDefense(uint8 nodeId)
+{
+    return nodeId == BG_AV_NODES_FIRSTAID_STATION || nodeId == BG_AV_NODES_STORMPIKE_GRAVE ||
+           IsAllianceDunBaldarTower(nodeId);
+}
+
 static bool IsAllianceDefensiveTower(uint8 nodeId)
 {
     return IsAllianceDunBaldarTower(nodeId) || nodeId == BG_AV_NODES_ICEWING_BUNKER ||
@@ -1377,6 +1383,12 @@ static bool IsAllianceForwardGraveyardAttackTarget(uint8 nodeId)
     return nodeId == BG_AV_NODES_FROSTWOLF_GRAVE || nodeId == BG_AV_NODES_FROSTWOLF_HUT;
 }
 
+static bool IsAllianceFrostwolfObjective(uint8 nodeId)
+{
+    return nodeId == BG_AV_NODES_FROSTWOLF_GRAVE || nodeId == BG_AV_NODES_FROSTWOLF_HUT ||
+           nodeId == BG_AV_NODES_FROSTWOLF_ETOWER || nodeId == BG_AV_NODES_FROSTWOLF_WTOWER;
+}
+
 static bool IsAllianceNodeUnderHordePressure(BattlegroundAV* av, uint8 nodeId)
 {
     if (!av)
@@ -1390,6 +1402,17 @@ static bool IsAllianceNodeUnderHordePressure(BattlegroundAV* av, uint8 nodeId)
         return true;
 
     return IsAllianceDefensiveTower(nodeId) && node.State == POINT_DESTROYED;
+}
+
+static bool AllianceHasDunBaldarCorePressure(BattlegroundAV* av)
+{
+    if (!av)
+        return false;
+
+    return IsAllianceNodeUnderHordePressure(av, BG_AV_NODES_FIRSTAID_STATION) ||
+           IsAllianceNodeUnderHordePressure(av, BG_AV_NODES_STORMPIKE_GRAVE) ||
+           IsAllianceNodeUnderHordePressure(av, BG_AV_NODES_DUNBALDAR_SOUTH) ||
+           IsAllianceNodeUnderHordePressure(av, BG_AV_NODES_DUNBALDAR_NORTH);
 }
 
 static uint32 GetAllianceDefensivePressure(BattlegroundAV* av)
@@ -1711,6 +1734,30 @@ static bool AllianceAVShouldFullRecallNorth(BattlegroundAV* av, AllianceAVThreat
     return av && (threat >= AV_THREAT_HIGH || AllianceDunBaldarBaseActuallyLost(av));
 }
 
+static bool AllianceHasCommittedFrostwolfFoothold(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
+                                                  AllianceAVThreatLevel threat)
+{
+    return av && threat < AV_THREAT_HIGH && !AllianceHordeCaptainAlive(av) &&
+           AllianceHasForwardDrekRespawn(av) && rushInfo.allianceSouth >= 10;
+}
+
+static bool AllianceAVCanReleaseIdleNorthReserve(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
+                                                 AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode)
+{
+    if (!av || threat != AV_THREAT_NONE || rushInfo.IsActive() || GetAllianceDefensivePressure(av) > 0)
+        return false;
+
+    if (rushInfo.hordeNorth > 0 || rushInfo.hordeDeepNorth > 0 || rushInfo.hordeDunBaldar > 0)
+        return false;
+
+    if (rushInfo.allianceSouth < 18)
+        return false;
+
+    return mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
+           mode == AV_MODE_SOUTH_TOWER_SPLIT || mode == AV_MODE_DREK_SETUP ||
+           mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_PUSH;
+}
+
 static bool AllianceHordeCaptainAlive(BattlegroundAV* av)
 {
     return av && av->IsCaptainAlive(TEAM_HORDE);
@@ -1815,10 +1862,16 @@ static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(Battleground* bg, 
     if (finalDrekWindow && !AllianceDunBaldarBaseActuallyLost(av))
         return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_DREK_PUSH);
 
+    bool const ownsForwardGY = AllianceHasForwardDrekRespawn(av);
+    bool const committedFrostwolf = AllianceHasCommittedFrostwolfFoothold(av, rushInfo, threat);
     bool const icebloodControlled = AllianceAVNodeControlledBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const icebloodAssaulted = AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     if (!icebloodControlled)
     {
+        if (committedFrostwolf)
+            return ApplyAllianceAVModeHysteresis(bg, av, threat,
+                                                 towerProgress >= 2 ? AV_MODE_DREK_SETUP : AV_MODE_FROSTWOLF_LOCK);
+
         if (AllianceHordeCaptainAlive(av))
             return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_GALVANGAR_STRIKE);
 
@@ -1829,7 +1882,6 @@ static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(Battleground* bg, 
                                              rushInfo.elapsedMs < 90 * 1000 ? AV_MODE_OPENING_CONTROL : AV_MODE_IBGY_PUSH);
     }
 
-    bool const ownsForwardGY = AllianceHasForwardDrekRespawn(av);
     if (finalDrekWindow || (!AllianceHordeCaptainAlive(av) && ownsForwardGY && towersDown >= 3 && rushInfo.allianceSouth >= 12))
         return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_DREK_PUSH);
 
@@ -2014,6 +2066,7 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
     bool const allianceAssaultingIBGY = AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const southernIcebloodGroup = bot->GetPositionX() < -180.0f;
     if (allianceAssaultingIBGY && southernIcebloodGroup &&
+        !AllianceHasCommittedFrostwolfFoothold(av, rushInfo, threat) &&
         !AllianceAVPositionIsIcebloodHoldPerimeter(bg, objectivePos, true) &&
         !AllianceAVPositionIsSnowfallRun(bg, objectivePos))
         return true;
@@ -2051,7 +2104,8 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
 
     if (AllianceAVPositionIsSnowfallRun(bg, objectivePos) &&
         !AllianceShouldTakeSnowfall(av, rushInfo, threat, mode, role) &&
-        !IsAllianceNodeUnderHordePressure(av, BG_AV_NODES_SNOWFALL_GRAVE))
+        (!IsAllianceNodeUnderHordePressure(av, BG_AV_NODES_SNOWFALL_GRAVE) ||
+         threat >= AV_THREAT_HIGH || AllianceHasDunBaldarCorePressure(av)))
         return true;
 
     return AllianceAVShouldResetStalledObjective(bot, bg, objectivePos);
@@ -2525,9 +2579,13 @@ static GameObject* SelectAllianceAVEmergencyDefenseObjective(Player* bot, Battle
     };
 
     std::vector<Candidate> candidates;
+    bool const coreEmergency = threat >= AV_THREAT_HIGH && AllianceHasDunBaldarCorePressure(av);
 
     auto addCandidate = [&](uint8 nodeId, uint32 goId, uint8 priority)
     {
+        if (coreEmergency && !IsAllianceDunBaldarCoreDefense(nodeId))
+            return;
+
         if (nodeId == BG_AV_NODES_SNOWFALL_GRAVE && role != 4)
             return;
 
@@ -2665,7 +2723,8 @@ static bool ShouldAllianceGuardAssaultedNode(uint8 nodeId, uint8 role, AVBotStra
 
 static GameObject* SelectAllianceAssaultGuardObjective(Player* bot, Battleground* bg, BattlegroundAV* av, uint8 role,
                                                        AVBotStrategy strategy,
-                                                       bool holdIcebloodBeachhead = false)
+                                                       bool holdIcebloodBeachhead = false,
+                                                       bool deepFrostwolfOnly = false)
 {
     if (!bot || !bg || !av || bot->GetTeamId() != TEAM_ALLIANCE)
         return nullptr;
@@ -2685,6 +2744,9 @@ static GameObject* SelectAllianceAssaultGuardObjective(Player* bot, Battleground
         if (node.State != POINT_ASSAULTED || node.OwnerId != TEAM_ALLIANCE)
             continue;
 
+        if (deepFrostwolfOnly && bot->GetPositionX() <= -900.0f && !IsAllianceFrostwolfObjective(nodeId))
+            continue;
+
         if ((AllianceAVMustKillCaptainBeforeTowers(av) || holdIcebloodBeachhead) &&
             IsAllianceHordeTowerAttackTarget(nodeId))
             continue;
@@ -2698,6 +2760,11 @@ static GameObject* SelectAllianceAssaultGuardObjective(Player* bot, Battleground
 
         float const distance = bot->GetDistance(go);
         bool const guardRole = ShouldAllianceGuardAssaultedNode(nodeId, role, strategy);
+        bool const frostwolfLockIncomplete = strategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO &&
+                                             !AllianceHasForwardDrekRespawn(av);
+        if (frostwolfLockIncomplete && IsAllianceHordeTowerAttackTarget(nodeId) &&
+            !IsAllianceFrostwolfObjective(nodeId) && !guardRole)
+            continue;
 
         if (!guardRole && distance > 120.0f)
             continue;
@@ -2953,6 +3020,9 @@ static Player* SelectAllianceNorthRushEnemy(Player* bot, Battleground* bg, Allia
     bool const northernBot = bot->GetPositionX() > -180.0f;
     bool const reserveRole = defenderLimit > 0 && role < std::min<uint8>(9, defenderLimit + 2);
     BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+    if (AllianceHasCommittedFrostwolfFoothold(av, rushInfo, threat) && !northernBot)
+        return nullptr;
+
     if (AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE) &&
         !AllianceAVShouldFullRecallNorth(av, threat) && !northernBot)
         return nullptr;
@@ -3019,6 +3089,12 @@ static bool AllianceAVShouldHoldIcebloodBeachhead(Battleground* bg, Battleground
         return false;
     }
 
+    if (AllianceHasForwardDrekRespawn(av) && !AllianceHordeCaptainAlive(av))
+    {
+        avAllianceIcebloodBeachheadStates.erase(instanceId);
+        return false;
+    }
+
     uint32 const now = bg->GetStartTime();
     auto& state = avAllianceIcebloodBeachheadStates[instanceId];
     if (!state.allianceOwned || state.sinceMs == 0)
@@ -3063,6 +3139,21 @@ static bool AllianceAVShouldUseIcebloodBeachheadPlan(Battleground* bg, Battlegro
         return AllianceAVShouldHoldIcebloodBeachhead(bg, av, threat, hordeStrategy);
 
     return false;
+}
+
+static bool AllianceAVShouldThrottlePreIcebloodTowerPressure(Battleground* bg, BattlegroundAV* av,
+                                                             AVBotStrategy hordeStrategy)
+{
+    if (!bg || !av || hordeStrategy != AV_STRATEGY_DEFENSIVE)
+        return false;
+
+    if (AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE) ||
+        AllianceControlsIcebloodGraveyard(av))
+        return false;
+
+    GameObject* center = SelectAllianceIcebloodGraveyardHoldObjective(bg);
+    uint32 const hordeNear = CountBattlegroundPlayersNear(bg, TEAM_HORDE, center, 220.0f, true);
+    return hordeNear >= 8;
 }
 
 static Player* SelectAllianceIcebloodBeachheadEnemy(Player* bot, Battleground* bg, BattlegroundAV* av,
@@ -3321,6 +3412,7 @@ static GameObject* SelectAllianceFrostwolfLockObjective(Player* bot, Battlegroun
 
     bool const fwGraveControlled = AllianceAVNodeControlledBy(av, BG_AV_NODES_FROSTWOLF_GRAVE, TEAM_ALLIANCE);
     bool const fwHutControlled = AllianceAVNodeControlledBy(av, BG_AV_NODES_FROSTWOLF_HUT, TEAM_ALLIANCE);
+    bool const deepFrostwolfBot = bot->GetPositionX() <= -900.0f;
 
     if (!fwGraveControlled)
     {
@@ -3354,7 +3446,16 @@ static GameObject* SelectAllianceFrostwolfLockObjective(Player* bot, Battlegroun
         return nullptr;
 
     std::vector<std::pair<uint8, uint32>> objectives;
-    switch (role)
+    if (deepFrostwolfBot)
+    {
+        objectives = {
+            {BG_AV_NODES_FROSTWOLF_ETOWER, BG_AV_OBJECT_FLAG_H_FROSTWOLF_ETOWER},
+            {BG_AV_NODES_FROSTWOLF_WTOWER, BG_AV_OBJECT_FLAG_H_FROSTWOLF_WTOWER},
+            {BG_AV_NODES_FROSTWOLF_HUT, BG_AV_OBJECT_FLAG_H_FROSTWOLF_HUT},
+            {BG_AV_NODES_FROSTWOLF_GRAVE, BG_AV_OBJECT_FLAG_H_FROSTWOLF_GRAVE},
+        };
+    }
+    else switch (role)
     {
         case 5:
         case 6:
@@ -3413,8 +3514,38 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
     AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE));
     bool const holdIcebloodBeachhead = AllianceAVShouldHoldIcebloodBeachhead(bg, av, threat, hordeStrategy);
     bool const icebloodControlled = AllianceControlsNode(av, BG_AV_NODES_ICEBLOOD_GRAVE);
+    bool const committedFrostwolf = AllianceHasCommittedFrostwolfFoothold(av, rushInfo, threat);
+    uint32 const towersDown = GetAllianceDestroyedHordeTowerCount(av);
+    uint32 const defensivePressure = GetAllianceDefensivePressure(av);
     if (!icebloodControlled)
     {
+        if (committedFrostwolf)
+        {
+            if (Creature* boss = SelectAllianceDrekPushObjective(bot, bg, av, threat, mode, rushInfo, towersDown,
+                                                                 defensivePressure))
+            {
+                objectiveReason = towersDown >= 4 ? "control tempo drek final push" : "control tempo drek push";
+                return boss;
+            }
+
+            if (mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_SETUP || mode == AV_MODE_DREK_PUSH)
+                if (GameObject* target = SelectAllianceFrostwolfLockObjective(bot, bg, av, role, mode, objectiveReason))
+                    return target;
+
+            if (GameObject* guard = SelectAllianceAssaultGuardObjective(bot, bg, av, role,
+                                                                        AV_STRATEGY_ALLIANCE_CONTROL_TEMPO,
+                                                                        false, true))
+            {
+                objectiveReason = "control tempo committed frostwolf guard";
+                return guard;
+            }
+
+            objectiveReason = "control tempo committed frostwolf hold";
+            if (GameObject* go = bg->GetBGObject(BG_AV_OBJECT_FLAG_A_FROSTWOLF_GRAVE))
+                if (go->isSpawned())
+                    return go;
+        }
+
         if (holdIcebloodBeachhead)
         {
             objectiveReason = "control tempo iceblood beachhead";
@@ -3439,7 +3570,8 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
             }
         }
 
-        if (!AllianceHordeCaptainAlive(av) && role >= 6)
+        if (!AllianceHordeCaptainAlive(av) && role >= 6 &&
+            !AllianceAVShouldThrottlePreIcebloodTowerPressure(bg, av, hordeStrategy))
         {
             std::vector<std::pair<uint8, uint32>> towerPressureObjectives = {
                 {BG_AV_NODES_ICEBLOOD_TOWER, BG_AV_OBJECT_FLAG_H_ICEBLOOD_TOWER},
@@ -3457,9 +3589,6 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
         objectiveReason = mode == AV_MODE_IBGY_GUARD ? "control tempo iceblood guard" : "control tempo iceblood first";
         return SelectAllianceIcebloodGraveyardObjective(bg, av);
     }
-
-    uint32 const towersDown = GetAllianceDestroyedHordeTowerCount(av);
-    uint32 const defensivePressure = GetAllianceDefensivePressure(av);
 
     if (Creature* boss = SelectAllianceDrekPushObjective(bot, bg, av, threat, mode, rushInfo, towersDown, defensivePressure))
     {
@@ -3497,7 +3626,7 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
 
     if (GameObject* guard = SelectAllianceAssaultGuardObjective(bot, bg, av, role,
                                                                 AV_STRATEGY_ALLIANCE_CONTROL_TEMPO,
-                                                                holdIcebloodBeachhead))
+                                                                holdIcebloodBeachhead, committedFrostwolf))
     {
         objectiveReason = "control tempo guard assault";
         return guard;
@@ -4444,6 +4573,11 @@ bool BGTactics::selectObjective(bool reset)
                 uint8 const finalDefenseCap = AllianceDunBaldarBaseActuallyLost(av) ? 7 : 6;
                 defendersProhab = std::min<uint8>(defendersProhab, finalDefenseCap);
             }
+            else if (team == TEAM_ALLIANCE &&
+                     AllianceAVCanReleaseIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode))
+            {
+                defendersProhab = std::min<uint8>(defendersProhab, 1);
+            }
 
             bool isDefender = role < defendersProhab;
             bool isAdvanced = !isDefender && role > 8;
@@ -4487,6 +4621,14 @@ bool BGTactics::selectObjective(bool reset)
                         continue;
 
                     if (!AllianceHasAnySouthRespawn(av) && IsAllianceForwardGraveyardAttackTarget(nodeId))
+                        continue;
+
+                    if (nodeId == BG_AV_NODES_SNOWFALL_GRAVE &&
+                        !AllianceShouldTakeSnowfall(av, allianceRushInfo, allianceThreat, allianceMode, role))
+                        continue;
+
+                    if (allianceThreat >= AV_THREAT_HIGH && AllianceHasDunBaldarCorePressure(av) &&
+                        !IsAllianceDunBaldarCoreDefense(nodeId))
                         continue;
 
                     GameObject* go = bg->GetBGObject(goId);
@@ -4922,7 +5064,11 @@ bool BGTactics::selectObjective(bool reset)
                 if (linkedNodeId && AVNodeMovementTargets.count(*linkedNodeId))
                 {
                     const AVNodePositionData& data = AVNodeMovementTargets[*linkedNodeId];
-                    float const radius = data.maxRadius > 0.0f ? frand(0.5f, data.maxRadius) : 0.0f;
+                    float maxRadius = data.maxRadius;
+                    if (team == TEAM_ALLIANCE && IsAllianceDefensiveTower(*linkedNodeId) && maxRadius <= 0.0f)
+                        maxRadius = 5.0f;
+
+                    float const radius = maxRadius > 0.0f ? frand(0.8f, maxRadius) : 0.0f;
                     bot->GetRandomPoint(data.pos, radius, rx, ry, rz);
                 }
                 else
@@ -6032,7 +6178,21 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             uint8 defenderLimit = GetAVDefenderRoleLimit(TEAM_ALLIANCE, strategy, enemyStrategy, av);
             defenderLimit = std::max<uint8>(defenderLimit,
                                             GetAllianceAVRushDefenderLimit(av, rushInfo, strategy, enemyStrategy));
-            bool const isDefender = role < defenderLimit;
+            uint32 const towersDown = GetAllianceDestroyedHordeTowerCount(av);
+            bool const finalDrekPush = strategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO &&
+                                       AllianceHasFinalDrekWindow(av, rushInfo, towersDown);
+            if (finalDrekPush && !AllianceAVShouldFullRecallNorth(av, threat))
+            {
+                uint8 const finalDefenseCap = AllianceDunBaldarBaseActuallyLost(av) ? 7 : 6;
+                defenderLimit = std::min<uint8>(defenderLimit, finalDefenseCap);
+            }
+            else if (AllianceAVCanReleaseIdleNorthReserve(av, rushInfo, threat, mode))
+            {
+                defenderLimit = std::min<uint8>(defenderLimit, 1);
+            }
+            bool isDefender = role < defenderLimit;
+            if (isDefender && bot->GetPositionX() <= -462.0f)
+                isDefender = false;
 
             if (AllianceAVShouldResetCurrentObjective(bot, bg, av, pos, role, isDefender, rushInfo, threat, mode))
             {
@@ -6808,7 +6968,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             case BATTLEGROUND_IC:
             {
                 // Prevent capturing from inside flag pole
-                if (dist == 0.0f)
+                if (dist < 0.75f)
                 {
                     float const moveDist = bot->GetObjectSize() + go->GetObjectSize() + 0.1f;
                     return MoveTo(bot->GetMapId(), go->GetPositionX() + (urand(0, 1) ? -moveDist : moveDist),
