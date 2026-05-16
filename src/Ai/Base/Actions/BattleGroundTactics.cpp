@@ -1994,11 +1994,13 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
         return false;
 
     bool const fullRecall = AllianceAVShouldFullRecallNorth(av, threat);
+    bool const contestedAllianceDefenseObjective =
+        AllianceAVPositionIsContestedAllianceDefenseObjective(bg, av, objectivePos);
     if ((isDefender || (fullRecall && role < 9)) && rushInfo.IsActive() && objectivePos.x < -180.0f &&
         !AllianceAVPositionIsSnowfallRun(bg, objectivePos))
         return true;
 
-    if (fullRecall && role < 9 && objectivePos.x < 250.0f)
+    if (fullRecall && role < 9 && objectivePos.x < 250.0f && !contestedAllianceDefenseObjective)
         return true;
 
     if (!AllianceHordeCaptainAlive(av) && AllianceAVPositionIsHordeCaptainRun(objectivePos) &&
@@ -2028,18 +2030,17 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
         if (objectiveIsRushEnemy)
             return false;
 
-        bool const contestedDefenseObjective =
-            AllianceAVPositionIsContestedAllianceDefenseObjective(bg, av, objectivePos);
         bool const staticObjective = AllianceAVPositionIsAntiRushRally(objectivePos) ||
                                      (AllianceAVPositionIsAllianceDefenseRun(bg, objectivePos) &&
-                                      !contestedDefenseObjective);
+                                      !contestedAllianceDefenseObjective);
         if (staticObjective)
             return true;
     }
 
     if (isDefender && rushInfo.IsActive() &&
         (AllianceAVPositionIsAntiRushRally(objectivePos) || AllianceAVPositionIsAllianceDefenseRun(bg, objectivePos)) &&
-        bot->GetDistance(objectivePos.x, objectivePos.y, objectivePos.z) < 24.0f)
+        bot->GetDistance(objectivePos.x, objectivePos.y, objectivePos.z) < 24.0f &&
+        !contestedAllianceDefenseObjective)
         return true;
 
     if (!isDefender && !AllianceHordeCaptainAlive(av) && !AllianceHasAnySouthRespawn(av) &&
