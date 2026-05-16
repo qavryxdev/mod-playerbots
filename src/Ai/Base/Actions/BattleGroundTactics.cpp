@@ -6,6 +6,7 @@
 #include "BattleGroundTactics.h"
 
 #include <algorithm>
+#include <mutex>
 
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
@@ -155,6 +156,7 @@ struct AllianceAVObjectiveStallState
 };
 
 static std::unordered_map<uint64, AllianceAVObjectiveStallState> avAllianceObjectiveStallStates;
+static std::mutex avAllianceObjectiveStallStatesMutex;
 
 static bool IsInvalidBattleGroundZ(float z)
 {
@@ -2067,16 +2069,21 @@ static bool AllianceAVShouldResetStalledObjective(Player* bot, Battleground* bg,
 
     if (bot->GetDistance(objectivePos.x, objectivePos.y, objectivePos.z) < 8.0f)
     {
+        std::lock_guard<std::mutex> guard(avAllianceObjectiveStallStatesMutex);
         avAllianceObjectiveStallStates.erase(bot->GetGUID().GetCounter());
         return false;
     }
 
     uint64 const botId = bot->GetGUID().GetCounter();
     uint32 const now = bg->GetStartTime();
+    float const botX = bot->GetPositionX();
+    float const botY = bot->GetPositionY();
+
+    std::lock_guard<std::mutex> guard(avAllianceObjectiveStallStatesMutex);
     auto& state = avAllianceObjectiveStallStates[botId];
 
-    float const movedX = bot->GetPositionX() - state.botX;
-    float const movedY = bot->GetPositionY() - state.botY;
+    float const movedX = botX - state.botX;
+    float const movedY = botY - state.botY;
     float const objectiveMovedX = objectivePos.x - state.objectiveX;
     float const objectiveMovedY = objectivePos.y - state.objectiveY;
 
@@ -2086,8 +2093,8 @@ static bool AllianceAVShouldResetStalledObjective(Player* bot, Battleground* bg,
 
     if (changed)
     {
-        state.botX = bot->GetPositionX();
-        state.botY = bot->GetPositionY();
+        state.botX = botX;
+        state.botY = botY;
         state.objectiveX = objectivePos.x;
         state.objectiveY = objectivePos.y;
         state.sinceMs = now;
@@ -6585,7 +6592,10 @@ bool BGTactics::resetObjective()
         oddsToChangeRole = 0;
 
     if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+    {
+        std::lock_guard<std::mutex> guard(avAllianceObjectiveStallStatesMutex);
         avAllianceObjectiveStallStates.erase(bot->GetGUID().GetCounter());
+    }
 
     bool isCarryingFlag =
         bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) ||
