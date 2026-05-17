@@ -167,7 +167,7 @@ bool MovementAction::MoveToLOS(WorldObject* target, bool ranged)
     return false;
 }
 
-bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, bool react, bool normal_only,
+bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle*/, bool /*react*/, bool normal_only,
                             bool exact_waypoint, MovementPriority priority, bool lessDelay, bool backwards)
 {
     UpdateMovementState();
@@ -1829,7 +1829,7 @@ void MovementAction::DoMovePoint(Unit* unit, float x, float y, float z, bool gen
 
 bool FleeAction::Execute(Event /*event*/)
 {
-    return MoveAway(AI_VALUE(Unit*, "current target"), sPlayerbotAIConfig.fleeDistance, true);
+    return MoveAway(AI_VALUE(Unit*, "current target"), distance, true);
 }
 
 bool FleeAction::isUseful()
@@ -1854,7 +1854,7 @@ bool FleeWithPetAction::Execute(Event /*event*/)
 
 bool AvoidAoeAction::isUseful()
 {
-    if (getMSTime() - moveInterval < lastMoveTimer)
+    if (getMSTime() - lastMoveTimer < moveInterval)
         return false;
 
     GuidVector traps = AI_VALUE(GuidVector, "nearest trap with damage");
@@ -2285,7 +2285,7 @@ bool MovementAction::CheckLastFlee(float curAngle, std::list<FleeInfo>& infoList
 
 bool CombatFormationMoveAction::isUseful()
 {
-    if (getMSTime() - moveInterval < lastMoveTimer)
+    if (getMSTime() - lastMoveTimer < moveInterval)
         return false;
 
     if (bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) != nullptr)

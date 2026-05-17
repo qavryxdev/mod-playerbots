@@ -1841,6 +1841,9 @@ static bool AllianceAVShouldScreenIdleNorthReserve(BattlegroundAV* av, AllianceA
     if (!AllianceAVNorthIsQuiet(av, rushInfo, threat))
         return false;
 
+    if (AllianceAVNeedsIcebloodMainForce(av, rushInfo, threat, mode))
+        return false;
+
     if (mode == AV_MODE_IBGY_BREAKTHROUGH)
         return false;
 
@@ -2152,6 +2155,10 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
     bool const fullRecall = AllianceAVShouldFullRecallNorth(av, threat);
     bool const contestedAllianceDefenseObjective =
         AllianceAVPositionIsContestedAllianceDefenseObjective(bg, av, objectivePos);
+
+    if (contestedAllianceDefenseObjective)
+        return false;
+
     if ((isDefender || (fullRecall && role < 9)) && rushInfo.IsActive() && objectivePos.x < -180.0f &&
         !AllianceAVPositionIsSnowfallRun(bg, objectivePos))
         return true;
@@ -2704,7 +2711,8 @@ static GameObject* SelectAllianceSnowfallObjective(Battleground* bg, Battlegroun
 
 static GameObject* SelectAllianceAVEmergencyDefenseObjective(Player* bot, Battleground* bg, BattlegroundAV* av,
                                                              uint8 role, bool isDefender, AVBotStrategy strategy,
-                                                             uint8 defenderLimit, AllianceAVThreatLevel threat)
+                                                             uint8 defenderLimit, AllianceAVRushInfo const& rushInfo,
+                                                             AllianceAVThreatLevel threat)
 {
     if (!bot || !bg || !av || bot->GetTeamId() != TEAM_ALLIANCE)
         return nullptr;
@@ -2737,8 +2745,22 @@ static GameObject* SelectAllianceAVEmergencyDefenseObjective(Player* bot, Battle
         bool const fullRecall = AllianceAVShouldFullRecallNorth(av, threat);
         bool const committedOffense = bot->GetPositionX() <= -462.0f && !fullRecall;
         bool const homeDefender = isDefender && !committedOffense;
+        bool const northernBot = bot->GetPositionX() > -180.0f;
+        bool const northUnderPressure = threat >= AV_THREAT_LOW || rushInfo.IsActive();
+        bool const forwardRecap = nodeId == BG_AV_NODES_ICEBLOOD_GRAVE ||
+                                  IsAllianceForwardGraveyardAttackTarget(nodeId);
+        bool const coreDefenseNode = IsAllianceDunBaldarCoreDefense(nodeId);
         uint8 const smartLimit = defenderLimit > 0 ? defenderLimit : 4;
         bool shouldRespond = false;
+
+        if (forwardRecap && northUnderPressure && northernBot && distance > 220.0f)
+            return;
+
+        if (northUnderPressure && !coreDefenseNode && distance > 240.0f)
+            return;
+
+        if (fullRecall && !coreDefenseNode && distance > 180.0f)
+            return;
 
         if (fullRecall && role < 9)
             shouldRespond = true;
@@ -4158,10 +4180,11 @@ std::string const BGTactics::HandleConsoleCommandPrivate(WorldSession* session, 
         uint32 max = vPaths->size() - 1;
         if (num >= 0)  // num specified or found
         {
-            if (num > max)
+            uint32 const selectedPath = static_cast<uint32>(num);
+            if (selectedPath > max)
                 return fmt::format("Path {} of range of 0 - {}", num, max);
-            min = num;
-            max = num;
+            min = selectedPath;
+            max = selectedPath;
         }
         for (uint32 j = min; j <= max; j++)
         {
@@ -4834,7 +4857,8 @@ bool BGTactics::selectObjective(bool reset)
             if (!BgObjective)
             {
                 BgObjective = SelectAllianceAVEmergencyDefenseObjective(bot, bg, av, role, isDefender, strategy,
-                                                                        defendersProhab, allianceThreat);
+                                                                        defendersProhab, allianceRushInfo,
+                                                                        allianceThreat);
                 if (BgObjective)
                     objectiveReason = "alliance emergency defense";
             }
@@ -5333,21 +5357,15 @@ bool BGTactics::selectObjective(bool reset)
 
             switch (strategy)
             {
-                case 0:
-                case 1:
-                case 2:
-                case 3:  // Balanced
-                    defendersProhab = 3;
-                    break;
-                case 4:
-                case 5:
-                case 6:
-                case 7:  // Heavy Offense
+                case WS_STRATEGY_OFFENSIVE:
                     defendersProhab = 1;
                     break;
-                case 8:
-                case 9:  // Heavy Defense
+                case WS_STRATEGY_DEFENSIVE:
                     defendersProhab = 6;
+                    break;
+                case WS_STRATEGY_BALANCED:
+                default:
+                    defendersProhab = 3;
                     break;
             }
 
@@ -6399,7 +6417,8 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             }
 
             if (GameObject* emergency = SelectAllianceAVEmergencyDefenseObjective(bot, bg, av, role, isDefender,
-                                                                                  strategy, defenderLimit, threat))
+                                                                                  strategy, defenderLimit, rushInfo,
+                                                                                  threat))
             {
                 float const dx = emergency->GetPositionX() - pos.x;
                 float const dy = emergency->GetPositionY() - pos.y;
@@ -6420,7 +6439,19 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 return true;
         }
 
-        if (!ignoreDist && ServerFacade::instance().IsDistanceGreaterThan(ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y), 100.0f))
+        float directMoveLimit = 100.0f;
+        if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        {
+            BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+            if (AllianceAVPositionIsContestedAllianceDefenseObjective(bg, av, pos) ||
+                AllianceAVPositionIsAllianceDefenseRun(bg, pos) ||
+                AllianceAVPositionIsAntiRushRally(pos))
+                directMoveLimit = 240.0f;
+            else if (AllianceAVPositionIsIcebloodGraveRun(pos))
+                directMoveLimit = 180.0f;
+        }
+
+        if (!ignoreDist && ServerFacade::instance().IsDistanceGreaterThan(ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y), directMoveLimit))
         {
             // std::ostringstream out;
             // out << "It is too far away! " << pos.x << ", " << pos.y << ", Distance: " <<
@@ -6576,7 +6607,9 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
         // don't pick path where bot is already closest to the paths closest point to target (it means path cant lead it
         // anywhere) don't pick path where closest point is too far away
-        if (closestPointIndex == (reverse ? 0 : path->size() - 1) || closestPointDistToBot > botDistanceLimit)
+        uint32 const terminalPathPoint = reverse ? 0u : static_cast<uint32>(path->size() - 1);
+        if (closestPointIndex < 0 || static_cast<uint32>(closestPointIndex) == terminalPathPoint ||
+            closestPointDistToBot > botDistanceLimit)
             continue;
 
         // creates a score based on dist-to-bot and dist-to-destination, where lower is better, and dist-to-bot is more

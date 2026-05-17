@@ -108,7 +108,7 @@ public:
 class AvoidAoeAction : public MovementAction
 {
 public:
-    AvoidAoeAction(PlayerbotAI* botAI, int moveInterval = 1000)
+    AvoidAoeAction(PlayerbotAI* botAI, uint32 moveInterval = 1000)
         : MovementAction(botAI, "avoid aoe"), moveInterval(moveInterval)
     {
     }
@@ -121,14 +121,14 @@ protected:
     bool AvoidGameObjectWithDamage();
     bool AvoidUnitWithDamageAura();
     time_t lastTellTimer = 0;
-    int lastMoveTimer = 0;
-    int moveInterval;
+    uint32 lastMoveTimer = 0;
+    uint32 moveInterval;
 };
 
 class CombatFormationMoveAction : public MovementAction
 {
 public:
-    CombatFormationMoveAction(PlayerbotAI* botAI, std::string name = "combat formation move", int moveInterval = 1000)
+    CombatFormationMoveAction(PlayerbotAI* botAI, std::string name = "combat formation move", uint32 moveInterval = 1000)
         : MovementAction(botAI, name), moveInterval(moveInterval)
     {
     }
@@ -141,8 +141,8 @@ protected:
     Player* NearestGroupMember(float dis = sPlayerbotAIConfig.sightDistance);
     float AverageGroupAngle(Unit* from, bool ranged = false, bool self = false);
     Position GetNearestPosition(const std::vector<Position>& positions);
-    int lastMoveTimer = 0;
-    int moveInterval;
+    uint32 lastMoveTimer = 0;
+    uint32 moveInterval;
 };
 
 class TankFaceAction : public CombatFormationMoveAction
@@ -275,7 +275,7 @@ public:
         this->intervals = intervals;
         this->clockwise = clockwise;
         this->call_counters = 0;
-        for (int i = 0; i < intervals; i++)
+        for (uint32 i = 0; i < intervals; i++)
         {
             float angle = start_angle + 2 * M_PI * i / intervals;
             waypoints.push_back(std::make_pair(center_x + cos(angle) * radius, center_y + sin(angle) * radius));

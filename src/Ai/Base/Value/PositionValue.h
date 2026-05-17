@@ -24,6 +24,7 @@ public:
         : x(other.x), y(other.y), z(other.z), mapId(other.mapId), valueSet(other.valueSet)
     {
     }
+    PositionInfo& operator=(PositionInfo const& other) = default;
 
     void Set(float newX, float newY, float newZ, uint32 newMapId)
     {
@@ -36,7 +37,7 @@ public:
 
     void Reset() { valueSet = false; }
 
-    bool isSet() { return valueSet; }
+    bool isSet() const { return valueSet; }
 
     float x;
     float y;

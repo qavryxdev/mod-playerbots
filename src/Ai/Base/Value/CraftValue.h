@@ -21,6 +21,7 @@ public:
         required.insert(other.required.begin(), other.required.end());
         obtained.insert(other.obtained.begin(), other.obtained.end());
     }
+    CraftData& operator=(CraftData const& other) = default;
 
     uint32 itemId;
     std::map<uint32, uint32> required, obtained;
