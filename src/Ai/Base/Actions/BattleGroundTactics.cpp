@@ -1490,13 +1490,14 @@ enum AllianceAVBattlefieldMode : uint8
     AV_MODE_OPENING_CONTROL = 0,
     AV_MODE_IBGY_PUSH = 1,
     AV_MODE_IBGY_GUARD = 2,
-    AV_MODE_GALVANGAR_STRIKE = 3,
-    AV_MODE_SOUTH_TOWER_SPLIT = 4,
-    AV_MODE_NORTH_DEFENSE = 5,
-    AV_MODE_DUN_BALDAR_EMERGENCY = 6,
-    AV_MODE_DREK_PUSH = 7,
-    AV_MODE_FROSTWOLF_LOCK = 8,
-    AV_MODE_DREK_SETUP = 9,
+    AV_MODE_IBGY_BREAKTHROUGH = 3,
+    AV_MODE_GALVANGAR_STRIKE = 4,
+    AV_MODE_SOUTH_TOWER_SPLIT = 5,
+    AV_MODE_NORTH_DEFENSE = 6,
+    AV_MODE_DUN_BALDAR_EMERGENCY = 7,
+    AV_MODE_DREK_PUSH = 8,
+    AV_MODE_FROSTWOLF_LOCK = 9,
+    AV_MODE_DREK_SETUP = 10,
 };
 
 struct AllianceAVRushInfo
@@ -1556,6 +1557,8 @@ static char const* GetAllianceAVBattlefieldModeName(AllianceAVBattlefieldMode mo
             return "ibgy_push";
         case AV_MODE_IBGY_GUARD:
             return "ibgy_guard";
+        case AV_MODE_IBGY_BREAKTHROUGH:
+            return "ibgy_breakthrough";
         case AV_MODE_GALVANGAR_STRIKE:
             return "galvangar_strike";
         case AV_MODE_SOUTH_TOWER_SPLIT:
@@ -1769,11 +1772,30 @@ static bool AllianceAVNorthIsQuiet(BattlegroundAV* av, AllianceAVRushInfo const&
     return rushInfo.hordeNorth == 0 && rushInfo.hordeDeepNorth == 0 && rushInfo.hordeDunBaldar == 0;
 }
 
+static bool AllianceAVNeedsIcebloodBreakthrough(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
+                                                AllianceAVThreatLevel threat, AVBotStrategy hordeStrategy)
+{
+    if (!av || hordeStrategy != AV_STRATEGY_DEFENSIVE || threat != AV_THREAT_NONE || rushInfo.IsActive())
+        return false;
+
+    if (AllianceHordeCaptainAlive(av) || AllianceHasForwardDrekRespawn(av))
+        return false;
+
+    if (GetAllianceDestroyedHordeTowerCount(av) > 0 || GetAllianceHordeTowerProgressCount(av) > 0)
+        return false;
+
+    BG_AV_NodeInfo const& iceblood = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
+    return !(iceblood.State == POINT_CONTROLLED && iceblood.OwnerId == TEAM_ALLIANCE);
+}
+
 static bool AllianceAVNeedsIcebloodMainForce(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
                                              AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode)
 {
     if (!AllianceAVNorthIsQuiet(av, rushInfo, threat))
         return false;
+
+    if (mode == AV_MODE_IBGY_BREAKTHROUGH)
+        return true;
 
     if (mode != AV_MODE_IBGY_PUSH && mode != AV_MODE_IBGY_GUARD)
         return false;
@@ -1807,6 +1829,9 @@ static bool AllianceAVCanReleaseIdleNorthReserve(BattlegroundAV* av, AllianceAVR
 static uint8 GetAllianceAVReleasedDefenderLimit(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
                                                 AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode)
 {
+    if (mode == AV_MODE_IBGY_BREAKTHROUGH)
+        return 1;
+
     return AllianceAVNeedsIcebloodMainForce(av, rushInfo, threat, mode) ? 2 : 1;
 }
 
@@ -1814,6 +1839,9 @@ static bool AllianceAVShouldScreenIdleNorthReserve(BattlegroundAV* av, AllianceA
                                                    AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode)
 {
     if (!AllianceAVNorthIsQuiet(av, rushInfo, threat))
+        return false;
+
+    if (mode == AV_MODE_IBGY_BREAKTHROUGH)
         return false;
 
     return mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
@@ -1929,6 +1957,9 @@ static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(Battleground* bg, 
     bool const committedFrostwolf = AllianceHasCommittedFrostwolfFoothold(av, rushInfo, threat);
     bool const icebloodControlled = AllianceAVNodeControlledBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const icebloodAssaulted = AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    AVBotStrategy const hordeStrategy = bg
+        ? static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE))
+        : AV_STRATEGY_BALANCED;
     if (!icebloodControlled)
     {
         if (committedFrostwolf)
@@ -1937,6 +1968,9 @@ static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(Battleground* bg, 
 
         if (AllianceHordeCaptainAlive(av))
             return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_GALVANGAR_STRIKE);
+
+        if (AllianceAVNeedsIcebloodBreakthrough(av, rushInfo, threat, hordeStrategy))
+            return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_IBGY_BREAKTHROUGH);
 
         if (icebloodAssaulted)
             return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_IBGY_GUARD);
@@ -2044,6 +2078,7 @@ static bool AllianceAVCanUseNearbyFlagDuringControlTempo(Player* bot, Battlegrou
     AllianceAVBattlefieldMode const mode = GetAllianceAVBattlefieldMode(bg, av, rushInfo, threat);
     bool const holdIcebloodBeachhead = AllianceAVShouldHoldIcebloodBeachhead(bg, av, threat, hordeStrategy);
     bool const icebloodBeachheadPlan = AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy);
+    bool const icebloodBreakthrough = AllianceAVNeedsIcebloodBreakthrough(av, rushInfo, threat, hordeStrategy);
 
     if (AllianceAVIsAllianceRecapOrReclaimFlag(bg, go))
         return true;
@@ -2055,7 +2090,8 @@ static bool AllianceAVCanUseNearbyFlagDuringControlTempo(Player* bot, Battlegrou
         return AllianceAVIsIcebloodGraveFlag(bg, go);
 
     if (AllianceAVIsHordeTowerFlag(bg, go) &&
-        (AllianceAVShouldFullRecallNorth(av, threat) || holdIcebloodBeachhead || icebloodBeachheadPlan))
+        (AllianceAVShouldFullRecallNorth(av, threat) || holdIcebloodBeachhead || icebloodBeachheadPlan ||
+         icebloodBreakthrough || mode == AV_MODE_IBGY_BREAKTHROUGH))
         return false;
 
     return true;
@@ -2131,6 +2167,16 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
         return true;
 
     AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE));
+    if (mode == AV_MODE_IBGY_BREAKTHROUGH)
+    {
+        if (AllianceAVPositionIsHordeTowerRun(bg, objectivePos))
+            return true;
+
+        if (!isDefender && !AllianceAVPositionIsIcebloodGraveRun(objectivePos) &&
+            !AllianceAVPositionIsSnowfallRun(bg, objectivePos) && !contestedAllianceDefenseObjective)
+            return true;
+    }
+
     bool const allianceAssaultingIBGY = AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const southernIcebloodGroup = bot->GetPositionX() < -180.0f;
     if (allianceAssaultingIBGY && southernIcebloodGroup &&
