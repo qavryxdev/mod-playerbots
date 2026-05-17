@@ -551,6 +551,8 @@ public:
     bool AllowActive(ActivityType activityType);
     bool AllowActivity(ActivityType activityType = ALL_ACTIVITY, bool checkNow = false);
     uint32 AutoScaleActivity(uint32 mod);
+    bool TryGetAsyncActivityAllowed(ActivityType activityType, bool& allowed);
+    static void UpdateAsyncActivityCache(uint32 diff);
 
     // Check if player is safe to use.
     bool IsSafe(Player* player);

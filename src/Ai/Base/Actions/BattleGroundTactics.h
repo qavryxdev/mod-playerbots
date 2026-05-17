@@ -108,6 +108,7 @@ class BGTactics : public MovementAction
 public:
     static bool HandleConsoleCommand(ChatHandler* handler, char const* args);
     uint8 static GetBotStrategyForTeam(Battleground* bg, TeamId teamId);
+    static void UpdateAsyncAVStrategyCache(uint32 diff);
 
     BGTactics(PlayerbotAI* botAI, std::string const name = "bg tactics") : MovementAction(botAI, name) {}
 

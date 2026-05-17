@@ -78,6 +78,13 @@ bool PlayerbotAIConfig::Initialize()
     dynamicReactDelay = sConfigMgr->GetOption<bool>("AiPlayerbot.DynamicReactDelay", true);
     idleBotAiThrottle = sConfigMgr->GetOption<bool>("AiPlayerbot.IdleBotAiThrottle", false);
     skipIdleBotMinimalAI = sConfigMgr->GetOption<bool>("AiPlayerbot.SkipIdleBotMinimalAI", false);
+    asyncActivityCache = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncActivityCache", false);
+    asyncActivityCacheThreads = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncActivityCacheThreads", 0);
+    asyncActivityCacheInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncActivityCacheInterval", 1000);
+    asyncAVStrategyCache = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncAVStrategyCache", false);
+    asyncAVStrategyCacheThreads = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncAVStrategyCacheThreads", 2);
+    asyncAVStrategyCacheInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncAVStrategyCacheInterval", 500);
+    asyncAVTacticalOrders = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncAVTacticalOrders", false);
     idleBotReactDelayMin = sConfigMgr->GetOption<uint32>("AiPlayerbot.IdleBotReactDelayMin", 50);
     idleBotReactDelayMax = sConfigMgr->GetOption<uint32>("AiPlayerbot.IdleBotReactDelayMax", 150);
     if (idleBotReactDelayMax < idleBotReactDelayMin)

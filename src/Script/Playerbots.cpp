@@ -496,6 +496,8 @@ public:
     void OnUpdate(uint32 diff) override
     {
         PlayerbotWorldThreadProcessor::instance().Update(diff);
+        PlayerbotAI::UpdateAsyncActivityCache(diff);
+        BGTactics::UpdateAsyncAVStrategyCache(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
     }
 };

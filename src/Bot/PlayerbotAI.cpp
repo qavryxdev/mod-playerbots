@@ -5,10 +5,17 @@
 
 #include "PlayerbotAI.h"
 
+#include <algorithm>
+#include <atomic>
+#include <condition_variable>
 #include <cmath>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 #include "AiFactory.h"
 #include "BudgetValues.h"
@@ -69,6 +76,549 @@ char* strstri(char const* str1, char const* str2);
 std::string& trim(std::string& s);
 
 std::set<std::string> PlayerbotAI::unsecuredCommands;
+
+namespace
+{
+constexpr uint32 ASYNC_ACTIVITY_LOG_INTERVAL = 30000;
+constexpr size_t ASYNC_ACTIVITY_CHUNK_SIZE = 64;
+
+struct AsyncActivityRealPlayerSnapshot
+{
+    uint32 mapId = 0;
+    uint32 zoneId = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float viewX = 0.0f;
+    float viewY = 0.0f;
+    float viewZ = 0.0f;
+    bool countsForMapZone = false;
+    bool countsForRadius = false;
+    bool hasViewpoint = false;
+};
+
+struct AsyncActivityBotSnapshot
+{
+    uint32 guid = 0;
+    uint32 mapId = 0;
+    uint32 zoneId = 0;
+    uint32 level = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    bool safe = false;
+    bool inCombat = false;
+    bool overworld = true;
+    bool inBattlegroundQueue = false;
+    bool inRealGuild = false;
+    bool hasRealPlayerMaster = false;
+    bool groupedWithRealPlayer = false;
+    bool inLfg = false;
+    bool friendOfRealPlayer = false;
+};
+
+struct AsyncActivityResult
+{
+    uint32 guid = 0;
+    bool allowed = false;
+};
+
+struct AsyncActivityStats
+{
+    uint32 generation = 0;
+    uint32 botCount = 0;
+    uint32 activeCount = 0;
+    uint32 playerCount = 0;
+    uint32 workerCount = 0;
+};
+
+struct AsyncActivityJob
+{
+    uint32 generation = 0;
+    uint32 workerCount = 0;
+    uint32 botActiveAlone = 0;
+    uint32 timeSlot = 0;
+    uint32 radius = 0;
+    uint32 maxDiff = 0;
+    uint32 diffLimitFloor = 0;
+    uint32 diffLimitCeiling = 0;
+    uint32 smartScaleMinLevel = 0;
+    uint32 smartScaleMaxLevel = 0;
+    bool smartScale = false;
+    bool checkMap = false;
+    bool checkZone = false;
+    bool checkRadius = false;
+    std::vector<AsyncActivityRealPlayerSnapshot> players;
+    std::vector<AsyncActivityBotSnapshot> bots;
+    std::vector<AsyncActivityResult> results;
+    std::atomic<size_t> nextIndex{0};
+    std::atomic<uint32> workersDone{0};
+};
+
+uint32 GetAsyncActivityNumber(uint32 id, uint32 timeSlot, uint32 maxNum)
+{
+    if (!maxNum)
+        return 0;
+
+    uint32 h = id;
+    h ^= h >> 16;
+    h *= 0x7feb352d;
+    h ^= h >> 15;
+    h *= 0x846ca68b;
+    h ^= h >> 16;
+
+    uint32 mixed = h ^ (timeSlot * 0x9e3779b9);
+    return mixed % maxNum;
+}
+
+uint32 AutoScaleActivitySnapshot(AsyncActivityJob const& job, uint32 mod)
+{
+    if (job.diffLimitCeiling <= job.diffLimitFloor)
+        return job.maxDiff > job.diffLimitCeiling ? 0 : mod;
+
+    if (job.maxDiff > job.diffLimitCeiling)
+        return 0;
+
+    if (job.maxDiff <= job.diffLimitFloor)
+        return mod;
+
+    double lagProgress = (job.maxDiff - job.diffLimitFloor) /
+                         static_cast<double>(job.diffLimitCeiling - job.diffLimitFloor);
+    return static_cast<uint32>(mod * (1.0 - lagProgress));
+}
+
+float SqDistance(float ax, float ay, float az, float bx, float by, float bz)
+{
+    float dx = ax - bx;
+    float dy = ay - by;
+    float dz = az - bz;
+    return dx * dx + dy * dy + dz * dz;
+}
+
+bool AsyncActivityHasNearbyPlayer(AsyncActivityJob const& job, AsyncActivityBotSnapshot const& bot)
+{
+    if (!job.checkMap && !job.checkZone && !job.checkRadius)
+        return false;
+
+    float sqRange = static_cast<float>(job.radius) * static_cast<float>(job.radius);
+
+    for (AsyncActivityRealPlayerSnapshot const& player : job.players)
+    {
+        if (player.mapId != bot.mapId)
+            continue;
+
+        if (job.checkMap && player.countsForMapZone)
+            return true;
+
+        if (job.checkZone && player.countsForMapZone && player.zoneId == bot.zoneId)
+            return true;
+
+        if (job.checkRadius && player.countsForRadius)
+        {
+            if (SqDistance(bot.x, bot.y, bot.z, player.x, player.y, player.z) < sqRange)
+                return true;
+
+            if (player.hasViewpoint &&
+                SqDistance(bot.x, bot.y, bot.z, player.viewX, player.viewY, player.viewZ) < sqRange)
+                return true;
+        }
+    }
+
+    return false;
+}
+
+bool AsyncActivityIsForced(AsyncActivityJob const& job, AsyncActivityBotSnapshot const& bot)
+{
+    if (bot.inCombat || !bot.overworld || bot.inBattlegroundQueue || bot.inRealGuild || bot.hasRealPlayerMaster ||
+        bot.groupedWithRealPlayer || bot.inLfg || bot.friendOfRealPlayer)
+        return true;
+
+    return AsyncActivityHasNearbyPlayer(job, bot);
+}
+
+bool AsyncActivityAllows(AsyncActivityJob const& job, AsyncActivityBotSnapshot const& bot)
+{
+    if (!bot.safe)
+        return false;
+
+    if (job.botActiveAlone >= 100 && !job.smartScale)
+        return true;
+
+    if (AsyncActivityIsForced(job, bot))
+        return true;
+
+    if (job.botActiveAlone <= 0)
+        return false;
+
+    uint32 mod = job.botActiveAlone > 100 ? 100 : job.botActiveAlone;
+
+    if (job.smartScale && bot.level >= job.smartScaleMinLevel && bot.level <= job.smartScaleMaxLevel)
+        mod = AutoScaleActivitySnapshot(job, mod);
+
+    return GetAsyncActivityNumber(bot.guid, job.timeSlot, 100) < mod;
+}
+
+class AsyncActivityCache
+{
+public:
+    ~AsyncActivityCache() { Stop(); }
+
+    static AsyncActivityCache& Instance()
+    {
+        static AsyncActivityCache cache;
+        return cache;
+    }
+
+    void Update(uint32 diff)
+    {
+        if (!sPlayerbotAIConfig.asyncActivityCache)
+        {
+            Stop();
+            return;
+        }
+
+        EnsureStarted();
+
+        _logTimer += diff;
+        if (_logTimer >= ASYNC_ACTIVITY_LOG_INTERVAL)
+        {
+            _logTimer = 0;
+            AsyncActivityStats stats;
+            {
+                std::lock_guard<std::mutex> lock(_resultMutex);
+                stats = _stats;
+            }
+
+            if (stats.generation && stats.generation != _lastLoggedGeneration)
+            {
+                _lastLoggedGeneration = stats.generation;
+                LOG_INFO("playerbots",
+                         "AsyncActivityCache: bots={}, active={}, realPlayers={}, workers={}",
+                         stats.botCount, stats.activeCount, stats.playerCount, stats.workerCount);
+            }
+        }
+
+        if (_jobInFlight.load())
+            return;
+
+        uint32 interval = std::max<uint32>(100, sPlayerbotAIConfig.asyncActivityCacheInterval);
+        _updateTimer += diff;
+        if (_updateTimer < interval)
+            return;
+
+        _updateTimer = 0;
+
+        std::shared_ptr<AsyncActivityJob> job = std::make_shared<AsyncActivityJob>();
+        job->generation = ++_nextGeneration;
+        job->workerCount = static_cast<uint32>(_workers.size());
+        BuildJob(*job);
+
+        if (job->bots.empty())
+            return;
+
+        job->results.resize(job->bots.size());
+        _jobInFlight.store(true);
+
+        {
+            std::lock_guard<std::mutex> lock(_jobMutex);
+            _currentJob = job;
+        }
+        _jobCondition.notify_all();
+    }
+
+    bool TryGet(uint32 guid, bool& allowed)
+    {
+        if (!_running.load())
+            return false;
+
+        std::lock_guard<std::mutex> lock(_resultMutex);
+        std::unordered_map<uint32, bool>::const_iterator itr = _results.find(guid);
+        if (itr == _results.end())
+            return false;
+
+        allowed = itr->second;
+        return true;
+    }
+
+private:
+    void EnsureStarted()
+    {
+        uint32 threadCount = sPlayerbotAIConfig.asyncActivityCacheThreads;
+        if (!threadCount)
+            threadCount = std::max(1u, std::thread::hardware_concurrency());
+
+        if (!_workers.empty() && _workers.size() == threadCount)
+            return;
+
+        Stop();
+
+        _stopping.store(false);
+        _running.store(true);
+        _workers.reserve(threadCount);
+        for (uint32 i = 0; i < threadCount; ++i)
+            _workers.emplace_back(&AsyncActivityCache::WorkerLoop, this);
+
+        LOG_INFO("playerbots", "AsyncActivityCache started with {} worker thread(s)", threadCount);
+    }
+
+    void Stop()
+    {
+        if (_workers.empty())
+            return;
+
+        _running.store(false);
+        _stopping.store(true);
+        {
+            std::lock_guard<std::mutex> lock(_jobMutex);
+            _currentJob.reset();
+        }
+        _jobCondition.notify_all();
+
+        for (std::thread& worker : _workers)
+            if (worker.joinable())
+                worker.join();
+
+        _workers.clear();
+        _stopping.store(false);
+        _jobInFlight.store(false);
+
+        {
+            std::lock_guard<std::mutex> lock(_resultMutex);
+            _results.clear();
+            _stats = AsyncActivityStats();
+        }
+    }
+
+    void BuildJob(AsyncActivityJob& job)
+    {
+        job.botActiveAlone = sPlayerbotAIConfig.botActiveAlone;
+        job.smartScale = sPlayerbotAIConfig.botActiveAloneSmartScale;
+        job.radius = sPlayerbotAIConfig.BotActiveAloneForceWhenInRadius;
+        job.checkMap = sPlayerbotAIConfig.BotActiveAloneForceWhenInMap;
+        job.checkZone = sPlayerbotAIConfig.BotActiveAloneForceWhenInZone;
+        job.checkRadius = sPlayerbotAIConfig.BotActiveAloneForceWhenInRadius > 0;
+        job.maxDiff = sWorldUpdateTime.GetMaxUpdateTimeOfCurrentTable();
+        job.diffLimitFloor = sPlayerbotAIConfig.botActiveAloneSmartScaleDiffLimitfloor;
+        job.diffLimitCeiling = sPlayerbotAIConfig.botActiveAloneSmartScaleDiffLimitCeiling;
+        job.smartScaleMinLevel = sPlayerbotAIConfig.botActiveAloneSmartScaleWhenMinLevel;
+        job.smartScaleMaxLevel = sPlayerbotAIConfig.botActiveAloneSmartScaleWhenMaxLevel;
+
+        uint32 duration = std::max<uint32>(1, sPlayerbotAIConfig.BotActiveAloneDurationSeconds);
+        job.timeSlot = (getMSTime() / 1000) / duration;
+
+        std::vector<Player*> realPlayers = sRandomPlayerbotMgr.GetPlayers();
+        job.players.reserve(realPlayers.size());
+
+        for (Player* player : realPlayers)
+        {
+            if (!player || !player->GetSession() || !player->IsInWorld() || player->IsDuringRemoveFromWorld() ||
+                player->GetSession()->isLogingOut())
+                continue;
+
+            PlayerbotAI* playerAI = GET_PLAYERBOT_AI(player);
+            if (playerAI && !playerAI->IsRealPlayer())
+                continue;
+
+            bool isGM = player->IsGameMaster();
+
+            AsyncActivityRealPlayerSnapshot snapshot;
+            snapshot.mapId = player->GetMapId();
+            snapshot.zoneId = player->GetZoneId();
+            snapshot.x = player->GetPositionX();
+            snapshot.y = player->GetPositionY();
+            snapshot.z = player->GetPositionZ();
+            snapshot.countsForMapZone = !(isGM && !player->IsVisible());
+            snapshot.countsForRadius = !isGM || player->isGMVisible();
+
+            WorldObject* viewObj = player->GetViewpoint();
+            if (viewObj && viewObj != player)
+            {
+                snapshot.hasViewpoint = true;
+                snapshot.viewX = viewObj->GetPositionX();
+                snapshot.viewY = viewObj->GetPositionY();
+                snapshot.viewZ = viewObj->GetPositionZ();
+            }
+
+            job.players.push_back(snapshot);
+        }
+
+        PlayerBotMap bots = sRandomPlayerbotMgr.GetAllBots();
+        job.bots.reserve(bots.size());
+
+        for (PlayerBotMap::const_iterator itr = bots.begin(); itr != bots.end(); ++itr)
+        {
+            Player* bot = itr->second;
+            if (!bot)
+                continue;
+
+            PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+            if (!botAI || botAI->IsRealPlayer())
+                continue;
+
+            AsyncActivityBotSnapshot snapshot;
+            snapshot.guid = bot->GetGUID().GetCounter();
+            snapshot.safe = bot->GetSession() && bot->IsInWorld() && !bot->IsBeingTeleported() &&
+                            !bot->GetSession()->isLogingOut() && !bot->IsDuringRemoveFromWorld();
+
+            if (snapshot.safe)
+            {
+                snapshot.mapId = bot->GetMapId();
+                snapshot.zoneId = bot->GetZoneId();
+                snapshot.level = bot->GetLevel();
+                snapshot.x = bot->GetPositionX();
+                snapshot.y = bot->GetPositionY();
+                snapshot.z = bot->GetPositionZ();
+                snapshot.inCombat = bot->IsInCombat();
+                snapshot.overworld = WorldPosition(bot).isOverworld();
+                snapshot.inBattlegroundQueue = bot->InBattlegroundQueue();
+
+                if (sPlayerbotAIConfig.BotActiveAloneForceWhenInGuild)
+                    snapshot.inRealGuild = botAI->IsInRealGuild();
+
+                if (Player* master = botAI->GetMaster())
+                {
+                    PlayerbotAI* masterBotAI = GET_PLAYERBOT_AI(master);
+                    snapshot.hasRealPlayerMaster = !masterBotAI || masterBotAI->IsRealPlayer();
+                }
+
+                if (Group* group = bot->GetGroup())
+                {
+                    for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+                    {
+                        Player* member = gref->GetSource();
+                        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() || member == bot)
+                            continue;
+
+                        PlayerbotAI* memberBotAI = GET_PLAYERBOT_AI(member);
+                        if (!memberBotAI || memberBotAI->HasRealPlayerMaster())
+                        {
+                            snapshot.groupedWithRealPlayer = true;
+                            break;
+                        }
+                    }
+
+                    if (sLFGMgr->GetState(group->GetGUID()) != lfg::LFG_STATE_NONE)
+                        snapshot.inLfg = true;
+                }
+
+                if (sLFGMgr->GetState(bot->GetGUID()) != lfg::LFG_STATE_NONE)
+                    snapshot.inLfg = true;
+
+                if (sPlayerbotAIConfig.BotActiveAloneForceWhenIsFriend)
+                {
+                    for (Player* player : realPlayers)
+                    {
+                        if (!player || !player->GetSession() || !player->IsInWorld() ||
+                            player->IsDuringRemoveFromWorld() || player->GetSession()->isLogingOut())
+                            continue;
+
+                        PlayerbotAI* playerAI = GET_PLAYERBOT_AI(player);
+                        if (playerAI && !playerAI->IsRealPlayer())
+                            continue;
+
+                        PlayerSocial* social = player->GetSocial();
+                        if (social && social->HasFriend(bot->GetGUID()))
+                        {
+                            snapshot.friendOfRealPlayer = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            job.bots.push_back(snapshot);
+        }
+    }
+
+    void WorkerLoop()
+    {
+        uint32 seenGeneration = 0;
+
+        while (true)
+        {
+            std::shared_ptr<AsyncActivityJob> job;
+            {
+                std::unique_lock<std::mutex> lock(_jobMutex);
+                _jobCondition.wait(lock, [this, seenGeneration]
+                {
+                    return _stopping.load() || (_currentJob && _currentJob->generation != seenGeneration);
+                });
+
+                if (_stopping.load())
+                    return;
+
+                job = _currentJob;
+                seenGeneration = job->generation;
+            }
+
+            ProcessJob(job);
+
+            if (job->workersDone.fetch_add(1) + 1 == job->workerCount)
+                PublishJob(job);
+        }
+    }
+
+    void ProcessJob(std::shared_ptr<AsyncActivityJob> const& job)
+    {
+        while (true)
+        {
+            size_t start = job->nextIndex.fetch_add(ASYNC_ACTIVITY_CHUNK_SIZE);
+            if (start >= job->bots.size())
+                break;
+
+            size_t end = std::min(start + ASYNC_ACTIVITY_CHUNK_SIZE, job->bots.size());
+            for (size_t i = start; i < end; ++i)
+            {
+                AsyncActivityBotSnapshot const& bot = job->bots[i];
+                job->results[i].guid = bot.guid;
+                job->results[i].allowed = AsyncActivityAllows(*job, bot);
+            }
+        }
+    }
+
+    void PublishJob(std::shared_ptr<AsyncActivityJob> const& job)
+    {
+        std::unordered_map<uint32, bool> results;
+        results.reserve(job->results.size());
+
+        uint32 activeCount = 0;
+        for (AsyncActivityResult const& result : job->results)
+        {
+            results[result.guid] = result.allowed;
+            if (result.allowed)
+                ++activeCount;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(_resultMutex);
+            _results.swap(results);
+            _stats.generation = job->generation;
+            _stats.botCount = static_cast<uint32>(job->bots.size());
+            _stats.activeCount = activeCount;
+            _stats.playerCount = static_cast<uint32>(job->players.size());
+            _stats.workerCount = job->workerCount;
+        }
+
+        _jobInFlight.store(false);
+    }
+
+    std::vector<std::thread> _workers;
+    std::mutex _jobMutex;
+    std::condition_variable _jobCondition;
+    std::shared_ptr<AsyncActivityJob> _currentJob;
+    std::atomic<bool> _running{false};
+    std::atomic<bool> _stopping{false};
+    std::atomic<bool> _jobInFlight{false};
+
+    std::mutex _resultMutex;
+    std::unordered_map<uint32, bool> _results;
+    AsyncActivityStats _stats;
+    uint32 _nextGeneration = 0;
+    uint32 _updateTimer = 0;
+    uint32 _logTimer = 0;
+    uint32 _lastLoggedGeneration = 0;
+};
+}  // namespace
 
 PlayerbotChatHandler::PlayerbotChatHandler(Player* pMasterPlayer) : ChatHandler(pMasterPlayer->GetSession()) {}
 
@@ -4592,6 +5142,16 @@ bool PlayerbotAI::HasPlayerNearby(float range)
     return HasPlayerNearby(&botPos, range);
 };
 
+void PlayerbotAI::UpdateAsyncActivityCache(uint32 diff) { AsyncActivityCache::Instance().Update(diff); }
+
+bool PlayerbotAI::TryGetAsyncActivityAllowed(ActivityType activityType, bool& allowed)
+{
+    if (activityType != ALL_ACTIVITY || !bot)
+        return false;
+
+    return AsyncActivityCache::Instance().TryGet(bot->GetGUID().GetCounter(), allowed);
+}
+
 bool PlayerbotAI::AllowActive(ActivityType activityType)
 {
     // bot is in an invalid state, not safe to process
@@ -4621,6 +5181,13 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
     // bot is waiting in a BG queue — stay active to speed up join
     if (bot->InBattlegroundQueue())
         return true;
+
+    if (activityType == ALL_ACTIVITY)
+    {
+        bool asyncAllowed = false;
+        if (TryGetAsyncActivityAllowed(activityType, asyncAllowed))
+            return asyncAllowed;
+    }
 
     // bot is in a guild that contains a real player
     if (sPlayerbotAIConfig.BotActiveAloneForceWhenInGuild)

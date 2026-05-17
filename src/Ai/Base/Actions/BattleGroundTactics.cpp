@@ -6,7 +6,15 @@
 #include "BattleGroundTactics.h"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
+#include <condition_variable>
+#include <cmath>
+#include <deque>
+#include <memory>
 #include <mutex>
+#include <thread>
+#include <unordered_map>
 
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
@@ -1578,6 +1586,952 @@ static char const* GetAllianceAVBattlefieldModeName(AllianceAVBattlefieldMode mo
     }
 }
 
+namespace
+{
+constexpr uint32 ASYNC_AV_CACHE_LOG_INTERVAL = 30000;
+constexpr uint32 ASYNC_AV_CACHE_STALE_MS = 5 * 60 * 1000;
+
+enum AsyncAVAreaId : uint8
+{
+    ASYNC_AV_AREA_ICEBLOOD_180 = 0,
+    ASYNC_AV_AREA_ICEBLOOD_220,
+    ASYNC_AV_AREA_TOWER_POINT_180,
+    ASYNC_AV_AREA_SNOWFALL_160,
+    ASYNC_AV_AREA_STONEHEARTH_220,
+    ASYNC_AV_AREA_STORMPIKE_220,
+    ASYNC_AV_AREA_DUNBALDAR_260,
+    ASYNC_AV_AREA_FROSTWOLF_260,
+    ASYNC_AV_AREA_DREK_220,
+    ASYNC_AV_AREA_MAX
+};
+
+struct AsyncAVAreaDef
+{
+    AsyncAVAreaId id;
+    float x;
+    float y;
+    float radius;
+};
+
+static std::array<AsyncAVAreaDef, ASYNC_AV_AREA_MAX> const AsyncAVAreas = {{
+    {ASYNC_AV_AREA_ICEBLOOD_180, -617.858f, -400.654f, 180.0f},
+    {ASYNC_AV_AREA_ICEBLOOD_220, -617.858f, -400.654f, 220.0f},
+    {ASYNC_AV_AREA_TOWER_POINT_180, -767.439f, -360.200f, 180.0f},
+    {ASYNC_AV_AREA_SNOWFALL_160, -201.298f, -119.661f, 160.0f},
+    {ASYNC_AV_AREA_STONEHEARTH_220, 76.108f, -399.602f, 220.0f},
+    {ASYNC_AV_AREA_STORMPIKE_220, 665.598f, -292.976f, 220.0f},
+    {ASYNC_AV_AREA_DUNBALDAR_260, 640.364f, -36.535f, 260.0f},
+    {ASYNC_AV_AREA_FROSTWOLF_260, -1083.803f, -341.520f, 260.0f},
+    {ASYNC_AV_AREA_DREK_220, -1361.773f, -248.977f, 220.0f},
+}};
+
+struct AsyncAVPlayerSnapshot
+{
+    TeamId teamId = TEAM_NEUTRAL;
+    float x = 0.0f;
+    float y = 0.0f;
+    bool alive = false;
+    bool inCombat = false;
+};
+
+struct AsyncAVNodeSnapshot
+{
+    uint8 state = 0;
+    TeamId ownerId = TEAM_NEUTRAL;
+    TeamId prevOwnerId = TEAM_NEUTRAL;
+    TeamId totalOwnerId = TEAM_NEUTRAL;
+    uint32 timer = 0;
+};
+
+struct AsyncAVAreaCounts
+{
+    uint32 allianceAlive = 0;
+    uint32 hordeAlive = 0;
+    uint32 allianceTotal = 0;
+    uint32 hordeTotal = 0;
+    uint32 allianceNotCombat = 0;
+    uint32 hordeNotCombat = 0;
+
+    void Add(TeamId teamId, bool alive, bool inCombat)
+    {
+        if (teamId == TEAM_ALLIANCE)
+        {
+            ++allianceTotal;
+            if (alive)
+                ++allianceAlive;
+            if (!inCombat)
+                ++allianceNotCombat;
+        }
+        else if (teamId == TEAM_HORDE)
+        {
+            ++hordeTotal;
+            if (alive)
+                ++hordeAlive;
+            if (!inCombat)
+                ++hordeNotCombat;
+        }
+    }
+};
+
+struct AsyncAVStrategyResult
+{
+    uint32 generation = 0;
+    uint32 instanceId = 0;
+    uint32 elapsedMs = 0;
+    uint32 lastAccessMs = 0;
+    uint32 playerCount = 0;
+    uint32 aliveAlliance = 0;
+    uint32 aliveHorde = 0;
+    uint32 hordeNorth = 0;
+    uint32 hordeDeepNorth = 0;
+    uint32 hordeDunBaldar = 0;
+    uint32 allianceNorth = 0;
+    uint32 allianceSouth = 0;
+    uint32 hordeTowersDown = 0;
+    uint32 hordeTowerProgress = 0;
+    uint32 allianceDefensivePressure = 0;
+    uint8 allianceStrategy = AV_STRATEGY_BALANCED;
+    uint8 hordeStrategy = AV_STRATEGY_BALANCED;
+    uint8 allianceRushLevel = AV_RUSH_NONE;
+    uint8 allianceThreat = AV_THREAT_NONE;
+    uint8 allianceMode = AV_MODE_OPENING_CONTROL;
+    uint8 allianceDefenderLimit = 4;
+    uint8 allianceReleasedDefenderLimit = 1;
+    bool allianceTacticalOrdersValid = false;
+    bool allianceFullRecall = false;
+    bool allianceFinalDrekWindow = false;
+    bool allianceCanReleaseIdleNorthReserve = false;
+    bool allianceShouldScreenIdleNorthReserve = false;
+    bool allianceNeedsIcebloodMainForce = false;
+    std::array<AsyncAVAreaCounts, ASYNC_AV_AREA_MAX> areas;
+};
+
+struct AsyncAVStrategyJob
+{
+    uint32 generation = 0;
+    uint32 instanceId = 0;
+    uint32 elapsedMs = 0;
+    uint8 allianceStrategy = AV_STRATEGY_BALANCED;
+    uint8 hordeStrategy = AV_STRATEGY_BALANCED;
+    bool hordeCaptainAlive = false;
+    std::vector<AsyncAVPlayerSnapshot> players;
+    std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> nodes;
+};
+
+static bool AsyncAVAllianceNodeUnderHordePressure(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
+                                                  uint8 nodeId)
+{
+    if (nodeId >= BG_AV_NODES_MAX)
+        return false;
+
+    AsyncAVNodeSnapshot const& node = nodes[nodeId];
+    if (node.state == POINT_ASSAULTED && node.ownerId == TEAM_HORDE && node.prevOwnerId == TEAM_ALLIANCE)
+        return true;
+
+    if (IsAllianceHomeGraveyard(nodeId) && node.state == POINT_CONTROLLED && node.ownerId == TEAM_HORDE)
+        return true;
+
+    return IsAllianceDefensiveTower(nodeId) && node.state == POINT_DESTROYED;
+}
+
+static bool AsyncAVHordeTowerAssaultedNearCompletion(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
+                                                     uint8 nodeId)
+{
+    if (nodeId >= BG_AV_NODES_MAX)
+        return false;
+
+    AsyncAVNodeSnapshot const& node = nodes[nodeId];
+    return node.state == POINT_ASSAULTED && node.ownerId == TEAM_ALLIANCE &&
+           node.timer > 0 && node.timer <= 120000;
+}
+
+static bool AsyncAVNodeControlledBy(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes, uint8 nodeId,
+                                    TeamId teamId)
+{
+    if (nodeId >= BG_AV_NODES_MAX)
+        return false;
+
+    AsyncAVNodeSnapshot const& node = nodes[nodeId];
+    return node.state == POINT_CONTROLLED && node.ownerId == teamId;
+}
+
+static bool AsyncAVNodeAssaultedBy(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes, uint8 nodeId,
+                                   TeamId teamId)
+{
+    if (nodeId >= BG_AV_NODES_MAX)
+        return false;
+
+    AsyncAVNodeSnapshot const& node = nodes[nodeId];
+    return node.state == POINT_ASSAULTED && node.ownerId == teamId;
+}
+
+static bool AsyncAVAllianceDBTowerTimerLow(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
+                                           uint8 nodeId)
+{
+    if (!IsAllianceDunBaldarTower(nodeId) || nodeId >= BG_AV_NODES_MAX)
+        return false;
+
+    AsyncAVNodeSnapshot const& node = nodes[nodeId];
+    return node.state == POINT_ASSAULTED && node.ownerId == TEAM_HORDE &&
+           node.timer > 0 && node.timer <= 90000;
+}
+
+static bool AsyncAVAllianceHasForwardDrekRespawn(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes)
+{
+    return AsyncAVNodeControlledBy(nodes, BG_AV_NODES_FROSTWOLF_GRAVE, TEAM_ALLIANCE) ||
+           AsyncAVNodeControlledBy(nodes, BG_AV_NODES_FROSTWOLF_HUT, TEAM_ALLIANCE);
+}
+
+static bool AsyncAVAllianceHasAnySouthRespawn(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes)
+{
+    return AsyncAVAllianceHasForwardDrekRespawn(nodes) ||
+           AsyncAVNodeControlledBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+}
+
+static bool AsyncAVAllianceDunBaldarBaseActuallyLost(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes)
+{
+    bool const bothDbBunkersLow = AsyncAVAllianceDBTowerTimerLow(nodes, BG_AV_NODES_DUNBALDAR_SOUTH) &&
+                                  AsyncAVAllianceDBTowerTimerLow(nodes, BG_AV_NODES_DUNBALDAR_NORTH);
+    bool const firstAidLost = AsyncAVNodeControlledBy(nodes, BG_AV_NODES_FIRSTAID_STATION, TEAM_HORDE);
+    return bothDbBunkersLow || firstAidLost;
+}
+
+static AllianceAVRushLevel AsyncAVGetAllianceRushLevel(AsyncAVStrategyResult const& result,
+                                                       AVBotStrategy hordeStrategy)
+{
+    bool const earlyGame = result.elapsedMs < 6 * 60 * 1000;
+    if (result.hordeDunBaldar >= 3 || result.hordeDeepNorth >= 10 || (earlyGame && result.hordeDeepNorth >= 6))
+        return result.hordeDunBaldar >= 3 ? AV_RUSH_DUNBALDAR : AV_RUSH_DEEP;
+
+    if (result.hordeNorth >= 8 || (earlyGame && result.hordeNorth >= 5) ||
+        (hordeStrategy == AV_STRATEGY_OFFENSIVE && result.hordeNorth >= 3))
+        return AV_RUSH_FRONT;
+
+    return AV_RUSH_NONE;
+}
+
+static AllianceAVThreatLevel AsyncAVGetAllianceThreat(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
+                                                      AsyncAVStrategyResult const& result,
+                                                      AllianceAVRushLevel rushLevel)
+{
+    bool const dbSouthAssaulted = AsyncAVNodeAssaultedBy(nodes, BG_AV_NODES_DUNBALDAR_SOUTH, TEAM_HORDE);
+    bool const dbNorthAssaulted = AsyncAVNodeAssaultedBy(nodes, BG_AV_NODES_DUNBALDAR_NORTH, TEAM_HORDE);
+    bool const stormpikeAssaulted = AsyncAVNodeAssaultedBy(nodes, BG_AV_NODES_STORMPIKE_GRAVE, TEAM_HORDE);
+    bool const firstAidLost = AsyncAVNodeControlledBy(nodes, BG_AV_NODES_FIRSTAID_STATION, TEAM_HORDE);
+
+    if (dbSouthAssaulted || dbNorthAssaulted || stormpikeAssaulted || firstAidLost)
+        return AV_THREAT_CRITICAL;
+
+    if (result.hordeDunBaldar >= 3 || rushLevel == AV_RUSH_DUNBALDAR)
+        return AV_THREAT_HIGH;
+
+    if (result.hordeDeepNorth >= 3 || rushLevel == AV_RUSH_DEEP)
+        return AV_THREAT_MEDIUM;
+
+    if (result.hordeNorth >= 3 || rushLevel == AV_RUSH_FRONT)
+        return AV_THREAT_LOW;
+
+    return AV_THREAT_NONE;
+}
+
+static bool AsyncAVAllianceHasFinalDrekWindow(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
+                                             AsyncAVStrategyResult const& result, bool hordeCaptainAlive)
+{
+    if (!AsyncAVAllianceHasAnySouthRespawn(nodes) || hordeCaptainAlive)
+        return false;
+
+    if (result.hordeTowersDown >= 4)
+    {
+        uint32 const minimumSouthCore = AsyncAVAllianceHasForwardDrekRespawn(nodes) ? 6 : 14;
+        return result.allianceSouth >= minimumSouthCore;
+    }
+
+    return result.hordeTowersDown >= 3 && AsyncAVAllianceHasForwardDrekRespawn(nodes) &&
+           result.allianceSouth >= 12;
+}
+
+static bool AsyncAVAllianceHasCommittedFrostwolfFoothold(
+    std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes, AsyncAVStrategyResult const& result,
+    AllianceAVThreatLevel threat, bool hordeCaptainAlive)
+{
+    return threat < AV_THREAT_HIGH && !hordeCaptainAlive && AsyncAVAllianceHasForwardDrekRespawn(nodes) &&
+           result.allianceSouth >= 10;
+}
+
+static bool AsyncAVAllianceNorthIsQuiet(AsyncAVStrategyResult const& result, AllianceAVThreatLevel threat,
+                                        AllianceAVRushLevel rushLevel)
+{
+    if (threat != AV_THREAT_NONE || rushLevel != AV_RUSH_NONE || result.allianceDefensivePressure > 0)
+        return false;
+
+    return result.hordeNorth == 0 && result.hordeDeepNorth == 0 && result.hordeDunBaldar == 0;
+}
+
+static bool AsyncAVAllianceNeedsIcebloodBreakthrough(
+    std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes, AsyncAVStrategyResult const& result,
+    AllianceAVThreatLevel threat, AllianceAVRushLevel rushLevel, AVBotStrategy hordeStrategy, bool hordeCaptainAlive)
+{
+    if (hordeStrategy != AV_STRATEGY_DEFENSIVE || threat != AV_THREAT_NONE || rushLevel != AV_RUSH_NONE)
+        return false;
+
+    if (hordeCaptainAlive || AsyncAVAllianceHasForwardDrekRespawn(nodes))
+        return false;
+
+    if (result.hordeTowersDown > 0 || result.hordeTowerProgress > 0)
+        return false;
+
+    return !AsyncAVNodeControlledBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+}
+
+static bool AsyncAVAllianceNeedsIcebloodMainForce(
+    std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes, AsyncAVStrategyResult const& result,
+    AllianceAVThreatLevel threat, AllianceAVRushLevel rushLevel, AllianceAVBattlefieldMode mode,
+    bool hordeCaptainAlive)
+{
+    if (!AsyncAVAllianceNorthIsQuiet(result, threat, rushLevel))
+        return false;
+
+    if (mode == AV_MODE_IBGY_BREAKTHROUGH)
+        return true;
+
+    if (mode != AV_MODE_IBGY_PUSH && mode != AV_MODE_IBGY_GUARD)
+        return false;
+
+    if (AsyncAVAllianceHasForwardDrekRespawn(nodes) && !hordeCaptainAlive)
+        return false;
+
+    if (result.allianceSouth >= 16)
+        return false;
+
+    bool const icebloodAssaulted = AsyncAVNodeAssaultedBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    bool const icebloodControlled = AsyncAVNodeControlledBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    return icebloodAssaulted || icebloodControlled || !hordeCaptainAlive;
+}
+
+static bool AsyncAVAllianceCanReleaseIdleNorthReserve(AsyncAVStrategyResult const& result,
+                                                      AllianceAVThreatLevel threat,
+                                                      AllianceAVRushLevel rushLevel,
+                                                      AllianceAVBattlefieldMode mode,
+                                                      bool needsIcebloodMainForce)
+{
+    if (!AsyncAVAllianceNorthIsQuiet(result, threat, rushLevel))
+        return false;
+
+    if (needsIcebloodMainForce)
+        return true;
+
+    return result.allianceSouth >= 18 &&
+           (mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
+            mode == AV_MODE_SOUTH_TOWER_SPLIT || mode == AV_MODE_DREK_SETUP ||
+            mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_PUSH);
+}
+
+static uint8 AsyncAVAllianceReleasedDefenderLimit(AllianceAVBattlefieldMode mode, bool needsIcebloodMainForce)
+{
+    if (mode == AV_MODE_IBGY_BREAKTHROUGH)
+        return 1;
+
+    return needsIcebloodMainForce ? 2 : 1;
+}
+
+static bool AsyncAVAllianceShouldScreenIdleNorthReserve(AsyncAVStrategyResult const& result,
+                                                        AllianceAVThreatLevel threat,
+                                                        AllianceAVRushLevel rushLevel,
+                                                        AllianceAVBattlefieldMode mode,
+                                                        bool needsIcebloodMainForce)
+{
+    if (!AsyncAVAllianceNorthIsQuiet(result, threat, rushLevel) || needsIcebloodMainForce ||
+        mode == AV_MODE_IBGY_BREAKTHROUGH)
+        return false;
+
+    return mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
+           mode == AV_MODE_SOUTH_TOWER_SPLIT || mode == AV_MODE_DREK_SETUP ||
+           mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_PUSH;
+}
+
+static bool AsyncAVAllianceHasDrekSetupWindow(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
+                                             AsyncAVStrategyResult const& result,
+                                             AllianceAVThreatLevel threat, bool hordeCaptainAlive)
+{
+    return threat < AV_THREAT_HIGH && !hordeCaptainAlive &&
+           AsyncAVNodeControlledBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE) &&
+           AsyncAVAllianceHasForwardDrekRespawn(nodes) && result.hordeTowerProgress >= 2 &&
+           result.allianceSouth >= 10;
+}
+
+static bool AsyncAVAllianceNeedsFrostwolfLock(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
+                                             AsyncAVStrategyResult const& result,
+                                             AllianceAVThreatLevel threat, bool hordeCaptainAlive)
+{
+    return threat < AV_THREAT_HIGH && !hordeCaptainAlive &&
+           AsyncAVNodeControlledBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE) &&
+           !AsyncAVAllianceHasForwardDrekRespawn(nodes) && result.allianceSouth >= 8;
+}
+
+static AllianceAVBattlefieldMode AsyncAVAllianceComputeMode(
+    std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes, AsyncAVStrategyResult const& result,
+    AllianceAVThreatLevel threat, AllianceAVRushLevel rushLevel, AVBotStrategy hordeStrategy,
+    bool hordeCaptainAlive, bool finalDrekWindow)
+{
+    bool const dbEmergency = threat == AV_THREAT_CRITICAL &&
+        (AsyncAVNodeAssaultedBy(nodes, BG_AV_NODES_DUNBALDAR_SOUTH, TEAM_HORDE) ||
+         AsyncAVNodeAssaultedBy(nodes, BG_AV_NODES_DUNBALDAR_NORTH, TEAM_HORDE) ||
+         AsyncAVNodeControlledBy(nodes, BG_AV_NODES_FIRSTAID_STATION, TEAM_HORDE));
+
+    if (dbEmergency)
+        return AV_MODE_DUN_BALDAR_EMERGENCY;
+
+    if (threat >= AV_THREAT_HIGH)
+        return AV_MODE_NORTH_DEFENSE;
+
+    if (finalDrekWindow && !AsyncAVAllianceDunBaldarBaseActuallyLost(nodes))
+        return AV_MODE_DREK_PUSH;
+
+    bool const ownsForwardGY = AsyncAVAllianceHasForwardDrekRespawn(nodes);
+    bool const committedFrostwolf = AsyncAVAllianceHasCommittedFrostwolfFoothold(nodes, result, threat,
+                                                                                  hordeCaptainAlive);
+    bool const icebloodControlled = AsyncAVNodeControlledBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    bool const icebloodAssaulted = AsyncAVNodeAssaultedBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+
+    if (!icebloodControlled)
+    {
+        if (committedFrostwolf)
+            return result.hordeTowerProgress >= 2 ? AV_MODE_DREK_SETUP : AV_MODE_FROSTWOLF_LOCK;
+
+        if (hordeCaptainAlive)
+            return AV_MODE_GALVANGAR_STRIKE;
+
+        if (AsyncAVAllianceNeedsIcebloodBreakthrough(nodes, result, threat, rushLevel, hordeStrategy,
+                                                     hordeCaptainAlive))
+            return AV_MODE_IBGY_BREAKTHROUGH;
+
+        if (icebloodAssaulted)
+            return AV_MODE_IBGY_GUARD;
+
+        return result.elapsedMs < 90 * 1000 ? AV_MODE_OPENING_CONTROL : AV_MODE_IBGY_PUSH;
+    }
+
+    if (finalDrekWindow || (!hordeCaptainAlive && ownsForwardGY && result.hordeTowersDown >= 3 &&
+                            result.allianceSouth >= 12))
+        return AV_MODE_DREK_PUSH;
+
+    if (AsyncAVAllianceHasDrekSetupWindow(nodes, result, threat, hordeCaptainAlive))
+        return AV_MODE_DREK_SETUP;
+
+    if (AsyncAVAllianceNeedsFrostwolfLock(nodes, result, threat, hordeCaptainAlive))
+        return AV_MODE_FROSTWOLF_LOCK;
+
+    if (hordeCaptainAlive && result.elapsedMs >= 3 * 60 * 1000)
+        return AV_MODE_GALVANGAR_STRIKE;
+
+    return AV_MODE_SOUTH_TOWER_SPLIT;
+}
+
+static uint8 AsyncAVClampDefenderLimit(uint32 value)
+{
+    return static_cast<uint8>(std::min<uint32>(9, value));
+}
+
+static uint8 AsyncAVAllianceRushDefenderLimit(
+    std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes, AsyncAVStrategyResult const& result,
+    AllianceAVThreatLevel threat, AVBotStrategy allianceStrategy, AVBotStrategy hordeStrategy,
+    bool finalDrekWindow)
+{
+    if (allianceStrategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO)
+    {
+        uint8 limit = 4;
+        switch (threat)
+        {
+            case AV_THREAT_LOW:
+                limit = result.elapsedMs < 6 * 60 * 1000 && result.hordeNorth >= 10 ? 6 : 4;
+                break;
+            case AV_THREAT_MEDIUM:
+                limit = result.hordeDeepNorth >= 8 ? 7 : 6;
+                break;
+            case AV_THREAT_HIGH:
+                limit = 8;
+                break;
+            case AV_THREAT_CRITICAL:
+                limit = 9;
+                if (AsyncAVAllianceDunBaldarBaseActuallyLost(nodes))
+                    limit = 9;
+                break;
+            case AV_THREAT_NONE:
+            default:
+                break;
+        }
+
+        if (hordeStrategy == AV_STRATEGY_OFFENSIVE && threat != AV_THREAT_NONE && limit < 6)
+            ++limit;
+
+        if (finalDrekWindow && threat < AV_THREAT_HIGH)
+        {
+            uint8 const finalDefenseCap = AsyncAVAllianceDunBaldarBaseActuallyLost(nodes) ? 7 : 6;
+            limit = std::min<uint8>(limit, finalDefenseCap);
+        }
+
+        return std::min<uint8>(limit, 9);
+    }
+
+    if (result.allianceRushLevel == AV_RUSH_NONE)
+        return 0;
+
+    uint8 limit = 5;
+    if (result.allianceRushLevel == AV_RUSH_DEEP)
+        limit = 7;
+    else if (result.allianceRushLevel == AV_RUSH_DUNBALDAR)
+        limit = 8;
+
+    if (hordeStrategy == AV_STRATEGY_OFFENSIVE)
+        ++limit;
+    if (allianceStrategy == AV_STRATEGY_DEFENSIVE)
+        limit = 9;
+
+    return std::min<uint8>(limit, 9);
+}
+
+static uint8 AsyncAVAllianceBaseDefenderLimit(AsyncAVStrategyResult const& result, AVBotStrategy allianceStrategy,
+                                              AVBotStrategy hordeStrategy)
+{
+    uint8 defendersProhab = 4;
+
+    switch (allianceStrategy)
+    {
+        case AV_STRATEGY_BALANCED:
+            defendersProhab = 4;
+            break;
+        case AV_STRATEGY_OFFENSIVE:
+            defendersProhab = 1;
+            break;
+        case AV_STRATEGY_DEFENSIVE:
+            defendersProhab = 9;
+            break;
+        case AV_STRATEGY_ALLIANCE_CONTROL_TEMPO:
+            defendersProhab = 4;
+            break;
+        default:
+            break;
+    }
+
+    if (hordeStrategy == AV_STRATEGY_DEFENSIVE)
+        defendersProhab = std::max<uint8>(defendersProhab, 4);
+
+    if (allianceStrategy != AV_STRATEGY_ALLIANCE_CONTROL_TEMPO && result.allianceDefensivePressure > 0)
+        defendersProhab = std::max<uint8>(
+            defendersProhab, AsyncAVClampDefenderLimit(4 + result.allianceDefensivePressure * 2));
+
+    return defendersProhab;
+}
+
+static void AsyncAVBuildAllianceTacticalOrders(AsyncAVStrategyJob const& job, AsyncAVStrategyResult& result)
+{
+    AVBotStrategy const allianceStrategy = static_cast<AVBotStrategy>(job.allianceStrategy);
+    AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(job.hordeStrategy);
+
+    result.allianceStrategy = job.allianceStrategy;
+    result.hordeStrategy = job.hordeStrategy;
+    result.allianceRushLevel = AsyncAVGetAllianceRushLevel(result, hordeStrategy);
+    AllianceAVRushLevel const rushLevel = static_cast<AllianceAVRushLevel>(result.allianceRushLevel);
+    AllianceAVThreatLevel const threat = AsyncAVGetAllianceThreat(job.nodes, result, rushLevel);
+    result.allianceThreat = static_cast<uint8>(threat);
+    result.allianceFullRecall = threat >= AV_THREAT_HIGH || AsyncAVAllianceDunBaldarBaseActuallyLost(job.nodes);
+    result.allianceFinalDrekWindow = AsyncAVAllianceHasFinalDrekWindow(job.nodes, result, job.hordeCaptainAlive);
+
+    AllianceAVBattlefieldMode const mode = AsyncAVAllianceComputeMode(job.nodes, result, threat, rushLevel,
+                                                                      hordeStrategy, job.hordeCaptainAlive,
+                                                                      result.allianceFinalDrekWindow);
+    result.allianceMode = static_cast<uint8>(mode);
+    result.allianceNeedsIcebloodMainForce = AsyncAVAllianceNeedsIcebloodMainForce(
+        job.nodes, result, threat, rushLevel, mode, job.hordeCaptainAlive);
+    result.allianceCanReleaseIdleNorthReserve = AsyncAVAllianceCanReleaseIdleNorthReserve(
+        result, threat, rushLevel, mode, result.allianceNeedsIcebloodMainForce);
+    result.allianceShouldScreenIdleNorthReserve = AsyncAVAllianceShouldScreenIdleNorthReserve(
+        result, threat, rushLevel, mode, result.allianceNeedsIcebloodMainForce);
+    result.allianceReleasedDefenderLimit = AsyncAVAllianceReleasedDefenderLimit(
+        mode, result.allianceNeedsIcebloodMainForce);
+
+    uint8 defenderLimit = AsyncAVAllianceBaseDefenderLimit(result, allianceStrategy, hordeStrategy);
+    if (allianceStrategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO)
+        defenderLimit = std::max<uint8>(defenderLimit,
+                                        AsyncAVAllianceRushDefenderLimit(job.nodes, result, threat, allianceStrategy,
+                                                                         hordeStrategy,
+                                                                         result.allianceFinalDrekWindow));
+
+    if (result.allianceFinalDrekWindow && !result.allianceFullRecall)
+    {
+        uint8 const finalDefenseCap = AsyncAVAllianceDunBaldarBaseActuallyLost(job.nodes) ? 7 : 6;
+        defenderLimit = std::min<uint8>(defenderLimit, finalDefenseCap);
+    }
+    else if (result.allianceCanReleaseIdleNorthReserve)
+        defenderLimit = std::min<uint8>(defenderLimit, result.allianceReleasedDefenderLimit);
+
+    result.allianceDefenderLimit = std::min<uint8>(defenderLimit, 9);
+    result.allianceTacticalOrdersValid = true;
+}
+
+static uint32 AsyncAVCountForTeam(AsyncAVAreaCounts const& counts, TeamId teamId, bool aliveOnly,
+                                  bool notInCombatOnly)
+{
+    if (teamId == TEAM_ALLIANCE)
+    {
+        if (notInCombatOnly)
+            return counts.allianceNotCombat;
+        return aliveOnly ? counts.allianceAlive : counts.allianceTotal;
+    }
+
+    if (teamId == TEAM_HORDE)
+    {
+        if (notInCombatOnly)
+            return counts.hordeNotCombat;
+        return aliveOnly ? counts.hordeAlive : counts.hordeTotal;
+    }
+
+    if (notInCombatOnly)
+        return counts.allianceNotCombat + counts.hordeNotCombat;
+
+    return aliveOnly ? counts.allianceAlive + counts.hordeAlive : counts.allianceTotal + counts.hordeTotal;
+}
+
+static bool AsyncAVAreaMatches(AsyncAVAreaDef const& area, float x, float y, float radius)
+{
+    float const dx = area.x - x;
+    float const dy = area.y - y;
+    float const centerDeltaSq = dx * dx + dy * dy;
+    return centerDeltaSq <= 45.0f * 45.0f && std::fabs(area.radius - radius) <= 8.0f;
+}
+
+class AsyncAVStrategyCache
+{
+public:
+    ~AsyncAVStrategyCache() { Stop(); }
+
+    static AsyncAVStrategyCache& Instance()
+    {
+        static AsyncAVStrategyCache cache;
+        return cache;
+    }
+
+    void Update(uint32 diff)
+    {
+        if (!sPlayerbotAIConfig.asyncAVStrategyCache)
+        {
+            Stop();
+            return;
+        }
+
+        _logTimer += diff;
+        if (_logTimer < ASYNC_AV_CACHE_LOG_INTERVAL)
+            return;
+
+        _logTimer = 0;
+        uint32 now = getMSTime();
+        AsyncAVStrategyResult sample;
+        uint32 instanceCount = 0;
+        {
+            std::lock_guard<std::mutex> lock(_resultMutex);
+            for (auto itr = _results.begin(); itr != _results.end();)
+            {
+                if (now >= itr->second.lastAccessMs && now - itr->second.lastAccessMs > ASYNC_AV_CACHE_STALE_MS)
+                    itr = _results.erase(itr);
+                else
+                {
+                    if (!sample.instanceId)
+                        sample = itr->second;
+                    ++instanceCount;
+                    ++itr;
+                }
+            }
+        }
+
+        if (sample.instanceId && sample.generation != _lastLoggedGeneration)
+        {
+            _lastLoggedGeneration = sample.generation;
+            AsyncAVAreaCounts const& ibgy = sample.areas[ASYNC_AV_AREA_ICEBLOOD_220];
+            LOG_INFO("playerbots",
+                     "AsyncAVStrategyCache: instances={} sample={} players={} aliveA={} aliveH={} Hnorth={} Hdeep={} Hdb={} Asouth={} IBGY_A={} IBGY_H={} towersDown={} towerProgress={} defensePressure={} tactical={} mode={} threat={} defenders={} workers={}",
+                     instanceCount, sample.instanceId, sample.playerCount, sample.aliveAlliance, sample.aliveHorde,
+                     sample.hordeNorth, sample.hordeDeepNorth, sample.hordeDunBaldar, sample.allianceSouth,
+                     ibgy.allianceAlive, ibgy.hordeAlive, sample.hordeTowersDown, sample.hordeTowerProgress,
+                     sample.allianceDefensivePressure, sample.allianceTacticalOrdersValid ? 1 : 0,
+                     GetAllianceAVBattlefieldModeName(static_cast<AllianceAVBattlefieldMode>(sample.allianceMode)),
+                     GetAllianceAVThreatLevelName(static_cast<AllianceAVThreatLevel>(sample.allianceThreat)),
+                     static_cast<uint32>(sample.allianceDefenderLimit), static_cast<uint32>(_workers.size()));
+        }
+    }
+
+    void Request(Battleground* bg, BattlegroundAV* av)
+    {
+        if (!sPlayerbotAIConfig.asyncAVStrategyCache || !bg || !av || bg->GetStatus() != STATUS_IN_PROGRESS)
+            return;
+
+        EnsureStarted();
+
+        uint32 const instanceId = bg->GetInstanceID();
+        uint32 const now = getMSTime();
+        uint32 const interval = std::max<uint32>(100, sPlayerbotAIConfig.asyncAVStrategyCacheInterval);
+
+        {
+            std::lock_guard<std::mutex> lock(_requestMutex);
+            auto itr = _lastRequestMs.find(instanceId);
+            if (itr != _lastRequestMs.end() && now >= itr->second && now - itr->second < interval)
+                return;
+
+            _lastRequestMs[instanceId] = now;
+        }
+
+        auto job = std::make_shared<AsyncAVStrategyJob>();
+        job->generation = ++_nextGeneration;
+        job->instanceId = instanceId;
+        job->elapsedMs = bg->GetStartTime();
+        job->allianceStrategy = BGTactics::GetBotStrategyForTeam(bg, TEAM_ALLIANCE);
+        job->hordeStrategy = BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE);
+        job->hordeCaptainAlive = av->IsCaptainAlive(TEAM_HORDE);
+
+        for (uint8 nodeId = BG_AV_NODES_FIRSTAID_STATION; nodeId < BG_AV_NODES_MAX; ++nodeId)
+        {
+            BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+            job->nodes[nodeId].state = node.State;
+            job->nodes[nodeId].ownerId = node.OwnerId;
+            job->nodes[nodeId].prevOwnerId = node.PrevOwnerId;
+            job->nodes[nodeId].totalOwnerId = node.TotalOwnerId;
+            job->nodes[nodeId].timer = node.Timer;
+        }
+
+        job->players.reserve(bg->GetPlayers().size());
+        for (auto const& playerPair : bg->GetPlayers())
+        {
+            Player* player = playerPair.second;
+            if (!player)
+                continue;
+
+            job->players.push_back({player->GetTeamId(), player->GetPositionX(), player->GetPositionY(),
+                                    player->IsAlive(), player->IsInCombat()});
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(_jobMutex);
+            _jobs.push_back(job);
+        }
+        _jobCondition.notify_one();
+    }
+
+    bool TryGet(uint32 instanceId, AsyncAVStrategyResult& result)
+    {
+        if (!_running.load())
+            return false;
+
+        std::lock_guard<std::mutex> lock(_resultMutex);
+        auto itr = _results.find(instanceId);
+        if (itr == _results.end())
+            return false;
+
+        itr->second.lastAccessMs = getMSTime();
+        result = itr->second;
+        return true;
+    }
+
+    bool TryGetPlayersNear(Battleground* bg, TeamId teamId, float x, float y, float radius, bool aliveOnly,
+                           bool notInCombatOnly, uint32& count)
+    {
+        if (!bg)
+            return false;
+
+        AsyncAVStrategyResult result;
+        if (!TryGet(bg->GetInstanceID(), result))
+            return false;
+
+        for (AsyncAVAreaDef const& area : AsyncAVAreas)
+        {
+            if (!AsyncAVAreaMatches(area, x, y, radius))
+                continue;
+
+            count = AsyncAVCountForTeam(result.areas[area.id], teamId, aliveOnly, notInCombatOnly);
+            return true;
+        }
+
+        return false;
+    }
+
+private:
+    void EnsureStarted()
+    {
+        uint32 threadCount = std::max<uint32>(1, sPlayerbotAIConfig.asyncAVStrategyCacheThreads);
+        if (!_workers.empty() && _workers.size() == threadCount)
+            return;
+
+        Stop();
+
+        _stopping.store(false);
+        _running.store(true);
+        _workers.reserve(threadCount);
+        for (uint32 i = 0; i < threadCount; ++i)
+            _workers.emplace_back(&AsyncAVStrategyCache::WorkerLoop, this);
+
+        LOG_INFO("playerbots", "AsyncAVStrategyCache started with {} worker thread(s)", threadCount);
+    }
+
+    void Stop()
+    {
+        if (_workers.empty())
+            return;
+
+        _running.store(false);
+        _stopping.store(true);
+        {
+            std::lock_guard<std::mutex> lock(_jobMutex);
+            _jobs.clear();
+        }
+        _jobCondition.notify_all();
+
+        for (std::thread& worker : _workers)
+            if (worker.joinable())
+                worker.join();
+
+        _workers.clear();
+        _stopping.store(false);
+
+        {
+            std::lock_guard<std::mutex> lock(_resultMutex);
+            _results.clear();
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(_requestMutex);
+            _lastRequestMs.clear();
+        }
+    }
+
+    void WorkerLoop()
+    {
+        while (true)
+        {
+            std::shared_ptr<AsyncAVStrategyJob> job;
+            {
+                std::unique_lock<std::mutex> lock(_jobMutex);
+                _jobCondition.wait(lock, [this]
+                {
+                    return _stopping.load() || !_jobs.empty();
+                });
+
+                if (_stopping.load())
+                    return;
+
+                job = _jobs.front();
+                _jobs.pop_front();
+            }
+
+            Publish(Process(*job));
+        }
+    }
+
+    AsyncAVStrategyResult Process(AsyncAVStrategyJob const& job)
+    {
+        AsyncAVStrategyResult result;
+        result.generation = job.generation;
+        result.instanceId = job.instanceId;
+        result.elapsedMs = job.elapsedMs;
+        result.lastAccessMs = getMSTime();
+        result.playerCount = static_cast<uint32>(job.players.size());
+
+        for (AsyncAVPlayerSnapshot const& player : job.players)
+        {
+            if (player.teamId == TEAM_ALLIANCE && player.alive)
+                ++result.aliveAlliance;
+            else if (player.teamId == TEAM_HORDE && player.alive)
+                ++result.aliveHorde;
+
+            if (player.alive)
+            {
+                if (player.teamId == TEAM_HORDE)
+                {
+                    if (player.x > -120.0f)
+                        ++result.hordeNorth;
+                    if (player.x > 250.0f)
+                        ++result.hordeDeepNorth;
+                    if (player.x > 520.0f)
+                        ++result.hordeDunBaldar;
+                }
+                else if (player.teamId == TEAM_ALLIANCE && player.x > -120.0f)
+                    ++result.allianceNorth;
+
+                if (player.teamId == TEAM_ALLIANCE && player.x <= -462.0f)
+                    ++result.allianceSouth;
+            }
+
+            for (AsyncAVAreaDef const& area : AsyncAVAreas)
+            {
+                float const dx = player.x - area.x;
+                float const dy = player.y - area.y;
+                if (dx * dx + dy * dy <= area.radius * area.radius)
+                    result.areas[area.id].Add(player.teamId, player.alive, player.inCombat);
+            }
+        }
+
+        for (uint8 towerNode : {BG_AV_NODES_ICEBLOOD_TOWER, BG_AV_NODES_TOWER_POINT,
+                               BG_AV_NODES_FROSTWOLF_ETOWER, BG_AV_NODES_FROSTWOLF_WTOWER})
+        {
+            if (job.nodes[towerNode].state == POINT_DESTROYED)
+                ++result.hordeTowersDown;
+
+            if (job.nodes[towerNode].state == POINT_DESTROYED ||
+                AsyncAVHordeTowerAssaultedNearCompletion(job.nodes, towerNode))
+                ++result.hordeTowerProgress;
+        }
+
+        for (auto const& [nodeId, _] : AV_DefendObjectives_Alliance)
+            if (AsyncAVAllianceNodeUnderHordePressure(job.nodes, nodeId))
+                ++result.allianceDefensivePressure;
+
+        if (sPlayerbotAIConfig.asyncAVTacticalOrders)
+            AsyncAVBuildAllianceTacticalOrders(job, result);
+
+        return result;
+    }
+
+    void Publish(AsyncAVStrategyResult const& result)
+    {
+        std::lock_guard<std::mutex> lock(_resultMutex);
+        _results[result.instanceId] = result;
+    }
+
+    std::vector<std::thread> _workers;
+    std::mutex _jobMutex;
+    std::condition_variable _jobCondition;
+    std::deque<std::shared_ptr<AsyncAVStrategyJob>> _jobs;
+    std::atomic<bool> _running{false};
+    std::atomic<bool> _stopping{false};
+
+    std::mutex _resultMutex;
+    std::unordered_map<uint32, AsyncAVStrategyResult> _results;
+
+    std::mutex _requestMutex;
+    std::unordered_map<uint32, uint32> _lastRequestMs;
+
+    uint32 _nextGeneration = 0;
+    uint32 _logTimer = 0;
+    uint32 _lastLoggedGeneration = 0;
+};
+
+static void RequestAsyncAVStrategyCache(Battleground* bg, BattlegroundAV* av)
+{
+    AsyncAVStrategyCache::Instance().Request(bg, av);
+}
+
+static bool TryGetAsyncAVStrategyResult(Battleground* bg, AsyncAVStrategyResult& result)
+{
+    return bg && AsyncAVStrategyCache::Instance().TryGet(bg->GetInstanceID(), result);
+}
+
+static bool TryGetAsyncAVPlayersNear(Battleground* bg, TeamId teamId, float x, float y, float radius, bool aliveOnly,
+                                     bool notInCombatOnly, uint32& count)
+{
+    return AsyncAVStrategyCache::Instance().TryGetPlayersNear(bg, teamId, x, y, radius, aliveOnly,
+                                                              notInCombatOnly, count);
+}
+}  // namespace
+
+void BGTactics::UpdateAsyncAVStrategyCache(uint32 diff) { AsyncAVStrategyCache::Instance().Update(diff); }
+
 static AllianceAVRushInfo GetAllianceAVRushInfo(Battleground* bg, AVBotStrategy hordeStrategy)
 {
     AllianceAVRushInfo info;
@@ -1585,6 +2539,35 @@ static AllianceAVRushInfo GetAllianceAVRushInfo(Battleground* bg, AVBotStrategy 
         return info;
 
     info.elapsedMs = bg->GetStartTime();
+    BattlegroundTypeId bgType = bg->GetBgTypeID();
+    if (bgType == BATTLEGROUND_RB)
+        bgType = bg->GetBgTypeID(true);
+
+    if (bgType == BATTLEGROUND_AV)
+    {
+        BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+        RequestAsyncAVStrategyCache(bg, av);
+
+        AsyncAVStrategyResult cached;
+        if (TryGetAsyncAVStrategyResult(bg, cached))
+        {
+            info.elapsedMs = cached.elapsedMs;
+            info.hordeNorth = cached.hordeNorth;
+            info.hordeDeepNorth = cached.hordeDeepNorth;
+            info.hordeDunBaldar = cached.hordeDunBaldar;
+            info.allianceNorth = cached.allianceNorth;
+            info.allianceSouth = cached.allianceSouth;
+
+            bool const earlyGame = info.elapsedMs < 6 * 60 * 1000;
+            if (info.hordeDunBaldar >= 3 || info.hordeDeepNorth >= 10 || (earlyGame && info.hordeDeepNorth >= 6))
+                info.level = info.hordeDunBaldar >= 3 ? AV_RUSH_DUNBALDAR : AV_RUSH_DEEP;
+            else if (info.hordeNorth >= 8 || (earlyGame && info.hordeNorth >= 5) ||
+                     (hordeStrategy == AV_STRATEGY_OFFENSIVE && info.hordeNorth >= 3))
+                info.level = AV_RUSH_FRONT;
+
+            return info;
+        }
+    }
 
     for (auto const& playerPair : bg->GetPlayers())
     {
@@ -1995,6 +2978,61 @@ static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(Battleground* bg, 
         return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_GALVANGAR_STRIKE);
 
     return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_SOUTH_TOWER_SPLIT);
+}
+
+struct AllianceAVCachedTactics
+{
+    AllianceAVRushInfo rushInfo;
+    AllianceAVThreatLevel threat = AV_THREAT_NONE;
+    AllianceAVBattlefieldMode mode = AV_MODE_OPENING_CONTROL;
+    uint32 towersDown = 0;
+    uint32 towerProgress = 0;
+    uint32 defensivePressure = 0;
+    uint8 defenderLimit = 4;
+    uint8 releasedDefenderLimit = 1;
+    bool fullRecall = false;
+    bool finalDrekWindow = false;
+    bool canReleaseIdleNorthReserve = false;
+    bool shouldScreenIdleNorthReserve = false;
+    bool needsIcebloodMainForce = false;
+};
+
+static bool TryGetAsyncAllianceAVTactics(Battleground* bg, BattlegroundAV* av, AllianceAVCachedTactics& tactics)
+{
+    if (!sPlayerbotAIConfig.asyncAVTacticalOrders || !bg || !av)
+        return false;
+
+    AsyncAVStrategyResult cached;
+    if (!TryGetAsyncAVStrategyResult(bg, cached) || !cached.allianceTacticalOrdersValid)
+        return false;
+
+    AVBotStrategy const allianceStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_ALLIANCE));
+    AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE));
+    if (cached.allianceStrategy != static_cast<uint8>(allianceStrategy) ||
+        cached.hordeStrategy != static_cast<uint8>(hordeStrategy))
+        return false;
+
+    tactics.rushInfo.elapsedMs = cached.elapsedMs;
+    tactics.rushInfo.hordeNorth = cached.hordeNorth;
+    tactics.rushInfo.hordeDeepNorth = cached.hordeDeepNorth;
+    tactics.rushInfo.hordeDunBaldar = cached.hordeDunBaldar;
+    tactics.rushInfo.allianceNorth = cached.allianceNorth;
+    tactics.rushInfo.allianceSouth = cached.allianceSouth;
+    tactics.rushInfo.level = static_cast<AllianceAVRushLevel>(cached.allianceRushLevel);
+    tactics.threat = static_cast<AllianceAVThreatLevel>(cached.allianceThreat);
+    tactics.mode = ApplyAllianceAVModeHysteresis(bg, av, tactics.threat,
+                                                 static_cast<AllianceAVBattlefieldMode>(cached.allianceMode));
+    tactics.towersDown = cached.hordeTowersDown;
+    tactics.towerProgress = cached.hordeTowerProgress;
+    tactics.defensivePressure = cached.allianceDefensivePressure;
+    tactics.defenderLimit = cached.allianceDefenderLimit;
+    tactics.releasedDefenderLimit = cached.allianceReleasedDefenderLimit;
+    tactics.fullRecall = cached.allianceFullRecall;
+    tactics.finalDrekWindow = cached.allianceFinalDrekWindow;
+    tactics.canReleaseIdleNorthReserve = cached.allianceCanReleaseIdleNorthReserve;
+    tactics.shouldScreenIdleNorthReserve = cached.allianceShouldScreenIdleNorthReserve;
+    tactics.needsIcebloodMainForce = cached.allianceNeedsIcebloodMainForce;
+    return true;
 }
 
 static bool AllianceShouldTakeSnowfall(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
@@ -3228,6 +4266,11 @@ static uint32 CountBattlegroundPlayersNear(Battleground* bg, TeamId teamId, Worl
     if (!bg || !center)
         return 0;
 
+    uint32 cachedCount = 0;
+    if (TryGetAsyncAVPlayersNear(bg, teamId, center->GetPositionX(), center->GetPositionY(), radius, aliveOnly, false,
+                                 cachedCount))
+        return cachedCount;
+
     float const radiusSq = radius * radius;
     uint32 count = 0;
     for (auto const& playerPair : bg->GetPlayers())
@@ -4091,15 +5134,30 @@ static void LogAllianceAVMoveDebug(Player* bot, Battleground* bg, PositionInfo c
     BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
     AVBotStrategy const allianceStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_ALLIANCE));
     AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE));
-    AllianceAVRushInfo const rushInfo = GetAllianceAVRushInfo(bg, hordeStrategy);
-    AllianceAVThreatLevel const threat = GetAllianceAVThreatLevel(av, rushInfo);
-    AllianceAVBattlefieldMode const mode = GetAllianceAVBattlefieldMode(bg, av, rushInfo, threat);
+    AllianceAVRushInfo rushInfo = GetAllianceAVRushInfo(bg, hordeStrategy);
+    AllianceAVThreatLevel threat = AV_THREAT_NONE;
+    AllianceAVBattlefieldMode mode = AV_MODE_OPENING_CONTROL;
+    AllianceAVCachedTactics cachedAllianceTactics;
+    bool const hasCachedAllianceTactics = TryGetAsyncAllianceAVTactics(bg, av, cachedAllianceTactics);
+    if (hasCachedAllianceTactics)
+    {
+        rushInfo = cachedAllianceTactics.rushInfo;
+        threat = cachedAllianceTactics.threat;
+        mode = cachedAllianceTactics.mode;
+    }
+    else
+    {
+        threat = GetAllianceAVThreatLevel(av, rushInfo);
+        mode = GetAllianceAVBattlefieldMode(bg, av, rushInfo, threat);
+    }
 
     if (defenderLimit == 255)
     {
-        defenderLimit = GetAVDefenderRoleLimit(TEAM_ALLIANCE, allianceStrategy, hordeStrategy, av);
-        defenderLimit = std::max<uint8>(defenderLimit,
-                                        GetAllianceAVRushDefenderLimit(av, rushInfo, allianceStrategy, hordeStrategy));
+        defenderLimit = hasCachedAllianceTactics ?
+            cachedAllianceTactics.defenderLimit : GetAVDefenderRoleLimit(TEAM_ALLIANCE, allianceStrategy, hordeStrategy, av);
+        if (!hasCachedAllianceTactics)
+            defenderLimit = std::max<uint8>(
+                defenderLimit, GetAllianceAVRushDefenderLimit(av, rushInfo, allianceStrategy, hordeStrategy));
         isDefender = role < defenderLimit;
     }
 
@@ -4849,8 +5907,22 @@ bool BGTactics::selectObjective(bool reset)
             AVBotStrategy strategy = (team == TEAM_ALLIANCE) ? strategyAlliance : strategyHorde;
             AVBotStrategy enemyStrategy = (team == TEAM_ALLIANCE) ? strategyHorde : strategyAlliance;
             AllianceAVRushInfo allianceRushInfo = GetAllianceAVRushInfo(bg, strategyHorde);
-            AllianceAVThreatLevel allianceThreat = GetAllianceAVThreatLevel(av, allianceRushInfo);
-            AllianceAVBattlefieldMode allianceMode = GetAllianceAVBattlefieldMode(bg, av, allianceRushInfo, allianceThreat);
+            AllianceAVThreatLevel allianceThreat = AV_THREAT_NONE;
+            AllianceAVBattlefieldMode allianceMode = AV_MODE_OPENING_CONTROL;
+            AllianceAVCachedTactics cachedAllianceTactics;
+            bool const hasCachedAllianceTactics = team == TEAM_ALLIANCE &&
+                TryGetAsyncAllianceAVTactics(bg, av, cachedAllianceTactics);
+            if (hasCachedAllianceTactics)
+            {
+                allianceRushInfo = cachedAllianceTactics.rushInfo;
+                allianceThreat = cachedAllianceTactics.threat;
+                allianceMode = cachedAllianceTactics.mode;
+            }
+            else
+            {
+                allianceThreat = GetAllianceAVThreatLevel(av, allianceRushInfo);
+                allianceMode = GetAllianceAVBattlefieldMode(bg, av, allianceRushInfo, allianceThreat);
+            }
 
             bool enableMineCapture = true;
             bool enableSnowfall = true;
@@ -4877,23 +5949,26 @@ bool BGTactics::selectObjective(bool reset)
             auto const& defendObjectives =
                 (team == TEAM_HORDE) ? AV_DefendObjectives_Horde : AV_DefendObjectives_Alliance;
 
-            uint8 defendersProhab = GetAVDefenderRoleLimit(team, strategy, enemyStrategy, av);
-            if (team == TEAM_ALLIANCE)
+            uint8 defendersProhab = hasCachedAllianceTactics ?
+                cachedAllianceTactics.defenderLimit : GetAVDefenderRoleLimit(team, strategy, enemyStrategy, av);
+            if (team == TEAM_ALLIANCE && !hasCachedAllianceTactics)
                 defendersProhab = std::max<uint8>(defendersProhab,
                                                   GetAllianceAVRushDefenderLimit(av, allianceRushInfo, strategyAlliance,
                                                                                  strategyHorde));
-            uint32 const allianceHordeTowersDown = team == TEAM_ALLIANCE ? GetAllianceDestroyedHordeTowerCount(av) : 0;
-            bool const allianceFinalDrekPush = team == TEAM_ALLIANCE &&
-                                               strategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO &&
-                                               AllianceHasFinalDrekWindow(av, allianceRushInfo, allianceHordeTowersDown);
+            uint32 const allianceHordeTowersDown = hasCachedAllianceTactics ?
+                cachedAllianceTactics.towersDown : (team == TEAM_ALLIANCE ? GetAllianceDestroyedHordeTowerCount(av) : 0);
+            bool const allianceFinalDrekPush = team == TEAM_ALLIANCE && strategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO &&
+                (hasCachedAllianceTactics ? cachedAllianceTactics.finalDrekWindow :
+                    AllianceHasFinalDrekWindow(av, allianceRushInfo, allianceHordeTowersDown));
             bool const allianceNorthEmergency = team == TEAM_ALLIANCE &&
-                                                AllianceAVShouldFullRecallNorth(av, allianceThreat);
-            if (allianceFinalDrekPush && !allianceNorthEmergency)
+                (hasCachedAllianceTactics ? cachedAllianceTactics.fullRecall :
+                    AllianceAVShouldFullRecallNorth(av, allianceThreat));
+            if (!hasCachedAllianceTactics && allianceFinalDrekPush && !allianceNorthEmergency)
             {
                 uint8 const finalDefenseCap = AllianceDunBaldarBaseActuallyLost(av) ? 7 : 6;
                 defendersProhab = std::min<uint8>(defendersProhab, finalDefenseCap);
             }
-            else if (team == TEAM_ALLIANCE &&
+            else if (!hasCachedAllianceTactics && team == TEAM_ALLIANCE &&
                      AllianceAVCanReleaseIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode))
             {
                 defendersProhab = std::min<uint8>(
@@ -4971,7 +6046,8 @@ bool BGTactics::selectObjective(bool reset)
 
             if (!BgObjective && allianceFinalDrekPush && !allianceNorthEmergency && !isDefender)
             {
-                uint32 const defensivePressure = GetAllianceDefensivePressure(av);
+                uint32 const defensivePressure = hasCachedAllianceTactics ?
+                    cachedAllianceTactics.defensivePressure : GetAllianceDefensivePressure(av);
                 BgObjective = SelectAllianceDrekPushObjective(bot, bg, av, allianceThreat, allianceMode,
                                                               allianceRushInfo, allianceHordeTowersDown,
                                                               defensivePressure);
@@ -5024,7 +6100,8 @@ bool BGTactics::selectObjective(bool reset)
                                                                                         allianceThreat);
                 if (!canCommitToIceblood && bot->GetPositionX() > -180.0f)
                 {
-                    if (AllianceAVShouldScreenIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode) &&
+                    if ((hasCachedAllianceTactics ? cachedAllianceTactics.shouldScreenIdleNorthReserve :
+                         AllianceAVShouldScreenIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode)) &&
                         SetAllianceNorthReservePosition(bot, posMap, pos, role, objectiveReason))
                     {
                         LOG_DEBUG("playerbots",
@@ -5184,7 +6261,8 @@ bool BGTactics::selectObjective(bool reset)
             {
                 if (team == TEAM_ALLIANCE)
                 {
-                    if (AllianceAVShouldScreenIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode) &&
+                    if ((hasCachedAllianceTactics ? cachedAllianceTactics.shouldScreenIdleNorthReserve :
+                         AllianceAVShouldScreenIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode)) &&
                         SetAllianceNorthReservePosition(bot, posMap, pos, role, objectiveReason))
                     {
                         LOG_DEBUG("playerbots",
@@ -6512,38 +7590,59 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             AVBotStrategy const strategy = static_cast<AVBotStrategy>(GetBotStrategyForTeam(bg, TEAM_ALLIANCE));
             AVBotStrategy const enemyStrategy = static_cast<AVBotStrategy>(GetBotStrategyForTeam(bg, TEAM_HORDE));
             AllianceAVRushInfo const rushInfo = GetAllianceAVRushInfo(bg, enemyStrategy);
-            AllianceAVThreatLevel const threat = GetAllianceAVThreatLevel(av, rushInfo);
-            AllianceAVBattlefieldMode const mode = GetAllianceAVBattlefieldMode(bg, av, rushInfo, threat);
-            uint8 defenderLimit = GetAVDefenderRoleLimit(TEAM_ALLIANCE, strategy, enemyStrategy, av);
-            defenderLimit = std::max<uint8>(defenderLimit,
-                                            GetAllianceAVRushDefenderLimit(av, rushInfo, strategy, enemyStrategy));
-            uint32 const towersDown = GetAllianceDestroyedHordeTowerCount(av);
+            AllianceAVThreatLevel threat = AV_THREAT_NONE;
+            AllianceAVBattlefieldMode mode = AV_MODE_OPENING_CONTROL;
+            AllianceAVRushInfo effectiveRushInfo = rushInfo;
+            AllianceAVCachedTactics cachedAllianceTactics;
+            bool const hasCachedAllianceTactics = TryGetAsyncAllianceAVTactics(bg, av, cachedAllianceTactics);
+            if (hasCachedAllianceTactics)
+            {
+                effectiveRushInfo = cachedAllianceTactics.rushInfo;
+                threat = cachedAllianceTactics.threat;
+                mode = cachedAllianceTactics.mode;
+            }
+            else
+            {
+                threat = GetAllianceAVThreatLevel(av, effectiveRushInfo);
+                mode = GetAllianceAVBattlefieldMode(bg, av, effectiveRushInfo, threat);
+            }
+
+            uint8 defenderLimit = hasCachedAllianceTactics ?
+                cachedAllianceTactics.defenderLimit : GetAVDefenderRoleLimit(TEAM_ALLIANCE, strategy, enemyStrategy, av);
+            if (!hasCachedAllianceTactics)
+                defenderLimit = std::max<uint8>(defenderLimit,
+                                                GetAllianceAVRushDefenderLimit(av, effectiveRushInfo, strategy,
+                                                                               enemyStrategy));
+            uint32 const towersDown = hasCachedAllianceTactics ?
+                cachedAllianceTactics.towersDown : GetAllianceDestroyedHordeTowerCount(av);
             bool const finalDrekPush = strategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO &&
-                                       AllianceHasFinalDrekWindow(av, rushInfo, towersDown);
-            if (finalDrekPush && !AllianceAVShouldFullRecallNorth(av, threat))
+                (hasCachedAllianceTactics ? cachedAllianceTactics.finalDrekWindow :
+                    AllianceHasFinalDrekWindow(av, effectiveRushInfo, towersDown));
+            if (!hasCachedAllianceTactics && finalDrekPush && !AllianceAVShouldFullRecallNorth(av, threat))
             {
                 uint8 const finalDefenseCap = AllianceDunBaldarBaseActuallyLost(av) ? 7 : 6;
                 defenderLimit = std::min<uint8>(defenderLimit, finalDefenseCap);
             }
-            else if (AllianceAVCanReleaseIdleNorthReserve(av, rushInfo, threat, mode))
+            else if (!hasCachedAllianceTactics && AllianceAVCanReleaseIdleNorthReserve(av, effectiveRushInfo, threat, mode))
             {
                 defenderLimit = std::min<uint8>(
-                    defenderLimit, GetAllianceAVReleasedDefenderLimit(av, rushInfo, threat, mode));
+                    defenderLimit, GetAllianceAVReleasedDefenderLimit(av, effectiveRushInfo, threat, mode));
             }
             bool isDefender = role < defenderLimit;
             if (isDefender && bot->GetPositionX() <= -462.0f)
                 isDefender = false;
 
-            if (AllianceAVShouldResetCurrentObjective(bot, bg, av, pos, role, isDefender, rushInfo, threat, mode))
+            if (AllianceAVShouldResetCurrentObjective(bot, bg, av, pos, role, isDefender, effectiveRushInfo, threat, mode))
             {
                 LogAllianceAVMoveDebug(bot, bg, pos, "reset_current_objective", role, defenderLimit, isDefender,
                                        AI_VALUE(Unit*, "enemy player target"));
                 return resetObjective();
             }
 
-            bool const fullRecall = AllianceAVShouldFullRecallNorth(av, threat);
+            bool const fullRecall = hasCachedAllianceTactics ? cachedAllianceTactics.fullRecall :
+                AllianceAVShouldFullRecallNorth(av, threat);
             bool const canResetForMapState = !PlayerHasFlag::IsCapturingFlag(bot) && !AllianceAVIsCastingAnySpell(bot);
-            if (canResetForMapState && (isDefender || (fullRecall && role < 9)) && rushInfo.IsActive() &&
+            if (canResetForMapState && (isDefender || (fullRecall && role < 9)) && effectiveRushInfo.IsActive() &&
                 pos.x < -180.0f && !AllianceAVPositionIsSnowfallRun(bg, pos))
             {
                 LogAllianceAVMoveDebug(bot, bg, pos, "reset_map_state_rush", role, defenderLimit, isDefender,
@@ -6552,7 +7651,7 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             }
 
             if (GameObject* emergency = SelectAllianceAVEmergencyDefenseObjective(bot, bg, av, role, isDefender,
-                                                                                  strategy, defenderLimit, rushInfo,
+                                                                                  strategy, defenderLimit, effectiveRushInfo,
                                                                                   threat))
             {
                 float const dx = emergency->GetPositionX() - pos.x;
@@ -7591,6 +8690,11 @@ uint32 BGTactics::getPlayersInArea(TeamId teamId, Position point, float range, b
     Battleground* bg = bot->GetBattleground();
     if (!bg)
         return 0;
+
+    uint32 cachedCount = 0;
+    if (TryGetAsyncAVPlayersNear(bg, teamId, point.GetPositionX(), point.GetPositionY(), range, true, !combat,
+                                 cachedCount))
+        return cachedCount;
 
     for (auto& guid : bg->GetBgMap()->GetPlayers())
     {

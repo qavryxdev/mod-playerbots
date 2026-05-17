@@ -368,6 +368,24 @@ AiPlayerbot.SkipIdleBotMinimalAI = 0
 AiPlayerbot.IdleBotReactDelayMin = 50
 AiPlayerbot.IdleBotReactDelayMax = 150
 
+# Experimental: precompute random-bot activity decisions on worker threads from copied snapshot data only.
+# This does not run bot AI, movement, combat, spells, packet handling, or world object access outside the main thread.
+# 0 = disabled. Threads 0 = auto-detect logical CPU count. Interval is milliseconds between snapshot jobs.
+AiPlayerbot.AsyncActivityCache = 0
+AiPlayerbot.AsyncActivityCacheThreads = 0
+AiPlayerbot.AsyncActivityCacheInterval = 1000
+
+# Experimental: precompute Alterac Valley battlefield summaries on worker threads from copied snapshot data.
+# The main thread still reads battleground/player/node state and still applies all bot movement/combat decisions.
+# 0 = disabled. This is intentionally separate from AsyncActivityCache so AV can be tested independently.
+AiPlayerbot.AsyncAVStrategyCache = 0
+AiPlayerbot.AsyncAVStrategyCacheThreads = 2
+AiPlayerbot.AsyncAVStrategyCacheInterval = 500
+
+# Experimental: reuse the async AV battlefield snapshot to precompute Alliance tactical decisions
+# such as rush level, threat, battlefield mode and defender-limit. Main thread still applies movement/combat.
+AiPlayerbot.AsyncAVTacticalOrders = 0
+
 # Inactivity delay
 AiPlayerbot.PassiveDelay = 10000
 

@@ -89,6 +89,13 @@ public:
     bool dynamicReactDelay;
     bool idleBotAiThrottle;
     bool skipIdleBotMinimalAI;
+    bool asyncActivityCache;
+    uint32 asyncActivityCacheThreads;
+    uint32 asyncActivityCacheInterval;
+    bool asyncAVStrategyCache;
+    uint32 asyncAVStrategyCacheThreads;
+    uint32 asyncAVStrategyCacheInterval;
+    bool asyncAVTacticalOrders;
     uint32 idleBotReactDelayMin, idleBotReactDelayMax;
     float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, shootDistance, fleeDistance,
         tooCloseDistance, meleeDistance, followDistance, whisperDistance, contactDistance, aoeRadius, rpgDistance,
