@@ -5,6 +5,7 @@
 
 #include "EnemyPlayerValue.h"
 
+#include "AttackersValue.h"
 #include "CombatManager.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -59,7 +60,8 @@ Unit* EnemyPlayerValue::Calculate()
     {
         Unit* pTarget = combatRef->GetOther(bot);
         if (!pTarget || pTarget == pVictim || !pTarget->IsPlayer() || !pTarget->CanSeeOrDetect(bot) ||
-            !bot->IsWithinDist(pTarget, VISIBILITY_DISTANCE_NORMAL))
+            !bot->IsWithinDist(pTarget, VISIBILITY_DISTANCE_NORMAL) ||
+            !AttackersValue::IsPossibleTarget(pTarget, bot))
             continue;
 
         if ((bot->GetTeamId() == TEAM_HORDE && pTarget->HasAura(23333)) ||
@@ -93,6 +95,9 @@ Unit* EnemyPlayerValue::Calculate()
             continue;
 
         if (pTarget == pVictim)
+            continue;
+
+        if (!AttackersValue::IsPossibleTarget(pTarget, bot))
             continue;
 
         if (bot->GetTeamId() == TEAM_HORDE)
@@ -135,7 +140,8 @@ Unit* EnemyPlayerValue::Calculate()
 
                 if (Unit* pAttacker = pMember->getAttackerForHelper())
                     if (pAttacker->IsPlayer() && bot->IsWithinDist(pAttacker, maxAggroDistance * 2.0f) &&
-                        bot->IsWithinLOSInMap(pAttacker) && pAttacker != pVictim && pAttacker->CanSeeOrDetect(bot))
+                        bot->IsWithinLOSInMap(pAttacker) && pAttacker != pVictim && pAttacker->CanSeeOrDetect(bot) &&
+                        AttackersValue::IsPossibleTarget(pAttacker, bot))
                         return pAttacker;
             }
         }

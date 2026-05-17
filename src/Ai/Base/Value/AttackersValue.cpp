@@ -5,12 +5,110 @@
 
 #include "AttackersValue.h"
 
+#include "Battleground.h"
+#include "BattlegroundAV.h"
 #include "CellImpl.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Playerbots.h"
+#include "PositionValue.h"
 #include "ReputationMgr.h"
 #include "ServerFacade.h"
+
+static bool AllianceAVUnitIsInIcebloodTowerArea(Unit* unit)
+{
+    if (!unit)
+        return false;
+
+    float const x = unit->GetPositionX();
+    float const y = unit->GetPositionY();
+    return x <= -520.0f && x >= -630.0f && y <= -245.0f && y >= -345.0f;
+}
+
+static bool AllianceAVPositionNear(float x, float y, float targetX, float targetY, float radius)
+{
+    float const dx = x - targetX;
+    float const dy = y - targetY;
+    return dx * dx + dy * dy <= radius * radius;
+}
+
+static bool AllianceAVPositionIsIcebloodAssaultPerimeter(float x, float y)
+{
+    if (x < -675.0f || y > -335.0f || y < -475.0f)
+        return false;
+
+    return AllianceAVPositionNear(x, y, -617.858f, -400.654f, 96.0f) ||
+           AllianceAVPositionNear(x, y, -590.000f, -354.000f, 32.0f) ||
+           AllianceAVPositionNear(x, y, -644.000f, -430.000f, 42.0f);
+}
+
+static bool AllianceAVBotIsInIcebloodAssaultArea(Player* bot)
+{
+    if (!bot)
+        return false;
+
+    if (AllianceAVPositionIsIcebloodAssaultPerimeter(bot->GetPositionX(), bot->GetPositionY()))
+        return true;
+
+    return AllianceAVUnitIsInIcebloodTowerArea(bot);
+}
+
+static bool AllianceAVPositionIsIcebloodAssaultObjective(PositionInfo const& pos)
+{
+    if (!pos.valueSet)
+        return false;
+
+    if (pos.x <= -520.0f && pos.x >= -630.0f && pos.y <= -245.0f && pos.y >= -345.0f)
+        return false;
+
+    return pos.x <= -560.0f && pos.x >= -710.0f && pos.y <= -335.0f && pos.y >= -470.0f;
+}
+
+static bool AllianceAVBotHasIcebloodAssaultObjective(PlayerbotAI* botAI, Player* bot)
+{
+    if (!botAI || !bot)
+        return false;
+
+    if (!AllianceAVBotIsInIcebloodAssaultArea(bot))
+        return false;
+
+    PositionMap& positions = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get();
+    auto const objective = positions.find("bg objective");
+    if (objective != positions.end() && AllianceAVPositionIsIcebloodAssaultObjective(objective->second))
+        return true;
+
+    return AllianceAVPositionIsIcebloodAssaultPerimeter(bot->GetPositionX(), bot->GetPositionY());
+}
+
+static bool AllianceAVShouldRejectIcebloodAssaultTarget(Unit* attacker, Player* bot, PlayerbotAI* botAI)
+{
+    if (!attacker || !bot || !botAI || bot->GetTeamId() != TEAM_ALLIANCE)
+        return false;
+
+    Battleground* bg = bot->GetBattleground();
+    if (!bg)
+        return false;
+
+    BattlegroundTypeId bgType = bg->GetBgTypeID();
+    if (bgType == BATTLEGROUND_RB)
+        bgType = bg->GetBgTypeID(true);
+
+    if (bgType != BATTLEGROUND_AV)
+        return false;
+
+    BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+    BG_AV_NodeInfo const& iceblood = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
+    if (iceblood.State != POINT_ASSAULTED || iceblood.OwnerId != TEAM_ALLIANCE)
+        return false;
+
+    if (!AllianceAVBotHasIcebloodAssaultObjective(botAI, bot))
+        return false;
+
+    if (AllianceAVUnitIsInIcebloodTowerArea(attacker))
+        return true;
+
+    return !AllianceAVPositionIsIcebloodAssaultPerimeter(attacker->GetPositionX(), attacker->GetPositionY());
+}
 
 GuidVector AttackersValue::Calculate()
 {
@@ -156,6 +254,9 @@ bool AttackersValue::IsPossibleTarget(Unit* attacker, Player* bot, float /*range
 
     // Relationship checks
     if (attacker->IsFriendlyTo(bot))
+        return false;
+
+    if (AllianceAVShouldRejectIcebloodAssaultTarget(attacker, bot, botAI))
         return false;
 
     // Critter exception

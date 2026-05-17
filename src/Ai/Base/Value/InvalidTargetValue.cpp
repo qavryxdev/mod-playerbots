@@ -13,7 +13,7 @@ bool InvalidTargetValue::Calculate()
 {
     Unit* target = AI_VALUE(Unit*, qualifier);
     Unit* enemy = AI_VALUE(Unit*, "enemy player target");
-    if (target && enemy && target == enemy && target->IsAlive())
+    if (target && enemy && target == enemy && target->IsAlive() && AttackersValue::IsValidTarget(target, bot))
         return false;
 
     if (target && qualifier == "current target")

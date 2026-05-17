@@ -2497,6 +2497,58 @@ static bool AllianceAVPositionIsIcebloodHoldPerimeter(Battleground* bg, Position
            AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN, 55.0f);
 }
 
+static bool AllianceAVShouldEnforceIcebloodAssaultLeash(Player* bot, Battleground* bg)
+{
+    if (!bot || !bg || bot->GetTeamId() != TEAM_ALLIANCE ||
+        BGTactics::GetBotStrategyForTeam(bg, TEAM_ALLIANCE) != AV_STRATEGY_ALLIANCE_CONTROL_TEMPO)
+        return false;
+
+    BattlegroundTypeId bgType = bg->GetBgTypeID();
+    if (bgType == BATTLEGROUND_RB)
+        bgType = bg->GetBgTypeID(true);
+
+    if (bgType != BATTLEGROUND_AV)
+        return false;
+
+    BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+    BG_AV_NodeInfo const& iceblood = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
+    if (iceblood.State != POINT_ASSAULTED || iceblood.OwnerId != TEAM_ALLIANCE)
+        return false;
+
+    PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+    return AllianceAVPositionIsIcebloodHoldPerimeter(bg, botPos, true) ||
+           AllianceAVPositionIsHordeTowerRun(bg, botPos);
+}
+
+static bool AllianceAVIsValidIcebloodAssaultCombatTarget(Battleground* bg, Unit* target)
+{
+    if (!bg || !target || !target->IsAlive())
+        return false;
+
+    PositionInfo const targetPos(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(),
+                                 target->GetMapId());
+    return AllianceAVPositionIsIcebloodHoldPerimeter(bg, targetPos, true);
+}
+
+static bool AllianceAVShouldBreakIcebloodAssaultCombatLeash(Player* bot, Battleground* bg,
+                                                            Unit* currentTarget, Unit* enemyTarget)
+{
+    if (!AllianceAVShouldEnforceIcebloodAssaultLeash(bot, bg) || AllianceAVIsCastingAnySpell(bot) ||
+        PlayerHasFlag::IsCapturingFlag(bot))
+        return false;
+
+    Unit* victim = bot->GetVictim();
+    if (!victim && !currentTarget && !enemyTarget && !bot->IsInCombat())
+        return false;
+
+    if (AllianceAVIsValidIcebloodAssaultCombatTarget(bg, victim) ||
+        AllianceAVIsValidIcebloodAssaultCombatTarget(bg, currentTarget) ||
+        AllianceAVIsValidIcebloodAssaultCombatTarget(bg, enemyTarget))
+        return false;
+
+    return true;
+}
+
 static bool AllianceAVPositionIsAntiRushRally(PositionInfo const& pos)
 {
     return AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_ANTIRUSH_STONEHEARTH_ROAD, 24.0f) ||
@@ -4468,10 +4520,28 @@ bool BGTactics::Execute(Event /*event*/)
         if (bg->GetStatus() == STATUS_WAIT_JOIN)
             return false;
 
-        if (bot->isMoving())
+        bool ignoreIcebloodAssaultCombat = false;
+        if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        {
+            if (AllianceAVShouldBreakIcebloodAssaultCombatLeash(bot, bg,
+                                                                 context->GetValue<Unit*>("current target")->Get(),
+                                                                 AI_VALUE(Unit*, "enemy player target")))
+            {
+                context->GetValue<Unit*>("current target")->Set(nullptr);
+                bot->AttackStop();
+                bot->SetTarget(ObjectGuid::Empty);
+                bot->SetSelection(ObjectGuid());
+                botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+                bot->StopMoving();
+                bot->GetMotionMaster()->Clear(false);
+                ignoreIcebloodAssaultCombat = true;
+            }
+        }
+
+        if (bot->isMoving() && !ignoreIcebloodAssaultCombat)
             return false;
 
-        if (!bot->IsStopped())
+        if (!bot->IsStopped() && !ignoreIcebloodAssaultCombat)
             return false;
 
         switch (bot->GetMotionMaster()->GetCurrentMovementGeneratorType())
@@ -4493,7 +4563,7 @@ bool BGTactics::Execute(Event /*event*/)
 
         // NOTE: can't use IsInCombat() when in vehicle as player is stuck in combat forever while in vehicle (ac bug?)
         bool inCombat = bot->GetVehicle() ? (bool)AI_VALUE(Unit*, "enemy player target") : bot->IsInCombat();
-        if (inCombat && !PlayerHasFlag::IsCapturingFlag(bot))
+        if (inCombat && !PlayerHasFlag::IsCapturingFlag(bot) && !ignoreIcebloodAssaultCombat)
         {
             // bot->GetMotionMaster()->MovementExpired();
             return false;
