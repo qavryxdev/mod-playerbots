@@ -2036,6 +2036,7 @@ static bool AllianceAVMustKillCaptainBeforeTowers(BattlegroundAV* av);
 static bool AllianceAVPositionIsHordeCaptainRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos);
+static bool AllianceAVPositionIsIcebloodTowerRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsHordeTowerRun(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsBeyondIcebloodBeachhead(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsIcebloodHoldPerimeter(Battleground* bg, PositionInfo const& pos, bool strictAssault);
@@ -2044,6 +2045,7 @@ static bool AllianceAVPositionIsAllianceDefenseRun(Battleground* bg, PositionInf
 static bool AllianceAVPositionIsContestedAllianceDefenseObjective(Battleground* bg, BattlegroundAV* av,
                                                                   PositionInfo const& pos);
 static bool AllianceAVIsIcebloodGraveFlag(Battleground* bg, GameObject* go);
+static bool AllianceAVIsIcebloodTowerAttackFlag(Battleground* bg, GameObject* go);
 static bool AllianceAVIsSnowfallFlag(Battleground* bg, GameObject* go);
 static bool AllianceAVIsHordeTowerFlag(Battleground* bg, GameObject* go);
 static bool AllianceAVIsAllianceRecapOrReclaimFlag(Battleground* bg, GameObject* go);
@@ -2054,6 +2056,8 @@ static bool AllianceAVShouldHoldIcebloodBeachhead(Battleground* bg, Battleground
 static bool AllianceAVShouldUseIcebloodBeachheadPlan(Battleground* bg, BattlegroundAV* av,
                                                      AllianceAVThreatLevel threat,
                                                      AVBotStrategy hordeStrategy);
+static bool AllianceAVCanBaitIcebloodTowerDuringIcebloodAssault(Player* bot, Battleground* bg, BattlegroundAV* av,
+                                                                uint8 role, AllianceAVThreatLevel threat);
 static Player* SelectAllianceIcebloodBeachheadEnemy(Player* bot, Battleground* bg, BattlegroundAV* av,
                                                     AllianceAVThreatLevel threat,
                                                     AVBotStrategy hordeStrategy);
@@ -2091,6 +2095,10 @@ static bool AllianceAVCanUseNearbyFlagDuringControlTempo(Player* bot, Battlegrou
 
     if (AllianceAVMustKillCaptainBeforeTowers(av))
         return AllianceAVIsIcebloodGraveFlag(bg, go);
+
+    if (AllianceAVIsIcebloodTowerAttackFlag(bg, go) &&
+        AllianceAVCanBaitIcebloodTowerDuringIcebloodAssault(bot, bg, av, role, threat))
+        return true;
 
     if (AllianceAVIsHordeTowerFlag(bg, go) &&
         (AllianceAVShouldFullRecallNorth(av, threat) || holdIcebloodBeachhead || icebloodBeachheadPlan ||
@@ -2186,6 +2194,10 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
 
     bool const allianceAssaultingIBGY = AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const southernIcebloodGroup = bot->GetPositionX() < -180.0f;
+    if (allianceAssaultingIBGY && southernIcebloodGroup && AllianceAVPositionIsIcebloodTowerRun(objectivePos) &&
+        AllianceAVCanBaitIcebloodTowerDuringIcebloodAssault(bot, bg, av, role, threat))
+        return false;
+
     if (allianceAssaultingIBGY && southernIcebloodGroup &&
         !AllianceHasCommittedFrostwolfFoothold(av, rushInfo, threat) &&
         !AllianceAVPositionIsIcebloodHoldPerimeter(bg, objectivePos, true) &&
@@ -2427,6 +2439,14 @@ static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const
     return pos.x <= -140.0f && pos.x >= -280.0f && pos.y <= -70.0f && pos.y >= -180.0f;
 }
 
+static bool AllianceAVPositionIsIcebloodTowerRun(PositionInfo const& pos)
+{
+    if (!pos.valueSet)
+        return false;
+
+    return pos.x <= -520.0f && pos.x >= -630.0f && pos.y <= -245.0f && pos.y >= -345.0f;
+}
+
 static bool AllianceAVPositionIsHordeTowerRun(Battleground* bg, PositionInfo const& pos)
 {
     if (!pos.valueSet)
@@ -2447,10 +2467,9 @@ static bool AllianceAVPositionIsHordeTowerRun(Battleground* bg, PositionInfo con
         if (AllianceAVPositionNearBGObject(bg, pos, goId, 45.0f))
             return true;
 
-    bool const icebloodTower = pos.x <= -520.0f && pos.x >= -630.0f && pos.y <= -245.0f && pos.y >= -345.0f;
     bool const towerPoint = pos.x <= -720.0f && pos.x >= -890.0f && pos.y <= -295.0f && pos.y >= -430.0f;
     bool const frostwolfTowers = pos.x <= -1230.0f && pos.x >= -1385.0f && pos.y <= -230.0f && pos.y >= -410.0f;
-    return icebloodTower || towerPoint || frostwolfTowers;
+    return AllianceAVPositionIsIcebloodTowerRun(pos) || towerPoint || frostwolfTowers;
 }
 
 static bool AllianceAVPositionIsBeyondIcebloodBeachhead(Battleground* bg, PositionInfo const& pos)
@@ -2619,6 +2638,11 @@ static bool AllianceAVIsIcebloodGraveFlag(Battleground* bg, GameObject* go)
     };
 
     return AllianceAVObjectIsOneOf(bg, go, ids, sizeof(ids) / sizeof(uint32));
+}
+
+static bool AllianceAVIsIcebloodTowerAttackFlag(Battleground* bg, GameObject* go)
+{
+    return bg && go && bg->GetBGObject(BG_AV_OBJECT_FLAG_H_ICEBLOOD_TOWER) == go;
 }
 
 static bool AllianceAVIsSnowfallFlag(Battleground* bg, GameObject* go)
@@ -3723,6 +3747,41 @@ static GameObject* SelectAllianceFrostwolfLockObjective(Player* bot, Battlegroun
     return nullptr;
 }
 
+static bool AllianceAVCanBaitIcebloodTowerDuringIcebloodAssault(Player* bot, Battleground* bg, BattlegroundAV* av,
+                                                                uint8 role, AllianceAVThreatLevel threat)
+{
+    if (!bot || !bg || !av || bot->GetTeamId() != TEAM_ALLIANCE || role != 9 ||
+        AllianceAVShouldFullRecallNorth(av, threat) || threat >= AV_THREAT_MEDIUM ||
+        AllianceHordeCaptainAlive(av) || bot->GetPositionX() > -180.0f)
+        return false;
+
+    BG_AV_NodeInfo const& iceblood = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
+    if (iceblood.State != POINT_ASSAULTED || iceblood.OwnerId != TEAM_ALLIANCE)
+        return false;
+
+    BG_AV_NodeInfo const& tower = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_TOWER);
+    if (tower.State != POINT_CONTROLLED || tower.OwnerId != TEAM_HORDE)
+        return false;
+
+    GameObject* icebloodCenter = SelectAllianceIcebloodGraveyardHoldObjective(bg);
+    uint32 const allianceNearIceblood = CountBattlegroundPlayersNear(bg, TEAM_ALLIANCE, icebloodCenter, 180.0f, true);
+    uint32 const hordeNearIceblood = CountBattlegroundPlayersNear(bg, TEAM_HORDE, icebloodCenter, 180.0f, true);
+    return allianceNearIceblood >= 8 && hordeNearIceblood <= allianceNearIceblood + 5;
+}
+
+static GameObject* SelectAllianceIcebloodTowerBaitObjective(Player* bot, Battleground* bg, BattlegroundAV* av,
+                                                            uint8 role, AllianceAVThreatLevel threat)
+{
+    if (!AllianceAVCanBaitIcebloodTowerDuringIcebloodAssault(bot, bg, av, role, threat))
+        return nullptr;
+
+    std::vector<std::pair<uint8, uint32>> objectives = {
+        {BG_AV_NODES_ICEBLOOD_TOWER, BG_AV_OBJECT_FLAG_H_ICEBLOOD_TOWER},
+    };
+
+    return SelectFirstAllianceAttackNode(bg, av, objectives, role, AV_STRATEGY_ALLIANCE_CONTROL_TEMPO);
+}
+
 static bool ShouldAllianceStrikeHordeCaptain(uint8 role, AllianceAVRushInfo const& rushInfo,
                                               AllianceAVBattlefieldMode mode)
 {
@@ -3778,6 +3837,12 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
 
         if (holdIcebloodBeachhead)
         {
+            if (GameObject* bait = SelectAllianceIcebloodTowerBaitObjective(bot, bg, av, role, threat))
+            {
+                objectiveReason = "control tempo iceblood tower bait";
+                return bait;
+            }
+
             objectiveReason = "control tempo iceblood beachhead";
             return SelectAllianceIcebloodGraveyardObjective(bg, av);
         }
