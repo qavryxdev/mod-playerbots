@@ -386,6 +386,10 @@ AiPlayerbot.AsyncAVStrategyCacheInterval = 500
 # such as rush level, threat, battlefield mode and defender-limit. Main thread still applies movement/combat.
 AiPlayerbot.AsyncAVTacticalOrders = 0
 
+# Experimental: reuse the async AV battlefield snapshot to precompute per-bot Alliance objective assignments.
+# Worker threads only produce GUID -> assignment hints; main thread still validates and executes objectives safely.
+AiPlayerbot.AsyncAVObjectiveAssignments = 0
+
 # Inactivity delay
 AiPlayerbot.PassiveDelay = 10000
 

@@ -96,6 +96,7 @@ public:
     uint32 asyncAVStrategyCacheThreads;
     uint32 asyncAVStrategyCacheInterval;
     bool asyncAVTacticalOrders;
+    bool asyncAVObjectiveAssignments;
     uint32 idleBotReactDelayMin, idleBotReactDelayMax;
     float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, shootDistance, fleeDistance,
         tooCloseDistance, meleeDistance, followDistance, whisperDistance, contactDistance, aoeRadius, rpgDistance,

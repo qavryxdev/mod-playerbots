@@ -1519,6 +1519,19 @@ enum AllianceAVBattlefieldMode : uint8
     AV_MODE_DREK_SETUP = 10,
 };
 
+enum AllianceAVObjectiveAssignment : uint8
+{
+    AV_ASSIGN_NONE = 0,
+    AV_ASSIGN_NORTH_DEFENSE = 1,
+    AV_ASSIGN_ICEBLOOD_ATTACK = 2,
+    AV_ASSIGN_ICEBLOOD_HOLD = 3,
+    AV_ASSIGN_SNOWFALL = 4,
+    AV_ASSIGN_GALVANGAR = 5,
+    AV_ASSIGN_FROSTWOLF_LOCK = 6,
+    AV_ASSIGN_DREK_PUSH = 7,
+    AV_ASSIGN_ASSAULT_GUARD = 8,
+};
+
 struct AllianceAVRushInfo
 {
     AllianceAVRushLevel level = AV_RUSH_NONE;
@@ -1602,6 +1615,11 @@ namespace
 constexpr uint32 ASYNC_AV_CACHE_LOG_INTERVAL = 30000;
 constexpr uint32 ASYNC_AV_CACHE_STALE_MS = 5 * 60 * 1000;
 
+static bool AsyncAVStrategyCacheEnabled()
+{
+    return sPlayerbotAIConfig.asyncAVStrategyCache || sPlayerbotAIConfig.asyncAVObjectiveAssignments;
+}
+
 enum AsyncAVAreaId : uint8
 {
     ASYNC_AV_AREA_ICEBLOOD_180 = 0,
@@ -1638,11 +1656,14 @@ static std::array<AsyncAVAreaDef, ASYNC_AV_AREA_MAX> const AsyncAVAreas = {{
 
 struct AsyncAVPlayerSnapshot
 {
+    uint64 guid = 0;
     TeamId teamId = TEAM_NEUTRAL;
     float x = 0.0f;
     float y = 0.0f;
+    uint8 role = 0;
     bool alive = false;
     bool inCombat = false;
+    bool isBot = false;
 };
 
 struct AsyncAVNodeSnapshot
@@ -1714,7 +1735,9 @@ struct AsyncAVStrategyResult
     bool allianceCanReleaseIdleNorthReserve = false;
     bool allianceShouldScreenIdleNorthReserve = false;
     bool allianceNeedsIcebloodMainForce = false;
+    bool allianceObjectiveAssignmentsValid = false;
     std::array<AsyncAVAreaCounts, ASYNC_AV_AREA_MAX> areas;
+    std::unordered_map<uint64, uint8> allianceObjectiveAssignments;
 };
 
 struct AsyncAVStrategyJob
@@ -2194,6 +2217,102 @@ static void AsyncAVBuildAllianceTacticalOrders(AsyncAVStrategyJob const& job, As
     result.allianceTacticalOrdersValid = true;
 }
 
+static bool AsyncAVAllianceShouldTakeSnowfall(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
+                                              AsyncAVStrategyResult const& result,
+                                              AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode,
+                                              uint8 role)
+{
+    if (threat >= AV_THREAT_HIGH || role != 4)
+        return false;
+
+    AsyncAVNodeSnapshot const& snowfall = nodes[BG_AV_NODES_SNOWFALL_GRAVE];
+    if (snowfall.state == POINT_CONTROLLED && snowfall.ownerId == TEAM_ALLIANCE)
+        return false;
+
+    bool const icebloodSecure = AsyncAVNodeControlledBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    bool const icebloodAssaulted = AsyncAVNodeAssaultedBy(nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+
+    if (!icebloodSecure && !icebloodAssaulted)
+        return threat == AV_THREAT_NONE && result.elapsedMs >= 45 * 1000;
+
+    if (mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD)
+        return threat <= AV_THREAT_LOW && result.allianceSouth >= 4;
+
+    return threat <= AV_THREAT_LOW;
+}
+
+static AllianceAVObjectiveAssignment AsyncAVBuildAllianceObjectiveAssignment(
+    AsyncAVStrategyJob const& job, AsyncAVStrategyResult const& result, AsyncAVPlayerSnapshot const& player)
+{
+    if (!player.isBot || player.teamId != TEAM_ALLIANCE || !player.alive ||
+        job.allianceStrategy != AV_STRATEGY_ALLIANCE_CONTROL_TEMPO)
+        return AV_ASSIGN_NONE;
+
+    AllianceAVThreatLevel const threat = static_cast<AllianceAVThreatLevel>(result.allianceThreat);
+    AllianceAVBattlefieldMode const mode = static_cast<AllianceAVBattlefieldMode>(result.allianceMode);
+    uint8 const defenderLimit = std::max<uint8>(1, result.allianceDefenderLimit);
+    bool const southernBot = player.x <= -462.0f;
+    bool const northernBot = player.x > -180.0f;
+    bool const isDefender = player.role < defenderLimit && !southernBot;
+    bool const reserveRole = player.role < std::min<uint8>(9, defenderLimit + 2);
+
+    if (result.allianceFullRecall && player.role < 9)
+        return AV_ASSIGN_NORTH_DEFENSE;
+
+    if (result.allianceFinalDrekWindow && !result.allianceFullRecall && !isDefender)
+        return AV_ASSIGN_DREK_PUSH;
+
+    if (isDefender || (result.allianceShouldScreenIdleNorthReserve && northernBot && reserveRole))
+        return AV_ASSIGN_NORTH_DEFENSE;
+
+    if (AsyncAVAllianceShouldTakeSnowfall(job.nodes, result, threat, mode, player.role))
+        return AV_ASSIGN_SNOWFALL;
+
+    bool const icebloodControlled = AsyncAVNodeControlledBy(job.nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    bool const icebloodAssaulted = AsyncAVNodeAssaultedBy(job.nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
+    bool const hasForwardDrekRespawn = AsyncAVAllianceHasForwardDrekRespawn(job.nodes);
+
+    if ((icebloodAssaulted || icebloodControlled) && result.allianceNeedsIcebloodMainForce &&
+        !hasForwardDrekRespawn)
+        return AV_ASSIGN_ICEBLOOD_HOLD;
+
+    if (!icebloodControlled && (mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
+                                mode == AV_MODE_IBGY_BREAKTHROUGH))
+        return AV_ASSIGN_ICEBLOOD_ATTACK;
+
+    if (mode == AV_MODE_GALVANGAR_STRIKE && (player.role >= 5 || (result.elapsedMs >= 6 * 60 * 1000 && player.role >= 4)))
+        return AV_ASSIGN_GALVANGAR;
+
+    if (mode == AV_MODE_DREK_PUSH)
+        return AV_ASSIGN_DREK_PUSH;
+
+    if (mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_SETUP)
+        return AV_ASSIGN_FROSTWOLF_LOCK;
+
+    if (!job.hordeCaptainAlive && icebloodControlled)
+        return AV_ASSIGN_ASSAULT_GUARD;
+
+    if (!icebloodControlled)
+        return AV_ASSIGN_ICEBLOOD_ATTACK;
+
+    return AV_ASSIGN_ASSAULT_GUARD;
+}
+
+static void AsyncAVBuildAllianceObjectiveAssignments(AsyncAVStrategyJob const& job, AsyncAVStrategyResult& result)
+{
+    result.allianceObjectiveAssignments.clear();
+
+    for (AsyncAVPlayerSnapshot const& player : job.players)
+    {
+        AllianceAVObjectiveAssignment const assignment =
+            AsyncAVBuildAllianceObjectiveAssignment(job, result, player);
+        if (assignment != AV_ASSIGN_NONE && player.guid)
+            result.allianceObjectiveAssignments[player.guid] = static_cast<uint8>(assignment);
+    }
+
+    result.allianceObjectiveAssignmentsValid = true;
+}
+
 static uint32 AsyncAVCountForTeam(AsyncAVAreaCounts const& counts, TeamId teamId, bool aliveOnly,
                                   bool notInCombatOnly)
 {
@@ -2238,7 +2357,7 @@ public:
 
     void Update(uint32 diff)
     {
-        if (!sPlayerbotAIConfig.asyncAVStrategyCache)
+        if (!AsyncAVStrategyCacheEnabled())
         {
             Stop();
             return;
@@ -2273,11 +2392,12 @@ public:
             _lastLoggedGeneration = sample.generation;
             AsyncAVAreaCounts const& ibgy = sample.areas[ASYNC_AV_AREA_ICEBLOOD_220];
             LOG_INFO("playerbots",
-                     "AsyncAVStrategyCache: instances={} sample={} players={} aliveA={} aliveH={} Hnorth={} Hdeep={} Hdb={} Asouth={} IBGY_A={} IBGY_H={} towersDown={} towerProgress={} defensePressure={} tactical={} mode={} threat={} defenders={} workers={}",
+                     "AsyncAVStrategyCache: instances={} sample={} players={} aliveA={} aliveH={} Hnorth={} Hdeep={} Hdb={} Asouth={} IBGY_A={} IBGY_H={} towersDown={} towerProgress={} defensePressure={} tactical={} assignments={} mode={} threat={} defenders={} workers={}",
                      instanceCount, sample.instanceId, sample.playerCount, sample.aliveAlliance, sample.aliveHorde,
                      sample.hordeNorth, sample.hordeDeepNorth, sample.hordeDunBaldar, sample.allianceSouth,
                      ibgy.allianceAlive, ibgy.hordeAlive, sample.hordeTowersDown, sample.hordeTowerProgress,
                      sample.allianceDefensivePressure, sample.allianceTacticalOrdersValid ? 1 : 0,
+                     static_cast<uint32>(sample.allianceObjectiveAssignments.size()),
                      GetAllianceAVBattlefieldModeName(static_cast<AllianceAVBattlefieldMode>(sample.allianceMode)),
                      GetAllianceAVThreatLevelName(static_cast<AllianceAVThreatLevel>(sample.allianceThreat)),
                      static_cast<uint32>(sample.allianceDefenderLimit), static_cast<uint32>(_workers.size()));
@@ -2286,7 +2406,7 @@ public:
 
     void Request(Battleground* bg, BattlegroundAV* av)
     {
-        if (!sPlayerbotAIConfig.asyncAVStrategyCache || !bg || !av || bg->GetStatus() != STATUS_IN_PROGRESS)
+        if (!AsyncAVStrategyCacheEnabled() || !bg || !av || bg->GetStatus() != STATUS_IN_PROGRESS)
             return;
 
         EnsureStarted();
@@ -2329,8 +2449,25 @@ public:
             if (!player)
                 continue;
 
-            job->players.push_back({player->GetTeamId(), player->GetPositionX(), player->GetPositionY(),
-                                    player->IsAlive(), player->IsInCombat()});
+            AsyncAVPlayerSnapshot snapshot;
+            snapshot.guid = player->GetGUID().GetCounter();
+            snapshot.teamId = player->GetTeamId();
+            snapshot.x = player->GetPositionX();
+            snapshot.y = player->GetPositionY();
+            snapshot.alive = player->IsAlive();
+            snapshot.inCombat = player->IsInCombat();
+
+            if (snapshot.teamId == TEAM_ALLIANCE)
+            {
+                if (PlayerbotAI* playerAI = GET_PLAYERBOT_AI(player))
+                {
+                    snapshot.isBot = !playerAI->IsRealPlayer();
+                    if (snapshot.isBot)
+                        snapshot.role = static_cast<uint8>(playerAI->GetAiObjectContext()->GetValue<uint32>("bg role")->Get());
+                }
+            }
+
+            job->players.push_back(snapshot);
         }
 
         {
@@ -2507,8 +2644,11 @@ private:
             if (AsyncAVAllianceNodeUnderHordePressure(job.nodes, nodeId))
                 ++result.allianceDefensivePressure;
 
-        if (sPlayerbotAIConfig.asyncAVTacticalOrders)
+        if (sPlayerbotAIConfig.asyncAVTacticalOrders || sPlayerbotAIConfig.asyncAVObjectiveAssignments)
             AsyncAVBuildAllianceTacticalOrders(job, result);
+
+        if (sPlayerbotAIConfig.asyncAVObjectiveAssignments)
+            AsyncAVBuildAllianceObjectiveAssignments(job, result);
 
         return result;
     }
@@ -3070,6 +3210,29 @@ static bool TryGetAsyncAllianceAVTactics(Battleground* bg, BattlegroundAV* av, A
     tactics.shouldScreenIdleNorthReserve = cached.allianceShouldScreenIdleNorthReserve;
     tactics.needsIcebloodMainForce = cached.allianceNeedsIcebloodMainForce;
     return true;
+}
+
+static bool TryGetAsyncAllianceAVObjectiveAssignment(Battleground* bg, Player* bot,
+                                                     AllianceAVObjectiveAssignment& assignment)
+{
+    if (!sPlayerbotAIConfig.asyncAVObjectiveAssignments || !bg || !bot ||
+        bot->GetTeamId() != TEAM_ALLIANCE)
+        return false;
+
+    AsyncAVStrategyResult cached;
+    if (!TryGetAsyncAVStrategyResult(bg, cached) || !cached.allianceObjectiveAssignmentsValid)
+        return false;
+
+    if (cached.allianceStrategy != BGTactics::GetBotStrategyForTeam(bg, TEAM_ALLIANCE) ||
+        cached.hordeStrategy != BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE))
+        return false;
+
+    auto itr = cached.allianceObjectiveAssignments.find(bot->GetGUID().GetCounter());
+    if (itr == cached.allianceObjectiveAssignments.end())
+        return false;
+
+    assignment = static_cast<AllianceAVObjectiveAssignment>(itr->second);
+    return assignment != AV_ASSIGN_NONE;
 }
 
 static bool AllianceShouldTakeSnowfall(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
@@ -5968,6 +6131,9 @@ bool BGTactics::selectObjective(bool reset)
             AllianceAVCachedTactics cachedAllianceTactics;
             bool const hasCachedAllianceTactics = team == TEAM_ALLIANCE &&
                 TryGetAsyncAllianceAVTactics(bg, av, cachedAllianceTactics);
+            AllianceAVObjectiveAssignment cachedAllianceAssignment = AV_ASSIGN_NONE;
+            bool const hasCachedAllianceAssignment = team == TEAM_ALLIANCE &&
+                TryGetAsyncAllianceAVObjectiveAssignment(bg, bot, cachedAllianceAssignment);
             if (hasCachedAllianceTactics)
             {
                 allianceRushInfo = cachedAllianceTactics.rushInfo;
@@ -6100,6 +6266,117 @@ bool BGTactics::selectObjective(bool reset)
                 return recapObjectives[urand(0, recapObjectives.size() - 1)];
             };
 
+            auto logCachedAssignmentPosition = [&]()
+            {
+                LOG_DEBUG("playerbots",
+                          "AV objective bot={} role={} strategy={} enemyStrategy={} reason={} node={} state={} owner={} prevOwner={} timer={} distance={:.1f}",
+                          bot->GetName(), static_cast<uint32>(role), static_cast<uint32>(strategy),
+                          static_cast<uint32>(enemyStrategy), objectiveReason, 255, 255, 255, 255, 0,
+                          ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y));
+            };
+
+            auto selectCachedAllianceAssignment = [&]() -> bool
+            {
+                if (!hasCachedAllianceAssignment || team != TEAM_ALLIANCE ||
+                    strategy != AV_STRATEGY_ALLIANCE_CONTROL_TEMPO)
+                    return false;
+
+                switch (cachedAllianceAssignment)
+                {
+                    case AV_ASSIGN_NORTH_DEFENSE:
+                    {
+                        if ((hasCachedAllianceTactics ? cachedAllianceTactics.shouldScreenIdleNorthReserve :
+                             AllianceAVShouldScreenIdleNorthReserve(av, allianceRushInfo, allianceThreat, allianceMode)) &&
+                            SetAllianceNorthReservePosition(bot, posMap, pos, role, objectiveReason))
+                        {
+                            logCachedAssignmentPosition();
+                            return true;
+                        }
+
+                        BgObjective = SelectAllianceAVDefenderObjective(bot, bg, av, allianceRushInfo);
+                        if (BgObjective)
+                            objectiveReason = "async assignment north defense";
+                        break;
+                    }
+                    case AV_ASSIGN_ICEBLOOD_HOLD:
+                    {
+                        if (Player* enemy = SelectAllianceIcebloodBeachheadEnemy(bot, bg, av, allianceThreat, strategyHorde))
+                        {
+                            BgObjective = enemy;
+                            objectiveReason = "async assignment iceblood enemy";
+                            break;
+                        }
+
+                        if (SetAllianceIcebloodBeachheadPosition(bot, bg, av, posMap, pos, role, defendersProhab,
+                                                                 objectiveReason))
+                        {
+                            logCachedAssignmentPosition();
+                            return true;
+                        }
+
+                        BgObjective = SelectAllianceIcebloodGraveyardHoldObjective(bg);
+                        if (BgObjective)
+                            objectiveReason = "async assignment iceblood hold";
+                        break;
+                    }
+                    case AV_ASSIGN_ICEBLOOD_ATTACK:
+                    {
+                        BgObjective = SelectAllianceIcebloodGraveyardObjective(bg, av);
+                        if (BgObjective)
+                            objectiveReason = "async assignment iceblood attack";
+                        break;
+                    }
+                    case AV_ASSIGN_SNOWFALL:
+                    {
+                        BgObjective = SelectAllianceSnowfallObjective(bg, av);
+                        if (BgObjective)
+                            objectiveReason = "async assignment snowfall";
+                        break;
+                    }
+                    case AV_ASSIGN_GALVANGAR:
+                    {
+                        BgObjective = GetAllianceHordeCaptain(bg, av);
+                        if (BgObjective)
+                            objectiveReason = "async assignment galvangar";
+                        break;
+                    }
+                    case AV_ASSIGN_FROSTWOLF_LOCK:
+                    {
+                        BgObjective = SelectAllianceFrostwolfLockObjective(bot, bg, av, role, allianceMode,
+                                                                           objectiveReason);
+                        break;
+                    }
+                    case AV_ASSIGN_DREK_PUSH:
+                    {
+                        uint32 const defensivePressure = hasCachedAllianceTactics ?
+                            cachedAllianceTactics.defensivePressure : GetAllianceDefensivePressure(av);
+                        BgObjective = SelectAllianceDrekPushObjective(bot, bg, av, allianceThreat, allianceMode,
+                                                                      allianceRushInfo, allianceHordeTowersDown,
+                                                                      defensivePressure);
+                        if (BgObjective)
+                            objectiveReason = "async assignment drek";
+                        else if (SetAllianceDrekPushRallyPosition(bot, posMap, pos, objectiveReason))
+                        {
+                            logCachedAssignmentPosition();
+                            return true;
+                        }
+                        break;
+                    }
+                    case AV_ASSIGN_ASSAULT_GUARD:
+                    {
+                        BgObjective = SelectAllianceAssaultGuardObjective(bot, bg, av, role, strategy);
+                        if (BgObjective)
+                            objectiveReason = "async assignment assault guard";
+                        break;
+                    }
+                    case AV_ASSIGN_NONE:
+                    default:
+                        break;
+                }
+
+                return BgObjective != nullptr;
+            };
+
             if (!BgObjective && allianceFinalDrekPush && !allianceNorthEmergency && !isDefender)
             {
                 uint32 const defensivePressure = hasCachedAllianceTactics ?
@@ -6145,6 +6422,12 @@ bool BGTactics::selectObjective(bool reset)
                     BgObjective = enemy;
                     objectiveReason = "alliance north rush enemy";
                 }
+            }
+
+            if (!BgObjective && selectCachedAllianceAssignment())
+            {
+                if (!BgObjective)
+                    return true;
             }
 
             if (!BgObjective && team == TEAM_ALLIANCE && !isDefender &&
