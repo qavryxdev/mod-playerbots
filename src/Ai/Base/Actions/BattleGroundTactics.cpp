@@ -821,6 +821,12 @@ BattleBotPath vPath_AV_IcebloodTower_To_IcebloodGrave = {
     {-625.494f, -390.816f, 58.781f, nullptr}
 };
 
+BattleBotPath vPath_AV_IcebloodRespawn_To_IcebloodGrave = {
+    {-531.200f, -405.200f, 49.600f, nullptr}, {-555.000f, -406.000f, 52.500f, nullptr},
+    {-585.000f, -404.000f, 56.000f, nullptr}, {-617.858f, -400.654f, 59.692f, nullptr},
+    {-635.524f, -393.738f, 59.527f, nullptr}
+};
+
 BattleBotPath vPath_AV_IcebloodGrave_To_TowerBottom = {
     {-635.524f, -393.738f, 59.527f, nullptr}, {-659.484f, -386.214f, 63.131f, nullptr},
     {-679.221f, -374.851f, 65.710f, nullptr}, {-694.579f, -368.145f, 66.017f, nullptr},
@@ -1238,6 +1244,7 @@ std::vector<BattleBotPath*> const vPaths_AV = {
     &vPath_AV_HordeCrossroad3_To_IcebloodTower,
     &vPath_AV_IcebloodTower_To_HordeCaptain,
     &vPath_AV_IcebloodTower_To_IcebloodGrave,
+    &vPath_AV_IcebloodRespawn_To_IcebloodGrave,
     &vPath_AV_IcebloodGrave_To_TowerBottom,
     &vPath_AV_TowerBottom_To_HordeCrossroad1,
     &vPath_AV_HordeCrossroad1_To_FrostwolfGrave,
@@ -3295,6 +3302,7 @@ static bool AllianceControlsIcebloodGraveyard(BattlegroundAV* av);
 static bool AllianceAVMustKillCaptainBeforeTowers(BattlegroundAV* av);
 static bool AllianceAVPositionIsHordeCaptainRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos);
+static bool AllianceAVPositionIsIcebloodRespawnExit(PositionInfo const& pos);
 static bool AllianceAVPositionIsNearPosition(PositionInfo const& pos, Position const& target, float radius);
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsSnowfallRespawn(PositionInfo const& pos);
@@ -3302,6 +3310,8 @@ static bool AllianceAVPositionIsIcebloodTowerRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsHordeTowerRun(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsBeyondIcebloodBeachhead(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsIcebloodHoldPerimeter(Battleground* bg, PositionInfo const& pos, bool strictAssault);
+static bool AllianceAVShouldKeepMovingToIcebloodAssault(Player* bot, Battleground* bg,
+                                                        PositionInfo const& objectivePos);
 static bool AllianceAVPositionIsAntiRushRally(PositionInfo const& pos);
 static bool AllianceAVPositionIsAllianceDefenseRun(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsContestedAllianceDefenseObjective(Battleground* bg, BattlegroundAV* av,
@@ -3683,6 +3693,16 @@ static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos)
     return pos.x <= -560.0f && pos.x >= -710.0f && pos.y <= -335.0f && pos.y >= -470.0f;
 }
 
+static bool AllianceAVPositionIsIcebloodRespawnExit(PositionInfo const& pos)
+{
+    if (!pos.valueSet)
+        return false;
+
+    return pos.x <= -500.0f && pos.x >= -570.0f &&
+           pos.y <= -370.0f && pos.y >= -435.0f &&
+           pos.z >= 40.0f && pos.z <= 65.0f;
+}
+
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos)
 {
     if (!pos.valueSet)
@@ -3743,6 +3763,7 @@ static bool AVPathNeedsPreciseSnowfallMovement(BattleBotPath const* path)
 {
     return path == &vPath_AV_SnowfallRespawn_To_SnowfallGraveyard ||
            path == &vPath_AV_SnowfallGraveyard_To_HordeCaptain ||
+           path == &vPath_AV_IcebloodRespawn_To_IcebloodGrave ||
            path == &vPath_AV_AllianceCrossroads3_To_SnowfallGraveyard ||
            path == &vPath_AV_StoneheartBunker_To_AllianceCrossroad3;
 }
@@ -3822,6 +3843,29 @@ static bool AllianceAVPositionIsIcebloodHoldPerimeter(Battleground* bg, Position
     return AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_FLAG_HOLD, 130.0f) ||
            AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_NORTH_LOCKDOWN, 55.0f) ||
            AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN, 55.0f);
+}
+
+static bool AllianceAVShouldKeepMovingToIcebloodAssault(Player* bot, Battleground* bg,
+                                                        PositionInfo const& objectivePos)
+{
+    if (!bot || !bg || bot->GetTeamId() != TEAM_ALLIANCE || !objectivePos.valueSet ||
+        PlayerHasFlag::IsCapturingFlag(bot) || AllianceAVIsCastingAnySpell(bot))
+        return false;
+
+    BattlegroundTypeId bgType = bg->GetBgTypeID();
+    if (bgType == BATTLEGROUND_RB)
+        bgType = bg->GetBgTypeID(true);
+
+    if (bgType != BATTLEGROUND_AV)
+        return false;
+
+    BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+    if (!AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE) ||
+        !AllianceAVPositionIsIcebloodGraveRun(objectivePos))
+        return false;
+
+    PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+    return !AllianceAVPositionIsIcebloodHoldPerimeter(bg, botPos, true);
 }
 
 static bool AllianceAVShouldEnforceIcebloodAssaultLeash(Player* bot, Battleground* bg)
@@ -5930,9 +5974,24 @@ bool BGTactics::Execute(Event /*event*/)
         bool ignoreIcebloodAssaultCombat = false;
         if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
         {
-            if (AllianceAVShouldBreakIcebloodAssaultCombatLeash(bot, bg,
-                                                                 context->GetValue<Unit*>("current target")->Get(),
-                                                                 AI_VALUE(Unit*, "enemy player target")))
+            Unit* currentTarget = context->GetValue<Unit*>("current target")->Get();
+            Unit* enemyTarget = AI_VALUE(Unit*, "enemy player target");
+            PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+            if (AllianceAVShouldKeepMovingToIcebloodAssault(bot, bg, objectivePos) &&
+                (bot->GetVictim() || currentTarget || enemyTarget || bot->IsInCombat()))
+            {
+                context->GetValue<Unit*>("current target")->Set(nullptr);
+                bot->AttackStop();
+                bot->SetTarget(ObjectGuid::Empty);
+                bot->SetSelection(ObjectGuid());
+                botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+                ignoreIcebloodAssaultCombat = true;
+
+                uint8 const role = context->GetValue<uint32>("bg role")->Get();
+                LogAllianceAVMoveDebug(bot, bg, objectivePos, "ibgy_transit_ignore_combat", role, 255, false,
+                                       enemyTarget);
+            }
+            else if (AllianceAVShouldBreakIcebloodAssaultCombatLeash(bot, bg, currentTarget, enemyTarget))
             {
                 context->GetValue<Unit*>("current target")->Set(nullptr);
                 bot->AttackStop();
@@ -5944,6 +6003,10 @@ bool BGTactics::Execute(Event /*event*/)
                 ignoreIcebloodAssaultCombat = true;
             }
         }
+
+        if (ignoreIcebloodAssaultCombat && bot->isMoving() &&
+            bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+            return true;
 
         if (bot->isMoving() && !ignoreIcebloodAssaultCombat)
             return false;
@@ -8241,6 +8304,12 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
     bool const avoidIcebloodTowerForGalvangar =
         bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVShouldAvoidIcebloodTowerForGalvangar(bg, pos);
+    PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+    bool const allianceSouthFromIcebloodRespawn =
+        bot->GetTeamId() == TEAM_ALLIANCE &&
+        AllianceAVPositionIsIcebloodRespawnExit(botPos) &&
+        AllianceAVPositionIsBeyondIcebloodBeachhead(bg, pos) &&
+        !AllianceAVPositionIsIcebloodGraveRun(pos);
 
     // uint32 index = -1;
     // uint32 chosenPathIndex = -1;
@@ -8251,6 +8320,12 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
         if (avoidIcebloodTowerForGalvangar &&
             (path == &vPath_AV_HordeCrossroad3_To_IcebloodTower || path == &vPath_AV_IcebloodTower_To_HordeCaptain))
+            continue;
+
+        if (allianceSouthFromIcebloodRespawn &&
+            (path == &vPath_AV_HordeCrossroad3_To_IcebloodTower ||
+             path == &vPath_AV_IcebloodTower_To_HordeCaptain ||
+             path == &vPath_AV_IcebloodTower_To_IcebloodGrave))
             continue;
 
         // index++;
@@ -8395,11 +8470,33 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
         if (bgType == BATTLEGROUND_RB && bg)
             bgType = bg->GetBgTypeID(true);
 
-        if (bgType == BATTLEGROUND_AV)
+        if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        {
+            PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+            if (AllianceAVShouldKeepMovingToIcebloodAssault(bot, bg, objectivePos))
+            {
+                Unit* enemyTarget = AI_VALUE(Unit*, "enemy player target");
+                context->GetValue<Unit*>("current target")->Set(nullptr);
+                bot->AttackStop();
+                bot->SetTarget(ObjectGuid::Empty);
+                bot->SetSelection(ObjectGuid());
+                botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+
+                uint8 const role = context->GetValue<uint32>("bg role")->Get();
+                LogAllianceAVMoveDebug(bot, bg, objectivePos, "ibgy_transit_wp_ignore_combat", role, 255, false,
+                                       enemyTarget);
+            }
+            else
+                return false;
+        }
+        else if (bgType == BATTLEGROUND_AV)
             return false;
 
-        resetObjective();
-        return false;
+        if (bgType != BATTLEGROUND_AV)
+        {
+            resetObjective();
+            return false;
+        }
     }
 
     if (currentPoint == lastPointInPath || !bot->IsAlive())
