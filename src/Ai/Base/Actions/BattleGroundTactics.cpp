@@ -8265,6 +8265,27 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
             if (bot->GetDistance(snowfallFlagAnchor.x, snowfallFlagAnchor.y, snowfallFlagAnchor.z) > 12.0f)
                 return MoveTo(bot->GetMapId(), snowfallFlagAnchor.x, snowfallFlagAnchor.y, snowfallFlagAnchor.z);
         }
+
+        if (bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVPositionIsIcebloodRespawnExit(botPos) &&
+            !AllianceAVPositionIsIcebloodHoldPerimeter(bg, pos, false))
+        {
+            BattleBotPath* exitPath = &vPath_AV_IcebloodRespawn_To_IcebloodGrave;
+            uint32 closestPoint = 0;
+            float closestDistance = FLT_MAX;
+            for (uint32 i = 0; i < exitPath->size(); ++i)
+            {
+                BattleBotWaypoint const& waypoint = exitPath->at(i);
+                float const distance = bot->GetDistance(waypoint.x, waypoint.y, waypoint.z);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closestPoint = i;
+                }
+            }
+
+            if (closestPoint < exitPath->size() - 1)
+                return moveToObjectiveWp(exitPath, closestPoint, false);
+        }
     }
     else if (bgType == BATTLEGROUND_EY)
     {
