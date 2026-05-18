@@ -683,6 +683,12 @@ BattleBotPath vPath_AV_AllianceCrossroads3_To_SnowfallGraveyard = {
     {-199.853f, -124.194f, 78.247f, nullptr}
 };
 
+BattleBotPath vPath_AV_StoneheartBunker_To_AllianceCrossroad3 = {
+    {-129.793f, -481.160f, 27.735f, nullptr}, {-136.500f, -445.000f, 25.500f, nullptr},
+    {-140.200f, -361.400f, 8.500f, nullptr},  {-150.000f, -315.000f, 7.000f, nullptr},
+    {-154.433f, -272.428f, 8.016f, nullptr},  {-141.090f, -248.599f, 6.746f, nullptr}
+};
+
 BattleBotPath vPath_AV_AllianceCaptain_To_AllianceCrossroad3 = {
     {31.023f, -290.783f, 15.966f, nullptr},   {31.857f, -270.165f, 16.040f, nullptr},
     {26.531f, -242.488f, 14.158f, nullptr},   {3.448f, -241.318f, 11.900f, nullptr},
@@ -1222,6 +1228,7 @@ std::vector<BattleBotPath*> const vPaths_AV = {
     &vPath_AV_AllianceCaptain_To_HordeCrossroad3,
     &vPath_AV_AllianceCrossroad2_To_HordeCaptain_Bypass,
     &vPath_AV_AllianceCrossroads3_To_SnowfallGraveyard,
+    &vPath_AV_StoneheartBunker_To_AllianceCrossroad3,
     &vPath_AV_AllianceCaptain_To_AllianceCrossroad3,
     &vPath_AV_StoneheartBunker_To_HordeCrossroad3,
     &vPath_AV_AllianceCrossroad1_To_AllianceMine,
@@ -3703,6 +3710,41 @@ static bool AllianceAVPositionIsSnowfallRespawn(PositionInfo const& pos)
 
     return AllianceAVPositionIsNearPosition(pos, AV_SNOWFALL_RESPAWN_ALLIANCE, 45.0f) ||
            (pos.x <= -120.0f && pos.x >= -190.0f && pos.y >= -10.0f && pos.y <= 65.0f && pos.z >= 60.0f);
+}
+
+static bool AVPositionIsSnowfallUpperPlateau(PositionInfo const& pos)
+{
+    if (!pos.valueSet)
+        return false;
+
+    return pos.x <= -120.0f && pos.x >= -240.0f && pos.y <= 70.0f && pos.y >= -130.0f && pos.z >= 60.0f;
+}
+
+static bool AVPositionIsSnowfallHighLowTransition(PositionInfo const& from, PositionInfo const& to)
+{
+    if (!from.valueSet || !to.valueSet)
+        return false;
+
+    PositionInfo const& high = from.z >= to.z ? from : to;
+    PositionInfo const& low = from.z >= to.z ? to : from;
+    if (high.z < 55.0f || low.z > 45.0f || high.z - low.z < 25.0f)
+        return false;
+
+    bool const highSnowfall =
+        AVPositionIsSnowfallUpperPlateau(high) ||
+        AllianceAVPositionIsNearPosition(high, AV_SNOWFALL_RESPAWN_ALLIANCE, 70.0f);
+    bool const lowSnowfallValley =
+        low.x <= -80.0f && low.x >= -360.0f && low.y <= -170.0f && low.y >= -520.0f;
+
+    return highSnowfall && lowSnowfallValley;
+}
+
+static bool AVPathNeedsPreciseSnowfallMovement(BattleBotPath const* path)
+{
+    return path == &vPath_AV_SnowfallRespawn_To_SnowfallGraveyard ||
+           path == &vPath_AV_SnowfallGraveyard_To_HordeCaptain ||
+           path == &vPath_AV_AllianceCrossroads3_To_SnowfallGraveyard ||
+           path == &vPath_AV_StoneheartBunker_To_AllianceCrossroad3;
 }
 
 static bool AllianceAVPositionIsIcebloodTowerRun(PositionInfo const& pos)
@@ -8073,6 +8115,13 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 directMoveLimit = 180.0f;
         }
 
+        if (bgType == BATTLEGROUND_AV)
+        {
+            PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+            if (AVPositionIsSnowfallHighLowTransition(botPos, pos))
+                return selectObjectiveWp(vPaths_AV);
+        }
+
         if (!ignoreDist && ServerFacade::instance().IsDistanceGreaterThan(ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y), directMoveLimit))
         {
             // std::ostringstream out;
@@ -8138,6 +8187,20 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         if (bot->GetDistance(caveSpawn) < 16.0f)
         {
             return moveToStart(true);
+        }
+
+        PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+        bool const snowfallExitApproach =
+            AllianceAVPositionIsSnowfallRespawn(botPos) ||
+            (botPos.x <= -150.0f && botPos.x >= -215.0f &&
+             botPos.y <= 70.0f && botPos.y >= -105.0f &&
+             botPos.z >= 60.0f);
+        if (snowfallExitApproach && !AVPositionIsSnowfallUpperPlateau(pos))
+        {
+            BattleBotPath* exitPath = &vPath_AV_SnowfallRespawn_To_SnowfallGraveyard;
+            BattleBotWaypoint const& snowfallFlagAnchor = exitPath->back();
+            if (bot->GetDistance(snowfallFlagAnchor.x, snowfallFlagAnchor.y, snowfallFlagAnchor.z) > 12.0f)
+                return MoveTo(bot->GetMapId(), snowfallFlagAnchor.x, snowfallFlagAnchor.y, snowfallFlagAnchor.z);
         }
     }
     else if (bgType == BATTLEGROUND_EY)
@@ -8356,10 +8419,10 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
     else
         currPoint++;
 
-    uint32 nPoint = reverse ? std::max((int)(currPoint - urand(1, 5)), 0)
-                            : std::min((uint32)(currPoint + urand(1, 5)), lastPointInPath);
-    if (reverse && nPoint < 0)
-        nPoint = 0;
+    bool const preciseSnowfallPath = AVPathNeedsPreciseSnowfallMovement(currentPath);
+    uint32 const nPoint = preciseSnowfallPath ? currPoint
+        : (reverse ? currPoint - std::min(urand(1, 5), currPoint)
+                   : std::min(currPoint + urand(1, 5), lastPointInPath));
 
     BattleBotWaypoint& nextPoint = currentPath->at(nPoint);
 
@@ -8369,8 +8432,9 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
     // out << ", " << nextPoint.x << ", " << nextPoint.y << " Path Size: " << currentPath->size() << ", Dist: " <<
     // ServerFacade::instance().GetDistance2d(bot, nextPoint.x, nextPoint.y); bot->Say(out.str(), LANG_UNIVERSAL);
 
-    float const targetX = nextPoint.x + frand(-2, 2);
-    float const targetY = nextPoint.y + frand(-2, 2);
+    float const waypointJitter = preciseSnowfallPath ? 0.25f : 2.0f;
+    float const targetX = nextPoint.x + frand(-waypointJitter, waypointJitter);
+    float const targetY = nextPoint.y + frand(-waypointJitter, waypointJitter);
     bool const moved = MoveTo(bot->GetMapId(), targetX, targetY, nextPoint.z);
 
     if (Battleground* bg = bot->GetBattleground())
@@ -8501,7 +8565,9 @@ bool BGTactics::startNewPathFree(std::vector<BattleBotPath*> const& vPaths)
 
     BattleBotPath* currentPath = pClosestPath;
     bool reverse = false;
-    uint32 currentPoint = closestPoint - 1;
+    uint32 currentPoint = closestPoint == 0 ? 0 : closestPoint - 1;
+    if (AVPathNeedsPreciseSnowfallMovement(currentPath))
+        currentPoint = closestPoint;
 
     return moveToObjectiveWp(currentPath, currentPoint, reverse);
 }
