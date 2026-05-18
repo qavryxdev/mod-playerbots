@@ -1660,6 +1660,7 @@ struct AsyncAVPlayerSnapshot
     TeamId teamId = TEAM_NEUTRAL;
     float x = 0.0f;
     float y = 0.0f;
+    float z = 0.0f;
     uint8 role = 0;
     bool alive = false;
     bool inCombat = false;
@@ -2251,8 +2252,16 @@ static AllianceAVObjectiveAssignment AsyncAVBuildAllianceObjectiveAssignment(
     AllianceAVThreatLevel const threat = static_cast<AllianceAVThreatLevel>(result.allianceThreat);
     AllianceAVBattlefieldMode const mode = static_cast<AllianceAVBattlefieldMode>(result.allianceMode);
     uint8 const defenderLimit = std::max<uint8>(1, result.allianceDefenderLimit);
-    bool const southernBot = player.x <= -462.0f;
-    bool const northernBot = player.x > -180.0f;
+    bool const snowfallForward =
+        ((AV_SNOWFALL_RESPAWN_ALLIANCE.GetPositionX() - player.x) *
+             (AV_SNOWFALL_RESPAWN_ALLIANCE.GetPositionX() - player.x) +
+         (AV_SNOWFALL_RESPAWN_ALLIANCE.GetPositionY() - player.y) *
+             (AV_SNOWFALL_RESPAWN_ALLIANCE.GetPositionY() - player.y) <= 45.0f * 45.0f) ||
+        (player.x <= -120.0f && player.x >= -190.0f && player.y >= -10.0f && player.y <= 65.0f &&
+         player.z >= 60.0f) ||
+        (player.x <= -140.0f && player.x >= -280.0f && player.y <= -70.0f && player.y >= -180.0f);
+    bool const southernBot = player.x <= -462.0f || snowfallForward;
+    bool const northernBot = player.x > -180.0f && !snowfallForward;
     bool const isDefender = player.role < defenderLimit && !southernBot;
     bool const reserveRole = player.role < std::min<uint8>(9, defenderLimit + 2);
 
@@ -2271,6 +2280,11 @@ static AllianceAVObjectiveAssignment AsyncAVBuildAllianceObjectiveAssignment(
     bool const icebloodControlled = AsyncAVNodeControlledBy(job.nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const icebloodAssaulted = AsyncAVNodeAssaultedBy(job.nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const hasForwardDrekRespawn = AsyncAVAllianceHasForwardDrekRespawn(job.nodes);
+
+    if (snowfallForward && !result.allianceFullRecall &&
+        (icebloodAssaulted || icebloodControlled || mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
+         mode == AV_MODE_IBGY_BREAKTHROUGH))
+        return icebloodControlled ? AV_ASSIGN_ICEBLOOD_HOLD : AV_ASSIGN_ICEBLOOD_ATTACK;
 
     if ((icebloodAssaulted || icebloodControlled) && result.allianceNeedsIcebloodMainForce &&
         !hasForwardDrekRespawn)
@@ -2454,6 +2468,7 @@ public:
             snapshot.teamId = player->GetTeamId();
             snapshot.x = player->GetPositionX();
             snapshot.y = player->GetPositionY();
+            snapshot.z = player->GetPositionZ();
             snapshot.alive = player->IsAlive();
             snapshot.inCombat = player->IsInCombat();
 
@@ -4511,9 +4526,22 @@ static Player* SelectAllianceNorthRushEnemy(Player* bot, Battleground* bg, Allia
     if (!bot || !bg || bot->GetTeamId() != TEAM_ALLIANCE || (!rushInfo.IsActive() && threat == AV_THREAT_NONE))
         return nullptr;
 
-    bool const northernBot = bot->GetPositionX() > -180.0f;
+    PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+    bool const snowfallForward =
+        AllianceAVPositionIsSnowfallRespawn(botPos) || AllianceAVPositionIsSnowfallRun(bg, botPos);
+    bool const northernBot = bot->GetPositionX() > -180.0f && !snowfallForward;
     bool const reserveRole = defenderLimit > 0 && role < std::min<uint8>(9, defenderLimit + 2);
     BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+
+    if (snowfallForward && !AllianceAVShouldFullRecallNorth(av, threat) && threat < AV_THREAT_HIGH)
+    {
+        AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE));
+        if (AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy) ||
+            AllianceAVNodeAssaultedBy(av, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE) ||
+            AllianceControlsIcebloodGraveyard(av))
+            return nullptr;
+    }
+
     if (AllianceHasCommittedFrostwolfFoothold(av, rushInfo, threat) && !northernBot)
         return nullptr;
 
@@ -6207,9 +6235,18 @@ bool BGTactics::selectObjective(bool reset)
                     destroyedNodes++;
 
             float botX = bot->GetPositionX();
+            PositionInfo const botPos(botX, bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+            bool const allianceSnowfallForward = team == TEAM_ALLIANCE &&
+                (AllianceAVPositionIsSnowfallRespawn(botPos) || AllianceAVPositionIsSnowfallRun(bg, botPos));
+            bool const allianceSnowfallIcebloodForward = allianceSnowfallForward && !allianceNorthEmergency &&
+                strategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO &&
+                (allianceMode == AV_MODE_IBGY_PUSH || allianceMode == AV_MODE_IBGY_GUARD ||
+                 allianceMode == AV_MODE_IBGY_BREAKTHROUGH ||
+                 AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, allianceThreat, strategyHorde));
             if (isDefender)
             {
-                if ((team == TEAM_HORDE && botX >= -62.0f) || (team == TEAM_ALLIANCE && botX <= -462.0f))
+                if ((team == TEAM_HORDE && botX >= -62.0f) ||
+                    (team == TEAM_ALLIANCE && (botX <= -462.0f || allianceSnowfallIcebloodForward)))
                     isDefender = false;
             }
 
@@ -6414,6 +6451,12 @@ bool BGTactics::selectObjective(bool reset)
                     objectiveReason = "alliance graveyard recap";
             }
 
+            if (!BgObjective && selectCachedAllianceAssignment())
+            {
+                if (!BgObjective)
+                    return true;
+            }
+
             if (!BgObjective && team == TEAM_ALLIANCE)
             {
                 if (Player* enemy = SelectAllianceNorthRushEnemy(bot, bg, allianceRushInfo, allianceThreat, role,
@@ -6422,12 +6465,6 @@ bool BGTactics::selectObjective(bool reset)
                     BgObjective = enemy;
                     objectiveReason = "alliance north rush enemy";
                 }
-            }
-
-            if (!BgObjective && selectCachedAllianceAssignment())
-            {
-                if (!BgObjective)
-                    return true;
             }
 
             if (!BgObjective && team == TEAM_ALLIANCE && !isDefender &&
@@ -7967,9 +8004,23 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 defenderLimit = std::min<uint8>(
                     defenderLimit, GetAllianceAVReleasedDefenderLimit(av, effectiveRushInfo, threat, mode));
             }
+            bool const fullRecall = hasCachedAllianceTactics ? cachedAllianceTactics.fullRecall :
+                AllianceAVShouldFullRecallNorth(av, threat);
             bool isDefender = role < defenderLimit;
-            if (isDefender && bot->GetPositionX() <= -462.0f)
-                isDefender = false;
+            if (isDefender)
+            {
+                PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+                                          bot->GetMapId());
+                bool const snowfallForward = AllianceAVPositionIsSnowfallRespawn(botPos) ||
+                    AllianceAVPositionIsSnowfallRun(bg, botPos);
+                bool const snowfallIcebloodForward = snowfallForward && !fullRecall &&
+                    strategy == AV_STRATEGY_ALLIANCE_CONTROL_TEMPO &&
+                    (mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
+                     mode == AV_MODE_IBGY_BREAKTHROUGH ||
+                     AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, enemyStrategy));
+                if (bot->GetPositionX() <= -462.0f || snowfallIcebloodForward)
+                    isDefender = false;
+            }
 
             if (AllianceAVShouldResetCurrentObjective(bot, bg, av, pos, role, isDefender, effectiveRushInfo, threat, mode))
             {
@@ -7978,8 +8029,6 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 return resetObjective();
             }
 
-            bool const fullRecall = hasCachedAllianceTactics ? cachedAllianceTactics.fullRecall :
-                AllianceAVShouldFullRecallNorth(av, threat);
             bool const canResetForMapState = !PlayerHasFlag::IsCapturingFlag(bot) && !AllianceAVIsCastingAnySpell(bot);
             if (canResetForMapState && (isDefender || (fullRecall && role < 9)) && effectiveRushInfo.IsActive() &&
                 pos.x < -180.0f && !AllianceAVPositionIsSnowfallRun(bg, pos))
