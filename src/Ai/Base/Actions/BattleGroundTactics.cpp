@@ -104,7 +104,6 @@ Position const AV_ALLIANCE_IBGY_TOWER_POINT_INTERCEPT = {-690.000f, -374.000f, 7
 Position const AV_ALLIANCE_IBGY_SOUTH_ROAD_INTERCEPT = {-650.000f, -450.000f, 59.000f, 0.0f};
 Position const AV_ALLIANCE_IBGY_NORTH_LOCKDOWN = {-590.000f, -354.000f, 60.000f, 0.0f};
 Position const AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN = {-644.000f, -430.000f, 59.000f, 0.0f};
-Position const AV_ALLIANCE_IBGY_LEFT_EXIT = {-624.000f, -410.000f, 59.700f, 0.0f};
 Position const EY_WAITING_POS_HORDE = {1809.102f, 1540.854f, 1267.142f, 0.0f};
 Position const EY_WAITING_POS_ALLIANCE = {2523.827f, 1596.915f, 1270.204f, 0.0f};
 Position const EY_FLAG_RETURN_POS_RETREAT_HORDE = {1885.529f, 1532.157f, 1200.635f, 0.0f};
@@ -822,10 +821,13 @@ BattleBotPath vPath_AV_IcebloodTower_To_IcebloodGrave = {
     {-625.494f, -390.816f, 58.781f, nullptr}
 };
 
-BattleBotPath vPath_AV_IcebloodRespawn_To_IcebloodGrave = {
+BattleBotPath vPath_AV_IcebloodRespawn_To_HordeCrossroad1_SouthRoad = {
     {-531.200f, -405.200f, 49.600f, nullptr}, {-555.000f, -406.000f, 52.500f, nullptr},
     {-585.000f, -404.000f, 56.000f, nullptr}, {-606.000f, -410.000f, 59.700f, nullptr},
-    {-624.000f, -407.000f, 59.700f, nullptr}, {-635.524f, -393.738f, 59.527f, nullptr}
+    {-624.000f, -407.000f, 59.700f, nullptr}, {-635.524f, -393.738f, 59.527f, nullptr},
+    {-659.484f, -386.214f, 63.131f, nullptr}, {-679.221f, -374.851f, 65.710f, nullptr},
+    {-694.579f, -368.145f, 66.017f, nullptr}, {-726.698f, -346.235f, 66.804f, nullptr},
+    {-743.446f, -345.899f, 66.566f, nullptr}, {-754.564f, -344.804f, 67.422f, nullptr}
 };
 
 BattleBotPath vPath_AV_IcebloodGrave_To_TowerBottom = {
@@ -1242,10 +1244,10 @@ std::vector<BattleBotPath*> const vPaths_AV = {
     &vPath_AV_HordeSpawn_To_MainRoad,
     &vPath_AV_SnowfallRespawn_To_SnowfallGraveyard,
     &vPath_AV_SnowfallGraveyard_To_HordeCaptain,
+    &vPath_AV_IcebloodRespawn_To_HordeCrossroad1_SouthRoad,
     &vPath_AV_HordeCrossroad3_To_IcebloodTower,
     &vPath_AV_IcebloodTower_To_HordeCaptain,
     &vPath_AV_IcebloodTower_To_IcebloodGrave,
-    &vPath_AV_IcebloodRespawn_To_IcebloodGrave,
     &vPath_AV_IcebloodGrave_To_TowerBottom,
     &vPath_AV_TowerBottom_To_HordeCrossroad1,
     &vPath_AV_HordeCrossroad1_To_FrostwolfGrave,
@@ -1319,6 +1321,7 @@ std::vector<BattleBotPath*> const vPaths_NoReverseAllowed = {
     &vPath_WSG_HordeGraveyardJump,
     &vPath_IC_Central_Graveyard_to_Workshop,
     &vPath_IC_Docks_Graveyard_to_Docks_Flag,
+    &vPath_AV_IcebloodRespawn_To_HordeCrossroad1_SouthRoad,
 };
 
 static std::vector<std::pair<uint8, uint32>> AV_AttackObjectives_Horde = {
@@ -3311,7 +3314,6 @@ static bool AllianceControlsIcebloodGraveyard(BattlegroundAV* av);
 static bool AllianceAVMustKillCaptainBeforeTowers(BattlegroundAV* av);
 static bool AllianceAVPositionIsHordeCaptainRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos);
-static bool AllianceAVPositionIsIcebloodRespawnExit(PositionInfo const& pos);
 static bool AllianceAVPositionIsNearPosition(PositionInfo const& pos, Position const& target, float radius);
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsSnowfallRespawn(PositionInfo const& pos);
@@ -3508,7 +3510,11 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
         !AllianceAVPositionIsSnowfallRun(bg, objectivePos))
         return true;
 
-    if (!isDefender && AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy) &&
+    bool const committedSouthernMode = mode == AV_MODE_FROSTWOLF_LOCK ||
+                                       mode == AV_MODE_DREK_SETUP ||
+                                       mode == AV_MODE_DREK_PUSH;
+    if (!isDefender && !committedSouthernMode &&
+        AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy) &&
         AllianceAVPositionIsBeyondIcebloodBeachhead(bg, objectivePos))
         return true;
 
@@ -3724,24 +3730,6 @@ static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos)
     return pos.x <= -560.0f && pos.x >= -710.0f && pos.y <= -335.0f && pos.y >= -470.0f;
 }
 
-static bool AllianceAVPositionIsIcebloodRespawnExit(PositionInfo const& pos)
-{
-    if (!pos.valueSet)
-        return false;
-
-    return pos.x <= -500.0f && pos.x >= -570.0f &&
-           pos.y <= -370.0f && pos.y >= -435.0f &&
-           pos.z >= 40.0f && pos.z <= 65.0f;
-}
-
-static bool AllianceAVPositionIsIcebloodFlagPole(PositionInfo const& pos)
-{
-    if (!pos.valueSet)
-        return false;
-
-    return AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_FLAG_HOLD, 18.0f);
-}
-
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos)
 {
     if (!pos.valueSet)
@@ -3813,7 +3801,7 @@ static bool AVPathNeedsPreciseSnowfallMovement(BattleBotPath const* path)
            path == &vPath_AV_AllianceCrossroad1_To_AllianceMine ||
            path == &vPath_AV_SnowfallRespawn_To_SnowfallGraveyard ||
            path == &vPath_AV_SnowfallGraveyard_To_HordeCaptain ||
-           path == &vPath_AV_IcebloodRespawn_To_IcebloodGrave ||
+           path == &vPath_AV_IcebloodRespawn_To_HordeCrossroad1_SouthRoad ||
            path == &vPath_AV_AllianceCrossroads3_To_SnowfallGraveyard ||
            path == &vPath_AV_StoneheartBunker_To_AllianceCrossroad3;
 }
@@ -8447,31 +8435,6 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
                 return MoveTo(bot->GetMapId(), snowfallFlagAnchor.x, snowfallFlagAnchor.y, snowfallFlagAnchor.z);
         }
 
-        if (bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVPositionIsIcebloodRespawnExit(botPos) &&
-            AllianceAVPositionIsIcebloodFlagPole(botPos) && !AllianceAVPositionIsIcebloodGraveRun(pos))
-            return MoveTo(bot->GetMapId(), AV_ALLIANCE_IBGY_LEFT_EXIT.GetPositionX(),
-                          AV_ALLIANCE_IBGY_LEFT_EXIT.GetPositionY(), AV_ALLIANCE_IBGY_LEFT_EXIT.GetPositionZ());
-
-        if (bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVPositionIsIcebloodRespawnExit(botPos) &&
-            !AllianceAVPositionIsIcebloodHoldPerimeter(bg, pos, false))
-        {
-            BattleBotPath* exitPath = &vPath_AV_IcebloodRespawn_To_IcebloodGrave;
-            uint32 closestPoint = 0;
-            float closestDistance = FLT_MAX;
-            for (uint32 i = 0; i < exitPath->size(); ++i)
-            {
-                BattleBotWaypoint const& waypoint = exitPath->at(i);
-                float const distance = bot->GetDistance(waypoint.x, waypoint.y, waypoint.z);
-                if (distance < closestDistance)
-                {
-                    closestDistance = distance;
-                    closestPoint = i;
-                }
-            }
-
-            if (closestPoint < exitPath->size() - 1)
-                return moveToObjectiveWp(exitPath, closestPoint, false);
-        }
     }
     else if (bgType == BATTLEGROUND_EY)
     {
@@ -8512,12 +8475,6 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
     bool const avoidIcebloodTowerForGalvangar =
         bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVShouldAvoidIcebloodTowerForGalvangar(bg, pos);
     PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
-    bool const allianceSouthFromIcebloodRespawn =
-        bot->GetTeamId() == TEAM_ALLIANCE &&
-        AllianceAVPositionIsIcebloodRespawnExit(botPos) &&
-        AllianceAVPositionIsBeyondIcebloodBeachhead(bg, pos) &&
-        !AllianceAVPositionIsIcebloodGraveRun(pos);
-
     // uint32 index = -1;
     // uint32 chosenPathIndex = -1;
     for (auto const& path : vPaths)
@@ -8527,12 +8484,6 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
         if (avoidIcebloodTowerForGalvangar &&
             (path == &vPath_AV_HordeCrossroad3_To_IcebloodTower || path == &vPath_AV_IcebloodTower_To_HordeCaptain))
-            continue;
-
-        if (allianceSouthFromIcebloodRespawn &&
-            (path == &vPath_AV_HordeCrossroad3_To_IcebloodTower ||
-             path == &vPath_AV_IcebloodTower_To_HordeCaptain ||
-             path == &vPath_AV_IcebloodTower_To_IcebloodGrave))
             continue;
 
         // index++;
