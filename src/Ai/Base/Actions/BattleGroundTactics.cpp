@@ -104,6 +104,7 @@ Position const AV_ALLIANCE_IBGY_TOWER_POINT_INTERCEPT = {-690.000f, -374.000f, 7
 Position const AV_ALLIANCE_IBGY_SOUTH_ROAD_INTERCEPT = {-650.000f, -450.000f, 59.000f, 0.0f};
 Position const AV_ALLIANCE_IBGY_NORTH_LOCKDOWN = {-590.000f, -354.000f, 60.000f, 0.0f};
 Position const AV_ALLIANCE_IBGY_SOUTH_LOCKDOWN = {-644.000f, -430.000f, 59.000f, 0.0f};
+Position const AV_ALLIANCE_IBGY_LEFT_EXIT = {-624.000f, -410.000f, 59.700f, 0.0f};
 Position const EY_WAITING_POS_HORDE = {1809.102f, 1540.854f, 1267.142f, 0.0f};
 Position const EY_WAITING_POS_ALLIANCE = {2523.827f, 1596.915f, 1270.204f, 0.0f};
 Position const EY_FLAG_RETURN_POS_RETREAT_HORDE = {1885.529f, 1532.157f, 1200.635f, 0.0f};
@@ -823,8 +824,8 @@ BattleBotPath vPath_AV_IcebloodTower_To_IcebloodGrave = {
 
 BattleBotPath vPath_AV_IcebloodRespawn_To_IcebloodGrave = {
     {-531.200f, -405.200f, 49.600f, nullptr}, {-555.000f, -406.000f, 52.500f, nullptr},
-    {-585.000f, -404.000f, 56.000f, nullptr}, {-617.858f, -400.654f, 59.692f, nullptr},
-    {-635.524f, -393.738f, 59.527f, nullptr}
+    {-585.000f, -404.000f, 56.000f, nullptr}, {-606.000f, -410.000f, 59.700f, nullptr},
+    {-624.000f, -407.000f, 59.700f, nullptr}, {-635.524f, -393.738f, 59.527f, nullptr}
 };
 
 BattleBotPath vPath_AV_IcebloodGrave_To_TowerBottom = {
@@ -2290,18 +2291,18 @@ static AllianceAVObjectiveAssignment AsyncAVBuildAllianceObjectiveAssignment(
     if (result.allianceFinalDrekWindow && !result.allianceFullRecall && !isDefender)
         return AV_ASSIGN_DREK_PUSH;
 
-    if (isDefender || (result.allianceShouldScreenIdleNorthReserve && northernBot && reserveRole))
-        return AV_ASSIGN_NORTH_DEFENSE;
-
-    if (AsyncAVAllianceShouldTakeSnowfall(job.nodes, result, threat, mode, player.role))
-        return AV_ASSIGN_SNOWFALL;
-
     bool const icebloodControlled = AsyncAVNodeControlledBy(job.nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const icebloodAssaulted = AsyncAVNodeAssaultedBy(job.nodes, BG_AV_NODES_ICEBLOOD_GRAVE, TEAM_ALLIANCE);
     bool const hasForwardDrekRespawn = AsyncAVAllianceHasForwardDrekRespawn(job.nodes);
 
     if (icebloodAssaulted && !result.allianceFullRecall && southernBot && !hasForwardDrekRespawn)
         return AV_ASSIGN_ICEBLOOD_HOLD;
+
+    if (isDefender || (result.allianceShouldScreenIdleNorthReserve && northernBot && reserveRole))
+        return AV_ASSIGN_NORTH_DEFENSE;
+
+    if (AsyncAVAllianceShouldTakeSnowfall(job.nodes, result, threat, mode, player.role))
+        return AV_ASSIGN_SNOWFALL;
 
     if (snowfallForward && !result.allianceFullRecall &&
         (icebloodAssaulted || icebloodControlled || mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
@@ -3733,6 +3734,14 @@ static bool AllianceAVPositionIsIcebloodRespawnExit(PositionInfo const& pos)
            pos.z >= 40.0f && pos.z <= 65.0f;
 }
 
+static bool AllianceAVPositionIsIcebloodFlagPole(PositionInfo const& pos)
+{
+    if (!pos.valueSet)
+        return false;
+
+    return AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_IBGY_FLAG_HOLD, 18.0f);
+}
+
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos)
 {
     if (!pos.valueSet)
@@ -4978,6 +4987,9 @@ static bool SetAllianceIcebloodBeachheadPosition(Player* bot, Battleground* bg, 
     BG_AV_NodeInfo const& node = av->GetAVNodeInfo(BG_AV_NODES_ICEBLOOD_GRAVE);
     bool const allianceAssaulting = node.State == POINT_ASSAULTED && node.OwnerId == TEAM_ALLIANCE;
     bool const allianceControlled = node.State == POINT_CONTROLLED && node.OwnerId == TEAM_ALLIANCE;
+    if (allianceAssaulting)
+        return false;
+
     uint8 const firstOffenseRole = std::min<uint8>(defenderLimit, 9);
     uint8 const relativeRole = role >= firstOffenseRole ? role - firstOffenseRole : role;
     uint8 const holdSlot = allianceAssaulting ? relativeRole % 8 : relativeRole % 6;
@@ -8434,6 +8446,11 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
             if (bot->GetDistance(snowfallFlagAnchor.x, snowfallFlagAnchor.y, snowfallFlagAnchor.z) > 12.0f)
                 return MoveTo(bot->GetMapId(), snowfallFlagAnchor.x, snowfallFlagAnchor.y, snowfallFlagAnchor.z);
         }
+
+        if (bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVPositionIsIcebloodRespawnExit(botPos) &&
+            AllianceAVPositionIsIcebloodFlagPole(botPos) && !AllianceAVPositionIsIcebloodGraveRun(pos))
+            return MoveTo(bot->GetMapId(), AV_ALLIANCE_IBGY_LEFT_EXIT.GetPositionX(),
+                          AV_ALLIANCE_IBGY_LEFT_EXIT.GetPositionY(), AV_ALLIANCE_IBGY_LEFT_EXIT.GetPositionZ());
 
         if (bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVPositionIsIcebloodRespawnExit(botPos) &&
             !AllianceAVPositionIsIcebloodHoldPerimeter(bg, pos, false))
