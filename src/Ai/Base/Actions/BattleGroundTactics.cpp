@@ -5956,17 +5956,21 @@ bool BGTactics::Execute(Event /*event*/)
         bool ignoreIcebloodAssaultCombat = false;
         if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
         {
+            Unit* currentTarget = context->GetValue<Unit*>("current target")->Get();
+            Unit* enemyPlayerTarget = AI_VALUE(Unit*, "enemy player target");
             if (AllianceAVShouldBreakIcebloodAssaultCombatLeash(bot, bg,
-                                                                 context->GetValue<Unit*>("current target")->Get(),
-                                                                 AI_VALUE(Unit*, "enemy player target")))
+                                                                 currentTarget, enemyPlayerTarget))
             {
                 context->GetValue<Unit*>("current target")->Set(nullptr);
-                bot->AttackStop();
-                bot->SetTarget(ObjectGuid::Empty);
-                bot->SetSelection(ObjectGuid());
-                botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
-                bot->StopMoving();
-                bot->GetMotionMaster()->Clear(false);
+                // Keep existing movement when we are only breaking an invalid leash combat state.
+                // Hard-stop chase only if a concrete target was engaged.
+                if (bot->GetVictim() || currentTarget || enemyPlayerTarget)
+                {
+                    bot->AttackStop();
+                    bot->SetTarget(ObjectGuid::Empty);
+                    bot->SetSelection(ObjectGuid());
+                    botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+                }
                 ignoreIcebloodAssaultCombat = true;
             }
         }
@@ -8421,11 +8425,32 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
         if (bgType == BATTLEGROUND_RB && bg)
             bgType = bg->GetBgTypeID(true);
 
-        if (bgType == BATTLEGROUND_AV)
+        if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        {
+            Unit* currentTarget = context->GetValue<Unit*>("current target")->Get();
+            Unit* enemyTarget = AI_VALUE(Unit*, "enemy player target");
+            if (AllianceAVShouldBreakIcebloodAssaultCombatLeash(bot, bg, currentTarget, enemyTarget))
+            {
+                context->GetValue<Unit*>("current target")->Set(nullptr);
+                if (bot->GetVictim() || currentTarget || enemyTarget)
+                {
+                    bot->AttackStop();
+                    bot->SetTarget(ObjectGuid::Empty);
+                    bot->SetSelection(ObjectGuid());
+                    botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+                }
+            }
+            else
+                return false;
+        }
+        else if (bgType == BATTLEGROUND_AV)
             return false;
 
-        resetObjective();
-        return false;
+        if (bgType != BATTLEGROUND_AV)
+        {
+            resetObjective();
+            return false;
+        }
     }
 
     if (currentPoint == lastPointInPath || !bot->IsAlive())
