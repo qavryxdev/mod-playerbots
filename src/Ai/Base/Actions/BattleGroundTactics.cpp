@@ -3301,6 +3301,7 @@ static bool AllianceAVPositionIsSnowfallRespawn(PositionInfo const& pos);
 static bool AllianceAVPositionIsIcebloodTowerRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsHordeTowerRun(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsBeyondIcebloodBeachhead(Battleground* bg, PositionInfo const& pos);
+static bool AllianceAVPositionIsForwardFrostwolfGraveyard(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsIcebloodHoldPerimeter(Battleground* bg, PositionInfo const& pos, bool strictAssault);
 static bool AllianceAVPositionIsAntiRushRally(PositionInfo const& pos);
 static bool AllianceAVPositionIsAllianceDefenseRun(Battleground* bg, PositionInfo const& pos);
@@ -3468,8 +3469,10 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
         !AllianceAVPositionIsSnowfallRun(bg, objectivePos))
         return true;
 
+    bool const frostwolfLockObjective =
+        mode == AV_MODE_FROSTWOLF_LOCK && AllianceAVPositionIsForwardFrostwolfGraveyard(bg, objectivePos);
     if (!isDefender && AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy) &&
-        AllianceAVPositionIsBeyondIcebloodBeachhead(bg, objectivePos))
+        AllianceAVPositionIsBeyondIcebloodBeachhead(bg, objectivePos) && !frostwolfLockObjective)
         return true;
 
     if (Player* rushEnemy = SelectAllianceNorthRushEnemy(bot, bg, rushInfo, threat, role, isDefender, 0))
@@ -3789,6 +3792,29 @@ static bool AllianceAVPositionIsBeyondIcebloodBeachhead(Battleground* bg, Positi
         return true;
 
     return pos.x <= -700.0f && pos.x >= -1450.0f && pos.y <= -180.0f && pos.y >= -480.0f;
+}
+
+static bool AllianceAVPositionIsForwardFrostwolfGraveyard(Battleground* bg, PositionInfo const& pos)
+{
+    if (!pos.valueSet)
+        return false;
+
+    uint32 const frostwolfGoIds[] = {
+        BG_AV_OBJECT_FLAG_H_FROSTWOLF_GRAVE,
+        BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_GRAVE,
+        BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_GRAVE,
+        BG_AV_OBJECT_FLAG_H_FROSTWOLF_HUT,
+        BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_HUT,
+        BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_HUT,
+    };
+
+    for (uint32 goId : frostwolfGoIds)
+        if (AllianceAVPositionNearBGObject(bg, pos, goId, 60.0f))
+            return true;
+
+    bool const frostwolfGrave = pos.x <= -1010.0f && pos.x >= -1155.0f && pos.y <= -285.0f && pos.y >= -410.0f;
+    bool const frostwolfHut = pos.x <= -1320.0f && pos.x >= -1450.0f && pos.y <= -240.0f && pos.y >= -370.0f;
+    return frostwolfGrave || frostwolfHut;
 }
 
 static bool AllianceAVPositionIsNearPosition(PositionInfo const& pos, Position const& target, float radius)
