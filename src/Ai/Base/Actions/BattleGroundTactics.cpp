@@ -3314,6 +3314,7 @@ static bool AllianceControlsIcebloodGraveyard(BattlegroundAV* av);
 static bool AllianceAVMustKillCaptainBeforeTowers(BattlegroundAV* av);
 static bool AllianceAVPositionIsHordeCaptainRun(PositionInfo const& pos);
 static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos);
+static bool AllianceAVPositionIsIcebloodRespawnStart(PositionInfo const& pos);
 static bool AllianceAVPositionIsNearPosition(PositionInfo const& pos, Position const& target, float radius);
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos);
 static bool AllianceAVPositionIsSnowfallRespawn(PositionInfo const& pos);
@@ -3728,6 +3729,16 @@ static bool AllianceAVPositionIsIcebloodGraveRun(PositionInfo const& pos)
         return false;
 
     return pos.x <= -560.0f && pos.x >= -710.0f && pos.y <= -335.0f && pos.y >= -470.0f;
+}
+
+static bool AllianceAVPositionIsIcebloodRespawnStart(PositionInfo const& pos)
+{
+    if (!pos.valueSet)
+        return false;
+
+    return pos.x <= -500.0f && pos.x >= -570.0f &&
+           pos.y <= -390.0f && pos.y >= -420.0f &&
+           pos.z >= 45.0f && pos.z <= 58.0f;
 }
 
 static bool AllianceAVPositionIsSnowfallRun(Battleground* bg, PositionInfo const& pos)
@@ -8475,10 +8486,20 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
     bool const avoidIcebloodTowerForGalvangar =
         bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVShouldAvoidIcebloodTowerForGalvangar(bg, pos);
     PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+    bool const allianceSouthFromIcebloodPerimeter =
+        bgType == BATTLEGROUND_AV &&
+        bot->GetTeamId() == TEAM_ALLIANCE &&
+        AllianceAVPositionIsBeyondIcebloodBeachhead(bg, pos) &&
+        AllianceAVPositionIsIcebloodHoldPerimeter(bg, botPos, false) &&
+        !AllianceAVPositionIsIcebloodRespawnStart(botPos);
     // uint32 index = -1;
     // uint32 chosenPathIndex = -1;
     for (auto const& path : vPaths)
     {
+        if (allianceSouthFromIcebloodPerimeter &&
+            path == &vPath_AV_IcebloodRespawn_To_HordeCrossroad1_SouthRoad)
+            continue;
+
         if (path == &vPath_AV_AllianceCrossroad2_To_HordeCaptain_Bypass && !avoidIcebloodTowerForGalvangar)
             continue;
 
