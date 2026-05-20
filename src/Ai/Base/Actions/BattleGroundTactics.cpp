@@ -2539,7 +2539,10 @@ public:
 private:
     void EnsureStarted()
     {
-        uint32 threadCount = std::max<uint32>(1, sPlayerbotAIConfig.asyncAVStrategyCacheThreads);
+        uint32 threadCount = sPlayerbotAIConfig.asyncAVStrategyCacheThreads;
+        if (!threadCount)
+            threadCount = std::max<uint32>(1u, std::thread::hardware_concurrency());
+
         if (!_workers.empty() && _workers.size() == threadCount)
             return;
 

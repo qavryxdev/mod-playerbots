@@ -82,7 +82,7 @@ bool PlayerbotAIConfig::Initialize()
     asyncActivityCacheThreads = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncActivityCacheThreads", 0);
     asyncActivityCacheInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncActivityCacheInterval", 1000);
     asyncAVStrategyCache = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncAVStrategyCache", false);
-    asyncAVStrategyCacheThreads = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncAVStrategyCacheThreads", 2);
+    asyncAVStrategyCacheThreads = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncAVStrategyCacheThreads", 0);
     asyncAVStrategyCacheInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncAVStrategyCacheInterval", 500);
     asyncAVTacticalOrders = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncAVTacticalOrders", false);
     asyncAVObjectiveAssignments = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncAVObjectiveAssignments", false);
