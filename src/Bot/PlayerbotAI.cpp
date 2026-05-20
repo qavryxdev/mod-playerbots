@@ -5152,7 +5152,7 @@ bool PlayerbotAI::TryGetAsyncActivityAllowed(ActivityType activityType, bool& al
     return AsyncActivityCache::Instance().TryGet(bot->GetGUID().GetCounter(), allowed);
 }
 
-bool PlayerbotAI::AllowActive(ActivityType activityType)
+bool PlayerbotAI::AllowActive(ActivityType activityType, bool allowSyncFallbackOnAsyncMiss)
 {
     // bot is in an invalid state, not safe to process
     if (!bot || !bot->GetSession() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
@@ -5187,6 +5187,11 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
         bool asyncAllowed = false;
         if (TryGetAsyncActivityAllowed(activityType, asyncAllowed))
             return asyncAllowed;
+
+        // Async cache is enabled but result is temporarily unavailable (cache miss/race on generation swap).
+        // For regular ticks keep the last known decision and avoid expensive sync scans over all players.
+        if (!allowSyncFallbackOnAsyncMiss && sPlayerbotAIConfig.asyncActivityCache)
+            return allowActive[static_cast<int>(ALL_ACTIVITY)];
     }
 
     // bot is in a guild that contains a real player
@@ -5342,20 +5347,48 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
 
 bool PlayerbotAI::AllowActivity(ActivityType activityType, bool checkNow)
 {
-    const int activityIndex = static_cast<int>(activityType);
+    auto usesAllActivityDecision = [](ActivityType type) -> bool
+    {
+        switch (type)
+        {
+            case GRIND_ACTIVITY:
+            case RPG_ACTIVITY:
+            case TRAVEL_ACTIVITY:
+            case PARTY_ACTIVITY:
+            case ALL_ACTIVITY:
+                return true;
+            default:
+                return false;
+        }
+    };
 
-    if (!allowActiveCheckTimer[activityIndex])
-        allowActiveCheckTimer[activityIndex] = getMSTime();
+    const bool canUseSharedAllDecision = sPlayerbotAIConfig.asyncActivityCache && usesAllActivityDecision(activityType);
+    const ActivityType evaluationType = canUseSharedAllDecision ? ALL_ACTIVITY : activityType;
+
+    const int activityIndex = static_cast<int>(activityType);
+    const int cacheIndex = static_cast<int>(canUseSharedAllDecision ? ALL_ACTIVITY : activityType);
+
+    if (!allowActiveCheckTimer[cacheIndex])
+        allowActiveCheckTimer[cacheIndex] = getMSTime();
 
     // 4500ms base + 0–499ms per-bot offset = 4500–4999ms, capping at just under 5 seconds
     uint32 offset = bot->GetGUID().GetCounter() % 500;
 
-    if (!checkNow && getMSTime() < (allowActiveCheckTimer[activityIndex] + 4500 + offset))
-        return allowActive[activityIndex];
+    if (!checkNow && getMSTime() < (allowActiveCheckTimer[cacheIndex] + 4500 + offset))
+        return allowActive[cacheIndex];
 
-    const bool allowed = AllowActive(activityType);
-    allowActive[activityIndex] = allowed;
-    allowActiveCheckTimer[activityIndex] = getMSTime();
+    const bool allowSyncFallbackOnAsyncMiss =
+        checkNow || evaluationType != ALL_ACTIVITY || !sPlayerbotAIConfig.asyncActivityCache;
+
+    const bool allowed = AllowActive(evaluationType, allowSyncFallbackOnAsyncMiss);
+    allowActive[cacheIndex] = allowed;
+    allowActiveCheckTimer[cacheIndex] = getMSTime();
+
+    if (cacheIndex != activityIndex)
+    {
+        allowActive[activityIndex] = allowed;
+        allowActiveCheckTimer[activityIndex] = allowActiveCheckTimer[cacheIndex];
+    }
 
     return allowed;
 }

@@ -548,7 +548,7 @@ public:
     GuilderType GetGuilderType();
     bool HasPlayerNearby(WorldPosition* pos, float range = sPlayerbotAIConfig.reactDistance);
     bool HasPlayerNearby(float range = sPlayerbotAIConfig.reactDistance);
-    bool AllowActive(ActivityType activityType);
+    bool AllowActive(ActivityType activityType, bool allowSyncFallbackOnAsyncMiss = true);
     bool AllowActivity(ActivityType activityType = ALL_ACTIVITY, bool checkNow = false);
     uint32 AutoScaleActivity(uint32 mod);
     bool TryGetAsyncActivityAllowed(ActivityType activityType, bool& allowed);
