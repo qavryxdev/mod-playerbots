@@ -1748,6 +1748,8 @@ struct AsyncAVStrategyResult
     std::unordered_map<uint64, uint8> allianceObjectiveAssignments;
 };
 
+using AsyncAVStrategyResultMap = std::unordered_map<uint32, AsyncAVStrategyResult>;
+
 struct AsyncAVStrategyJob
 {
     uint32 generation = 0;
@@ -2393,17 +2395,30 @@ public:
         AsyncAVStrategyResult sample;
         uint32 instanceCount = 0;
         {
-            std::lock_guard<std::mutex> lock(_resultMutex);
-            for (auto itr = _results.begin(); itr != _results.end();)
+            std::lock_guard<std::mutex> lock(_resultWriteMutex);
+            std::shared_ptr<AsyncAVStrategyResultMap const> results =
+                std::atomic_load_explicit(&_results, std::memory_order_acquire);
+            if (results)
             {
-                if (now >= itr->second.lastAccessMs && now - itr->second.lastAccessMs > ASYNC_AV_CACHE_STALE_MS)
-                    itr = _results.erase(itr);
-                else
+                std::shared_ptr<AsyncAVStrategyResultMap> retained = std::make_shared<AsyncAVStrategyResultMap>();
+                retained->reserve(results->size());
+
+                for (auto const& [instanceId, cached] : *results)
                 {
+                    if (now >= cached.lastAccessMs && now - cached.lastAccessMs > ASYNC_AV_CACHE_STALE_MS)
+                        continue;
+
                     if (!sample.instanceId)
-                        sample = itr->second;
+                        sample = cached;
+
                     ++instanceCount;
-                    ++itr;
+                    (*retained)[instanceId] = cached;
+                }
+
+                if (retained->size() != results->size())
+                {
+                    std::shared_ptr<AsyncAVStrategyResultMap const> published = retained;
+                    std::atomic_store_explicit(&_results, published, std::memory_order_release);
                 }
             }
         }
@@ -2504,12 +2519,15 @@ public:
         if (!_running.load())
             return false;
 
-        std::lock_guard<std::mutex> lock(_resultMutex);
-        auto itr = _results.find(instanceId);
-        if (itr == _results.end())
+        std::shared_ptr<AsyncAVStrategyResultMap const> results =
+            std::atomic_load_explicit(&_results, std::memory_order_acquire);
+        if (!results)
             return false;
 
-        itr->second.lastAccessMs = getMSTime();
+        auto itr = results->find(instanceId);
+        if (itr == results->end())
+            return false;
+
         result = itr->second;
         return true;
     }
@@ -2578,8 +2596,9 @@ private:
         _stopping.store(false);
 
         {
-            std::lock_guard<std::mutex> lock(_resultMutex);
-            _results.clear();
+            std::lock_guard<std::mutex> lock(_resultWriteMutex);
+            std::shared_ptr<AsyncAVStrategyResultMap const> emptyResults;
+            std::atomic_store_explicit(&_results, emptyResults, std::memory_order_release);
         }
 
         {
@@ -2680,8 +2699,17 @@ private:
 
     void Publish(AsyncAVStrategyResult const& result)
     {
-        std::lock_guard<std::mutex> lock(_resultMutex);
-        _results[result.instanceId] = result;
+        std::lock_guard<std::mutex> lock(_resultWriteMutex);
+
+        std::shared_ptr<AsyncAVStrategyResultMap const> current =
+            std::atomic_load_explicit(&_results, std::memory_order_acquire);
+        std::shared_ptr<AsyncAVStrategyResultMap> next =
+            current ? std::make_shared<AsyncAVStrategyResultMap>(*current) : std::make_shared<AsyncAVStrategyResultMap>();
+
+        (*next)[result.instanceId] = result;
+
+        std::shared_ptr<AsyncAVStrategyResultMap const> published = next;
+        std::atomic_store_explicit(&_results, published, std::memory_order_release);
     }
 
     std::vector<std::thread> _workers;
@@ -2691,8 +2719,8 @@ private:
     std::atomic<bool> _running{false};
     std::atomic<bool> _stopping{false};
 
-    std::mutex _resultMutex;
-    std::unordered_map<uint32, AsyncAVStrategyResult> _results;
+    std::mutex _resultWriteMutex;
+    std::shared_ptr<AsyncAVStrategyResultMap const> _results;
 
     std::mutex _requestMutex;
     std::unordered_map<uint32, uint32> _lastRequestMs;

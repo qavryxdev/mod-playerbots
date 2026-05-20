@@ -7,6 +7,53 @@
 
 #include "Playerbots.h"
 
+uint32 NearestUnitsValue::GetEffectiveCheckInterval() const
+{
+    if (checkInterval < 2)
+        return checkInterval;
+
+    if (!bot || bot->InBattleground() || bot->InArena() || bot->IsInCombat())
+        return checkInterval;
+
+    return checkInterval < 250 ? 250 : checkInterval;
+}
+
+GuidVector NearestUnitsValue::Get()
+{
+    if (checkInterval < 2)
+    {
+        value = Calculate();
+        return value;
+    }
+
+    uint32 const now = getMSTime();
+    if (!lastCheckTime || getMSTimeDiff(lastCheckTime, now) >= GetEffectiveCheckInterval())
+    {
+        lastCheckTime = now;
+        value = Calculate();
+    }
+
+    return value;
+}
+
+GuidVector& NearestUnitsValue::RefGet()
+{
+    if (checkInterval < 2)
+    {
+        value = Calculate();
+        return value;
+    }
+
+    uint32 const now = getMSTime();
+    if (!lastCheckTime || getMSTimeDiff(lastCheckTime, now) >= GetEffectiveCheckInterval())
+    {
+        lastCheckTime = now;
+        value = Calculate();
+    }
+
+    return value;
+}
+
 GuidVector NearestUnitsValue::Calculate()
 {
     std::list<Unit*> targets;

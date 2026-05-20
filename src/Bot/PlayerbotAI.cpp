@@ -83,6 +83,8 @@ namespace
 constexpr uint32 ASYNC_ACTIVITY_LOG_INTERVAL = 30000;
 constexpr size_t ASYNC_ACTIVITY_CHUNK_SIZE = 64;
 
+using AsyncActivityResultMap = std::unordered_map<uint32, bool>;
+
 struct AsyncActivityRealPlayerSnapshot
 {
     uint32 mapId = 0;
@@ -286,7 +288,7 @@ public:
             _logTimer = 0;
             AsyncActivityStats stats;
             {
-                std::lock_guard<std::mutex> lock(_resultMutex);
+                std::lock_guard<std::mutex> lock(_statsMutex);
                 stats = _stats;
             }
 
@@ -332,9 +334,13 @@ public:
         if (!_running.load())
             return false;
 
-        std::lock_guard<std::mutex> lock(_resultMutex);
-        std::unordered_map<uint32, bool>::const_iterator itr = _results.find(guid);
-        if (itr == _results.end())
+        std::shared_ptr<AsyncActivityResultMap const> results =
+            std::atomic_load_explicit(&_results, std::memory_order_acquire);
+        if (!results)
+            return false;
+
+        AsyncActivityResultMap::const_iterator itr = results->find(guid);
+        if (itr == results->end())
             return false;
 
         allowed = itr->second;
@@ -383,11 +389,17 @@ private:
         _stopping.store(false);
         _jobInFlight.store(false);
 
+        std::shared_ptr<AsyncActivityResultMap const> emptyResults;
+        std::atomic_store_explicit(&_results, emptyResults, std::memory_order_release);
+
         {
-            std::lock_guard<std::mutex> lock(_resultMutex);
-            _results.clear();
+            std::lock_guard<std::mutex> lock(_statsMutex);
             _stats = AsyncActivityStats();
         }
+
+        _friendOfRealCache.clear();
+        _friendCacheRealPlayerCount = 0;
+        _friendCacheLastRefreshMs = 0;
     }
 
     void BuildJob(AsyncActivityJob& job)
@@ -418,6 +430,9 @@ private:
         job.players.reserve(realPlayers.size());
         std::unordered_set<uint64> groupMapHasRealPresence;
         std::unordered_map<uint32, bool> groupLfgState;
+        uint32 const nowMs = getMSTime();
+        uint32 const friendCacheRefreshIntervalMs =
+            std::max<uint32>(5000, sPlayerbotAIConfig.asyncActivityCacheInterval * 10);
 
         for (Player* player : realPlayers)
         {
@@ -461,6 +476,28 @@ private:
         job.bots.reserve(bots.size());
         groupMapHasRealPresence.reserve(groupMapHasRealPresence.size() + bots.size());
         groupLfgState.reserve(bots.size() / 2 + 1);
+
+        bool refreshFriendCache = false;
+        if (sPlayerbotAIConfig.BotActiveAloneForceWhenIsFriend)
+        {
+            bool const realPlayerCountChanged = _friendCacheRealPlayerCount != eligibleRealPlayers.size();
+            bool const refreshDue = !_friendCacheLastRefreshMs || nowMs < _friendCacheLastRefreshMs ||
+                                    nowMs - _friendCacheLastRefreshMs >= friendCacheRefreshIntervalMs;
+            refreshFriendCache = realPlayerCountChanged || refreshDue || _friendOfRealCache.empty();
+
+            if (refreshFriendCache)
+            {
+                _friendOfRealCache.clear();
+                _friendCacheRealPlayerCount = eligibleRealPlayers.size();
+                _friendCacheLastRefreshMs = nowMs;
+            }
+        }
+        else
+        {
+            _friendOfRealCache.clear();
+            _friendCacheRealPlayerCount = 0;
+            _friendCacheLastRefreshMs = 0;
+        }
 
         // Mark group+map combinations that contain bots owned by real players.
         for (PlayerBotMap::const_iterator itr = bots.begin(); itr != bots.end(); ++itr)
@@ -537,14 +574,26 @@ private:
 
                 if (sPlayerbotAIConfig.BotActiveAloneForceWhenIsFriend)
                 {
-                    for (Player* player : eligibleRealPlayers)
+                    auto friendItr = _friendOfRealCache.find(snapshot.guid);
+                    if (friendItr != _friendOfRealCache.end() && !refreshFriendCache)
                     {
-                        PlayerSocial* social = player->GetSocial();
-                        if (social && social->HasFriend(bot->GetGUID()))
+                        snapshot.friendOfRealPlayer = friendItr->second;
+                    }
+                    else
+                    {
+                        bool friendOfRealPlayer = false;
+                        for (Player* player : eligibleRealPlayers)
                         {
-                            snapshot.friendOfRealPlayer = true;
-                            break;
+                            PlayerSocial* social = player->GetSocial();
+                            if (social && social->HasFriend(bot->GetGUID()))
+                            {
+                                friendOfRealPlayer = true;
+                                break;
+                            }
                         }
+
+                        snapshot.friendOfRealPlayer = friendOfRealPlayer;
+                        _friendOfRealCache[snapshot.guid] = friendOfRealPlayer;
                     }
                 }
             }
@@ -601,20 +650,22 @@ private:
 
     void PublishJob(std::shared_ptr<AsyncActivityJob> const& job)
     {
-        std::unordered_map<uint32, bool> results;
-        results.reserve(job->results.size());
+        std::shared_ptr<AsyncActivityResultMap> results = std::make_shared<AsyncActivityResultMap>();
+        results->reserve(job->results.size());
 
         uint32 activeCount = 0;
         for (AsyncActivityResult const& result : job->results)
         {
-            results[result.guid] = result.allowed;
+            (*results)[result.guid] = result.allowed;
             if (result.allowed)
                 ++activeCount;
         }
 
+        std::shared_ptr<AsyncActivityResultMap const> publishedResults = results;
+        std::atomic_store_explicit(&_results, publishedResults, std::memory_order_release);
+
         {
-            std::lock_guard<std::mutex> lock(_resultMutex);
-            _results.swap(results);
+            std::lock_guard<std::mutex> lock(_statsMutex);
             _stats.generation = job->generation;
             _stats.botCount = static_cast<uint32>(job->bots.size());
             _stats.activeCount = activeCount;
@@ -633,9 +684,12 @@ private:
     std::atomic<bool> _stopping{false};
     std::atomic<bool> _jobInFlight{false};
 
-    std::mutex _resultMutex;
-    std::unordered_map<uint32, bool> _results;
+    std::mutex _statsMutex;
+    std::shared_ptr<AsyncActivityResultMap const> _results;
     AsyncActivityStats _stats;
+    std::unordered_map<uint32, bool> _friendOfRealCache;
+    size_t _friendCacheRealPlayerCount = 0;
+    uint32 _friendCacheLastRefreshMs = 0;
     uint32 _nextGeneration = 0;
     uint32 _updateTimer = 0;
     uint32 _logTimer = 0;
