@@ -15,6 +15,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "AiFactory.h"
@@ -391,6 +392,11 @@ private:
 
     void BuildJob(AsyncActivityJob& job)
     {
+        auto makeGroupMapKey = [](uint32 groupGuidCounter, uint32 mapId) -> uint64
+        {
+            return (static_cast<uint64>(groupGuidCounter) << 32) | static_cast<uint64>(mapId);
+        };
+
         job.botActiveAlone = sPlayerbotAIConfig.botActiveAlone;
         job.smartScale = sPlayerbotAIConfig.botActiveAloneSmartScale;
         job.radius = sPlayerbotAIConfig.BotActiveAloneForceWhenInRadius;
@@ -407,7 +413,11 @@ private:
         job.timeSlot = (getMSTime() / 1000) / duration;
 
         std::vector<Player*> realPlayers = sRandomPlayerbotMgr.GetPlayers();
+        std::vector<Player*> eligibleRealPlayers;
+        eligibleRealPlayers.reserve(realPlayers.size());
         job.players.reserve(realPlayers.size());
+        std::unordered_set<uint64> groupMapHasRealPresence;
+        std::unordered_map<uint32, bool> groupLfgState;
 
         for (Player* player : realPlayers)
         {
@@ -418,6 +428,8 @@ private:
             PlayerbotAI* playerAI = GET_PLAYERBOT_AI(player);
             if (playerAI && !playerAI->IsRealPlayer())
                 continue;
+
+            eligibleRealPlayers.push_back(player);
 
             bool isGM = player->IsGameMaster();
 
@@ -439,11 +451,31 @@ private:
                 snapshot.viewZ = viewObj->GetPositionZ();
             }
 
+            if (Group* group = player->GetGroup())
+                groupMapHasRealPresence.insert(makeGroupMapKey(group->GetGUID().GetCounter(), snapshot.mapId));
+
             job.players.push_back(snapshot);
         }
 
         PlayerBotMap bots = sRandomPlayerbotMgr.GetAllBots();
         job.bots.reserve(bots.size());
+        groupMapHasRealPresence.reserve(groupMapHasRealPresence.size() + bots.size());
+        groupLfgState.reserve(bots.size() / 2 + 1);
+
+        // Mark group+map combinations that contain bots owned by real players.
+        for (PlayerBotMap::const_iterator itr = bots.begin(); itr != bots.end(); ++itr)
+        {
+            Player* bot = itr->second;
+            if (!bot || !bot->IsInWorld() || bot->IsDuringRemoveFromWorld())
+                continue;
+
+            PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+            if (!botAI || botAI->IsRealPlayer() || !botAI->HasRealPlayerMaster())
+                continue;
+
+            if (Group* group = bot->GetGroup())
+                groupMapHasRealPresence.insert(makeGroupMapKey(group->GetGUID().GetCounter(), bot->GetMapId()));
+        }
 
         for (PlayerBotMap::const_iterator itr = bots.begin(); itr != bots.end(); ++itr)
         {
@@ -483,21 +515,20 @@ private:
 
                 if (Group* group = bot->GetGroup())
                 {
-                    for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+                    uint32 const groupCounter = group->GetGUID().GetCounter();
+                    snapshot.groupedWithRealPlayer =
+                        groupMapHasRealPresence.find(makeGroupMapKey(groupCounter, snapshot.mapId)) !=
+                        groupMapHasRealPresence.end();
+
+                    auto groupLfgItr = groupLfgState.find(groupCounter);
+                    if (groupLfgItr == groupLfgState.end())
                     {
-                        Player* member = gref->GetSource();
-                        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() || member == bot)
-                            continue;
-
-                        PlayerbotAI* memberBotAI = GET_PLAYERBOT_AI(member);
-                        if (!memberBotAI || memberBotAI->HasRealPlayerMaster())
-                        {
-                            snapshot.groupedWithRealPlayer = true;
-                            break;
-                        }
+                        bool const inGroupLfg = sLFGMgr->GetState(group->GetGUID()) != lfg::LFG_STATE_NONE;
+                        groupLfgState[groupCounter] = inGroupLfg;
+                        if (inGroupLfg)
+                            snapshot.inLfg = true;
                     }
-
-                    if (sLFGMgr->GetState(group->GetGUID()) != lfg::LFG_STATE_NONE)
+                    else if (groupLfgItr->second)
                         snapshot.inLfg = true;
                 }
 
@@ -506,16 +537,8 @@ private:
 
                 if (sPlayerbotAIConfig.BotActiveAloneForceWhenIsFriend)
                 {
-                    for (Player* player : realPlayers)
+                    for (Player* player : eligibleRealPlayers)
                     {
-                        if (!player || !player->GetSession() || !player->IsInWorld() ||
-                            player->IsDuringRemoveFromWorld() || player->GetSession()->isLogingOut())
-                            continue;
-
-                        PlayerbotAI* playerAI = GET_PLAYERBOT_AI(player);
-                        if (playerAI && !playerAI->IsRealPlayer())
-                            continue;
-
                         PlayerSocial* social = player->GetSocial();
                         if (social && social->HasFriend(bot->GetGUID()))
                         {
