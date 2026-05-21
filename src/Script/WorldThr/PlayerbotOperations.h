@@ -9,6 +9,7 @@
 #include "Group.h"
 #include "GroupMgr.h"
 #include "GuildMgr.h"
+#include "ObjectMgr.h"
 #include "Playerbots.h"
 #include "ObjectAccessor.h"
 #include "PlayerbotOperation.h"
@@ -17,10 +18,69 @@
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotMgr.h"
 #include "PlayerbotRepository.h"
+#include "QuestDef.h"
 #include "RandomPlayerbotMgr.h"
 #include "UseMeetingStoneAction.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
+
+class QuestAcceptOperation : public PlayerbotOperation
+{
+public:
+    QuestAcceptOperation(ObjectGuid botGuid, ObjectGuid questGiverGuid, uint32 questId)
+        : m_botGuid(botGuid), m_questGiverGuid(questGiverGuid), m_questId(questId)
+    {
+    }
+
+    bool Execute() override
+    {
+        Player* bot = ObjectAccessor::FindPlayer(m_botGuid);
+        Quest const* quest = sObjectMgr->GetQuestTemplate(m_questId);
+
+        if (!bot || !quest || !bot->IsInWorld() || !bot->GetSession())
+            return false;
+
+        QuestStatus const status = bot->GetQuestStatus(m_questId);
+        if (status != QUEST_STATUS_NONE)
+            return status != QUEST_STATUS_REWARDED;
+
+        if (!bot->CanTakeQuest(quest, false) || !bot->CanAddQuest(quest, false))
+            return false;
+
+        WorldPacket packet(CMSG_QUESTGIVER_ACCEPT_QUEST);
+        uint32 unk1 = 0;
+        packet << m_questGiverGuid << m_questId << unk1;
+        packet.rpos(0);
+        bot->GetSession()->HandleQuestgiverAcceptQuestOpcode(packet);
+
+        if (bot->GetQuestStatus(m_questId) == QUEST_STATUS_NONE && sPlayerbotAIConfig.syncQuestWithPlayer)
+        {
+            Object* questGiver = ObjectAccessor::GetObjectByTypeMask(*bot, m_questGiverGuid,
+                                                                     TYPEMASK_UNIT | TYPEMASK_GAMEOBJECT | TYPEMASK_ITEM);
+            bot->AddQuest(quest, questGiver);
+        }
+
+        QuestStatus const acceptedStatus = bot->GetQuestStatus(m_questId);
+        return acceptedStatus != QUEST_STATUS_NONE && acceptedStatus != QUEST_STATUS_REWARDED;
+    }
+
+    ObjectGuid GetBotGuid() const override { return m_botGuid; }
+
+    uint32 GetPriority() const override { return 50; }
+
+    std::string GetName() const override { return "QuestAccept"; }
+
+    bool IsValid() const override
+    {
+        Player* bot = ObjectAccessor::FindPlayer(m_botGuid);
+        return bot && bot->IsInWorld() && bot->GetSession();
+    }
+
+private:
+    ObjectGuid m_botGuid;
+    ObjectGuid m_questGiverGuid;
+    uint32 m_questId;
+};
 
 // Group invite operation
 class GroupInviteOperation : public PlayerbotOperation

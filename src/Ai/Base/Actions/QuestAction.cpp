@@ -13,6 +13,8 @@
 #include "ItemTemplate.h"
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
+#include "PlayerbotOperations.h"
+#include "PlayerbotWorldThreadProcessor.h"
 #include "Playerbots.h"
 #include "ReputationMgr.h"
 #include "ServerFacade.h"
@@ -234,6 +236,10 @@ bool QuestAction::AcceptQuest(Quest const* quest, ObjectGuid questGiver)
         out << "Bags are full";
     else
     {
+        if (IsZoneParallelBotAIWorkerThread())
+            return PlayerbotWorldThreadProcessor::instance().QueueOperation(
+                std::make_unique<QuestAcceptOperation>(bot->GetGUID(), questGiver, questId));
+
         WorldPacket p(CMSG_QUESTGIVER_ACCEPT_QUEST);
         uint32 unk1 = 0;
         p << questGiver << questId << unk1;

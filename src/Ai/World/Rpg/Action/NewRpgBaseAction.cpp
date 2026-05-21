@@ -21,6 +21,8 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "PlayerbotOperations.h"
+#include "PlayerbotWorldThreadProcessor.h"
 #include "Position.h"
 #include "QuestDef.h"
 #include "Random.h"
@@ -453,6 +455,10 @@ bool NewRpgBaseAction::IsWithinInteractionDist(Object* questGiver)
 
 bool NewRpgBaseAction::AcceptQuest(Quest const* quest, ObjectGuid guid)
 {
+    if (IsZoneParallelBotAIWorkerThread())
+        return PlayerbotWorldThreadProcessor::instance().QueueOperation(
+            std::make_unique<QuestAcceptOperation>(bot->GetGUID(), guid, quest->GetQuestId()));
+
     WorldPacket p(CMSG_QUESTGIVER_ACCEPT_QUEST);
     uint32 unk1 = 0;
     p << guid << quest->GetQuestId() << unk1;

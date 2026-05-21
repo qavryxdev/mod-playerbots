@@ -48,6 +48,15 @@
 
 namespace
 {
+thread_local bool zoneParallelBotAIWorkerThread = false;
+
+class ZoneParallelBotAIWorkerScope
+{
+public:
+    ZoneParallelBotAIWorkerScope() { zoneParallelBotAIWorkerThread = true; }
+    ~ZoneParallelBotAIWorkerScope() { zoneParallelBotAIWorkerThread = false; }
+};
+
 class ZoneParallelBotAIUpdatePool
 {
 public:
@@ -158,7 +167,10 @@ private:
                 _jobs.pop_front();
             }
 
-            job();
+            {
+                ZoneParallelBotAIWorkerScope workerScope;
+                job();
+            }
 
             {
                 std::lock_guard<std::mutex> lock(_queueMutex);
@@ -345,6 +357,11 @@ bool IsMasterOutgoingPacketHandled(uint16 opcode)
     }
 }
 }  // namespace
+
+bool IsZoneParallelBotAIWorkerThread()
+{
+    return zoneParallelBotAIWorkerThread;
+}
 
 class PlayerbotsDatabaseScript : public DatabaseScript
 {

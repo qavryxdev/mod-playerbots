@@ -23,6 +23,7 @@ void split(std::vector<std::string>& dest, std::string const str, char const* de
 #ifndef WIN32
 int strcmpi(char const* s1, char const* s2);
 #endif
+bool IsZoneParallelBotAIWorkerThread();
 
 #define CAST_ANGLE_IN_FRONT (2.f * static_cast<float>(M_PI) / 3.f)
 #define EMOTE_ANGLE_IN_FRONT (2.f * static_cast<float>(M_PI) / 6.f)

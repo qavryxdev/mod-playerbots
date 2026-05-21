@@ -9,6 +9,8 @@
 #include "Event.h"
 #include "ItemPackets.h"
 #include "ItemUsageValue.h"
+#include "PlayerbotOperations.h"
+#include "PlayerbotWorldThreadProcessor.h"
 #include "Playerbots.h"
 
 bool UseItemAction::Execute(Event event)
@@ -167,6 +169,10 @@ bool UseItemAction::UseItem(Item* item, ObjectGuid goGuid, Item* itemTarget, Uni
     {
         if (Quest const* qInfo = sObjectMgr->GetQuestTemplate(questid))
         {
+            if (IsZoneParallelBotAIWorkerThread())
+                return PlayerbotWorldThreadProcessor::instance().QueueOperation(
+                    std::make_unique<QuestAcceptOperation>(bot->GetGUID(), item_guid, questid));
+
             WorldPacket packet(CMSG_QUESTGIVER_ACCEPT_QUEST, 8 + 4 + 4);
             packet << item_guid;
             packet << questid;
