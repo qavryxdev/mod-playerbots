@@ -12,6 +12,9 @@
 
 void NearestNonBotPlayersValue::FindUnits(std::list<Unit*>& targets)
 {
+    if (botAI->AppendAsyncNearestNonBotPlayers(targets, range))
+        return;
+
     Acore::AnyUnitInObjectRangeCheck u_check(bot, range);
     Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(bot, targets, u_check);
     Cell::VisitObjects(bot, searcher, range);

@@ -6,6 +6,7 @@
 #ifndef _PLAYERBOT_PLAYERBOTAI_H
 #define _PLAYERBOT_PLAYERBOTAI_H
 
+#include <list>
 #include <stack>
 
 #include "Chat.h"
@@ -553,6 +554,10 @@ public:
     uint32 AutoScaleActivity(uint32 mod);
     bool TryGetAsyncActivityAllowed(ActivityType activityType, bool& allowed);
     static void UpdateAsyncActivityCache(uint32 diff);
+    static void UpdateAsyncNearbyPlayerCache(uint32 diff);
+    bool AppendAsyncNearestFriendlyPlayers(std::list<Unit*>& targets, float range);
+    bool AppendAsyncNearestNonBotPlayers(std::list<Unit*>& targets, float range);
+    bool AppendAsyncPossiblePlayerTargets(std::list<Unit*>& targets, float range);
 
     // Check if player is safe to use.
     bool IsSafe(Player* player);

@@ -497,6 +497,7 @@ public:
     {
         PlayerbotWorldThreadProcessor::instance().Update(diff);
         PlayerbotAI::UpdateAsyncActivityCache(diff);
+        PlayerbotAI::UpdateAsyncNearbyPlayerCache(diff);
         BGTactics::UpdateAsyncAVStrategyCache(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
     }

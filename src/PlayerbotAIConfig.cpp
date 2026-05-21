@@ -86,6 +86,9 @@ bool PlayerbotAIConfig::Initialize()
     asyncActivityCache = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncActivityCache", false);
     asyncActivityCacheThreads = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncActivityCacheThreads", 0);
     asyncActivityCacheInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncActivityCacheInterval", 1000);
+    asyncNearbyPlayerCache = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncNearbyPlayerCache", false);
+    asyncNearbyPlayerCacheThreads = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncNearbyPlayerCacheThreads", 0);
+    asyncNearbyPlayerCacheInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncNearbyPlayerCacheInterval", 250);
     asyncAVStrategyCache = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncAVStrategyCache", false);
     asyncAVStrategyCacheThreads = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncAVStrategyCacheThreads", 0);
     asyncAVStrategyCacheInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncAVStrategyCacheInterval", 500);

@@ -33,6 +33,14 @@ constexpr uint64_t FNV_PRIME = 1099511628211ULL;
 
 void PossibleTargetsValue::FindUnits(std::list<Unit*>& targets)
 {
+    if (botAI->AppendAsyncPossiblePlayerTargets(targets, range))
+    {
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck u_check(bot, bot, range);
+        Acore::CreatureListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(bot, targets, u_check);
+        Cell::VisitObjects(bot, searcher, range);
+        return;
+    }
+
     Acore::AnyUnfriendlyUnitInObjectRangeCheck u_check(bot, bot, range);
     Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(bot, targets, u_check);
     Cell::VisitObjects(bot, searcher, range);

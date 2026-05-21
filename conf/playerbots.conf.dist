@@ -383,6 +383,14 @@ AiPlayerbot.AsyncActivityCache = 0
 AiPlayerbot.AsyncActivityCacheThreads = 0
 AiPlayerbot.AsyncActivityCacheInterval = 1000
 
+# Experimental: precompute nearby player candidates for bot AI on worker threads using map grid cells.
+# Workers only process copied GUID/position snapshots. The main map thread still validates distance,
+# faction, LoS, and applies all movement/combat/spell decisions.
+# 0 = disabled. Threads 0 = auto-detect logical CPU count. Interval is milliseconds between snapshot jobs.
+AiPlayerbot.AsyncNearbyPlayerCache = 0
+AiPlayerbot.AsyncNearbyPlayerCacheThreads = 0
+AiPlayerbot.AsyncNearbyPlayerCacheInterval = 250
+
 # Experimental: precompute Alterac Valley battlefield summaries on worker threads from copied snapshot data.
 # The main thread still reads battleground/player/node state and still applies all bot movement/combat decisions.
 # 0 = disabled. Threads 0 = auto-detect logical CPU count.

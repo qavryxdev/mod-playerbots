@@ -31,6 +31,7 @@
 #include "ExternalEventHelper.h"
 #include "GameObjectData.h"
 #include "GameTime.h"
+#include "GridDefines.h"
 #include "GuildMgr.h"
 #include "LFGMgr.h"
 #include "LastMovementValue.h"
@@ -42,6 +43,7 @@
 #include "MoveSplineInit.h"
 #include "NewRpgStrategy.h"
 #include "ObjectGuid.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "PerfMonitor.h"
 #include "Player.h"
@@ -82,8 +84,11 @@ namespace
 {
 constexpr uint32 ASYNC_ACTIVITY_LOG_INTERVAL = 30000;
 constexpr size_t ASYNC_ACTIVITY_CHUNK_SIZE = 64;
+constexpr uint32 ASYNC_NEARBY_PLAYER_LOG_INTERVAL = 30000;
+constexpr size_t ASYNC_NEARBY_PLAYER_CHUNK_SIZE = 32;
 
 using AsyncActivityResultMap = std::unordered_map<uint32, bool>;
+using AsyncNearbyPlayerResultMap = std::unordered_map<uint32, GuidVector>;
 
 struct AsyncActivityRealPlayerSnapshot
 {
@@ -695,6 +700,434 @@ private:
     uint32 _logTimer = 0;
     uint32 _lastLoggedGeneration = 0;
 };
+
+struct AsyncNearbyPlayerSnapshot
+{
+    ObjectGuid guid;
+    uint32 mapId = 0;
+    uint32 cellX = 0;
+    uint32 cellY = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+};
+
+struct AsyncNearbyBotSnapshot
+{
+    uint32 guid = 0;
+    uint32 mapId = 0;
+    uint32 cellX = 0;
+    uint32 cellY = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+};
+
+struct AsyncNearbyPlayerResult
+{
+    uint32 guid = 0;
+    GuidVector nearbyPlayers;
+};
+
+struct AsyncNearbyPlayerPublished
+{
+    float maxRange = 0.0f;
+    AsyncNearbyPlayerResultMap results;
+};
+
+struct AsyncNearbyPlayerStats
+{
+    uint32 generation = 0;
+    uint32 botCount = 0;
+    uint32 playerCount = 0;
+    uint32 workerCount = 0;
+    uint32 averageNearby = 0;
+    uint32 maxNearby = 0;
+};
+
+struct AsyncNearbyPlayerJob
+{
+    uint32 generation = 0;
+    uint32 workerCount = 0;
+    float maxRange = 0.0f;
+    uint32 cellRadius = 0;
+    std::vector<AsyncNearbyPlayerSnapshot> players;
+    std::vector<AsyncNearbyBotSnapshot> bots;
+    std::unordered_map<uint64, std::vector<size_t>> playersByCell;
+    std::vector<AsyncNearbyPlayerResult> results;
+    std::atomic<size_t> nextIndex{0};
+    std::atomic<uint32> workersDone{0};
+};
+
+uint64 MakeAsyncNearbyCellKey(uint32 mapId, uint32 cellX, uint32 cellY)
+{
+    return (static_cast<uint64>(mapId) << 40) | (static_cast<uint64>(cellY) << 20) |
+           static_cast<uint64>(cellX);
+}
+
+class AsyncNearbyPlayerCache
+{
+public:
+    ~AsyncNearbyPlayerCache() { Stop(); }
+
+    static AsyncNearbyPlayerCache& Instance()
+    {
+        static AsyncNearbyPlayerCache cache;
+        return cache;
+    }
+
+    void Update(uint32 diff)
+    {
+        if (!sPlayerbotAIConfig.asyncNearbyPlayerCache)
+        {
+            Stop();
+            return;
+        }
+
+        EnsureStarted();
+
+        _logTimer += diff;
+        if (_logTimer >= ASYNC_NEARBY_PLAYER_LOG_INTERVAL)
+        {
+            _logTimer = 0;
+            AsyncNearbyPlayerStats stats;
+            {
+                std::lock_guard<std::mutex> lock(_statsMutex);
+                stats = _stats;
+            }
+
+            if (stats.generation && stats.generation != _lastLoggedGeneration)
+            {
+                _lastLoggedGeneration = stats.generation;
+                LOG_INFO("playerbots",
+                         "AsyncNearbyPlayerCache: bots={}, players={}, avgNearby={}, maxNearby={}, workers={}",
+                         stats.botCount, stats.playerCount, stats.averageNearby, stats.maxNearby, stats.workerCount);
+            }
+        }
+
+        if (_jobInFlight.load())
+            return;
+
+        uint32 interval = std::max<uint32>(100, sPlayerbotAIConfig.asyncNearbyPlayerCacheInterval);
+        _updateTimer += diff;
+        if (_updateTimer < interval)
+            return;
+
+        _updateTimer = 0;
+
+        std::shared_ptr<AsyncNearbyPlayerJob> job = std::make_shared<AsyncNearbyPlayerJob>();
+        job->generation = ++_nextGeneration;
+        job->workerCount = static_cast<uint32>(_workers.size());
+        BuildJob(*job);
+
+        if (job->bots.empty() || job->players.empty())
+            return;
+
+        job->results.resize(job->bots.size());
+        _jobInFlight.store(true);
+
+        {
+            std::lock_guard<std::mutex> lock(_jobMutex);
+            _currentJob = job;
+        }
+        _jobCondition.notify_all();
+    }
+
+    bool TryGet(uint32 guid, float range, GuidVector& players)
+    {
+        if (!_running.load() || range <= 0.0f)
+            return false;
+
+        std::shared_ptr<AsyncNearbyPlayerPublished const> published =
+            std::atomic_load_explicit(&_results, std::memory_order_acquire);
+        if (!published || range > published->maxRange + 1.0f)
+            return false;
+
+        AsyncNearbyPlayerResultMap::const_iterator itr = published->results.find(guid);
+        if (itr == published->results.end())
+            return false;
+
+        players = itr->second;
+        return true;
+    }
+
+private:
+    void EnsureStarted()
+    {
+        uint32 threadCount = sPlayerbotAIConfig.asyncNearbyPlayerCacheThreads;
+        if (!threadCount)
+            threadCount = std::max(1u, std::thread::hardware_concurrency());
+
+        if (!_workers.empty() && _workers.size() == threadCount)
+            return;
+
+        Stop();
+
+        _stopping.store(false);
+        _running.store(true);
+        _workers.reserve(threadCount);
+        for (uint32 i = 0; i < threadCount; ++i)
+            _workers.emplace_back(&AsyncNearbyPlayerCache::WorkerLoop, this);
+
+        LOG_INFO("playerbots", "AsyncNearbyPlayerCache started with {} worker thread(s)", threadCount);
+    }
+
+    void Stop()
+    {
+        if (_workers.empty())
+            return;
+
+        _running.store(false);
+        _stopping.store(true);
+        {
+            std::lock_guard<std::mutex> lock(_jobMutex);
+            _currentJob.reset();
+        }
+        _jobCondition.notify_all();
+
+        for (std::thread& worker : _workers)
+            if (worker.joinable())
+                worker.join();
+
+        _workers.clear();
+        _stopping.store(false);
+        _jobInFlight.store(false);
+
+        std::shared_ptr<AsyncNearbyPlayerPublished const> emptyResults;
+        std::atomic_store_explicit(&_results, emptyResults, std::memory_order_release);
+
+        {
+            std::lock_guard<std::mutex> lock(_statsMutex);
+            _stats = AsyncNearbyPlayerStats();
+        }
+    }
+
+    void BuildJob(AsyncNearbyPlayerJob& job)
+    {
+        float maxRange = std::max(sPlayerbotAIConfig.sightDistance, sPlayerbotAIConfig.grindDistance);
+        maxRange = std::max(maxRange, sPlayerbotAIConfig.reactDistance);
+        maxRange = std::max(maxRange, sPlayerbotAIConfig.healDistance);
+        job.maxRange = std::max(10.0f, maxRange);
+        job.cellRadius = static_cast<uint32>(std::ceil(job.maxRange / static_cast<float>(SIZE_OF_GRID_CELL))) + 1;
+
+        std::unordered_set<uint32> candidatePlayerGuids;
+
+        std::vector<Player*> realPlayers = sRandomPlayerbotMgr.GetPlayers();
+        job.players.reserve(realPlayers.size());
+        for (Player* player : realPlayers)
+        {
+            if (!player)
+                continue;
+
+            PlayerbotAI* playerAI = GET_PLAYERBOT_AI(player);
+            if (playerAI && !playerAI->IsRealPlayer())
+                continue;
+
+            AddCandidatePlayer(job, candidatePlayerGuids, player);
+        }
+
+        PlayerBotMap bots = sRandomPlayerbotMgr.GetAllBots();
+        job.players.reserve(job.players.size() + bots.size());
+        job.bots.reserve(bots.size());
+
+        for (PlayerBotMap::const_iterator itr = bots.begin(); itr != bots.end(); ++itr)
+        {
+            Player* botPlayer = itr->second;
+            if (!botPlayer)
+                continue;
+
+            PlayerbotAI* botAI = GET_PLAYERBOT_AI(botPlayer);
+            if (!botAI || botAI->IsRealPlayer())
+                continue;
+
+            if (!IsSafeSnapshot(botPlayer))
+                continue;
+
+            AddCandidatePlayer(job, candidatePlayerGuids, botPlayer);
+            AddBot(job, botPlayer);
+        }
+    }
+
+    bool IsSafeSnapshot(Player* player) const
+    {
+        return player && player->GetSession() && player->IsInWorld() && !player->IsBeingTeleported() &&
+               !player->GetSession()->isLogingOut() && !player->IsDuringRemoveFromWorld();
+    }
+
+    void AddCandidatePlayer(AsyncNearbyPlayerJob& job, std::unordered_set<uint32>& seen, Player* player)
+    {
+        if (!IsSafeSnapshot(player))
+            return;
+
+        uint32 guid = player->GetGUID().GetCounter();
+        if (!seen.insert(guid).second)
+            return;
+
+        CellCoord cell = Acore::ComputeCellCoord(player->GetPositionX(), player->GetPositionY()).normalize();
+
+        AsyncNearbyPlayerSnapshot snapshot;
+        snapshot.guid = player->GetGUID();
+        snapshot.mapId = player->GetMapId();
+        snapshot.cellX = cell.x_coord;
+        snapshot.cellY = cell.y_coord;
+        snapshot.x = player->GetPositionX();
+        snapshot.y = player->GetPositionY();
+        snapshot.z = player->GetPositionZ();
+
+        size_t index = job.players.size();
+        job.players.push_back(snapshot);
+        job.playersByCell[MakeAsyncNearbyCellKey(snapshot.mapId, snapshot.cellX, snapshot.cellY)].push_back(index);
+    }
+
+    void AddBot(AsyncNearbyPlayerJob& job, Player* botPlayer)
+    {
+        CellCoord cell = Acore::ComputeCellCoord(botPlayer->GetPositionX(), botPlayer->GetPositionY()).normalize();
+
+        AsyncNearbyBotSnapshot snapshot;
+        snapshot.guid = botPlayer->GetGUID().GetCounter();
+        snapshot.mapId = botPlayer->GetMapId();
+        snapshot.cellX = cell.x_coord;
+        snapshot.cellY = cell.y_coord;
+        snapshot.x = botPlayer->GetPositionX();
+        snapshot.y = botPlayer->GetPositionY();
+        snapshot.z = botPlayer->GetPositionZ();
+
+        job.bots.push_back(snapshot);
+    }
+
+    void WorkerLoop()
+    {
+        uint32 seenGeneration = 0;
+
+        while (true)
+        {
+            std::shared_ptr<AsyncNearbyPlayerJob> job;
+            {
+                std::unique_lock<std::mutex> lock(_jobMutex);
+                _jobCondition.wait(lock, [this, seenGeneration]
+                {
+                    return _stopping.load() || (_currentJob && _currentJob->generation != seenGeneration);
+                });
+
+                if (_stopping.load())
+                    return;
+
+                job = _currentJob;
+                seenGeneration = job->generation;
+            }
+
+            ProcessJob(job);
+
+            if (job->workersDone.fetch_add(1) + 1 == job->workerCount)
+                PublishJob(job);
+        }
+    }
+
+    void ProcessJob(std::shared_ptr<AsyncNearbyPlayerJob> const& job)
+    {
+        float sqRange = job->maxRange * job->maxRange;
+
+        while (true)
+        {
+            size_t start = job->nextIndex.fetch_add(ASYNC_NEARBY_PLAYER_CHUNK_SIZE);
+            if (start >= job->bots.size())
+                break;
+
+            size_t end = std::min(start + ASYNC_NEARBY_PLAYER_CHUNK_SIZE, job->bots.size());
+            for (size_t i = start; i < end; ++i)
+            {
+                AsyncNearbyBotSnapshot const& bot = job->bots[i];
+                AsyncNearbyPlayerResult& result = job->results[i];
+                result.guid = bot.guid;
+
+                uint32 minX = bot.cellX > job->cellRadius ? bot.cellX - job->cellRadius : 0;
+                uint32 minY = bot.cellY > job->cellRadius ? bot.cellY - job->cellRadius : 0;
+                uint32 maxX = std::min<uint32>(TOTAL_NUMBER_OF_CELLS_PER_MAP - 1, bot.cellX + job->cellRadius);
+                uint32 maxY = std::min<uint32>(TOTAL_NUMBER_OF_CELLS_PER_MAP - 1, bot.cellY + job->cellRadius);
+
+                for (uint32 x = minX; x <= maxX; ++x)
+                {
+                    for (uint32 y = minY; y <= maxY; ++y)
+                    {
+                        auto itr = job->playersByCell.find(MakeAsyncNearbyCellKey(bot.mapId, x, y));
+                        if (itr == job->playersByCell.end())
+                            continue;
+
+                        for (size_t playerIndex : itr->second)
+                        {
+                            AsyncNearbyPlayerSnapshot const& player = job->players[playerIndex];
+                            if (player.guid.GetCounter() == bot.guid)
+                                continue;
+
+                            if (SqDistance(bot.x, bot.y, bot.z, player.x, player.y, player.z) <= sqRange)
+                                result.nearbyPlayers.push_back(player.guid);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    void PublishJob(std::shared_ptr<AsyncNearbyPlayerJob> const& job)
+    {
+        std::shared_ptr<AsyncNearbyPlayerPublished> published = std::make_shared<AsyncNearbyPlayerPublished>();
+        published->maxRange = job->maxRange;
+        published->results.reserve(job->results.size());
+
+        uint64 totalNearby = 0;
+        uint32 maxNearby = 0;
+        for (AsyncNearbyPlayerResult const& result : job->results)
+        {
+            totalNearby += result.nearbyPlayers.size();
+            maxNearby = std::max<uint32>(maxNearby, static_cast<uint32>(result.nearbyPlayers.size()));
+            published->results[result.guid] = result.nearbyPlayers;
+        }
+
+        std::shared_ptr<AsyncNearbyPlayerPublished const> publishedConst = published;
+        std::atomic_store_explicit(&_results, publishedConst, std::memory_order_release);
+
+        {
+            std::lock_guard<std::mutex> lock(_statsMutex);
+            _stats.generation = job->generation;
+            _stats.botCount = static_cast<uint32>(job->bots.size());
+            _stats.playerCount = static_cast<uint32>(job->players.size());
+            _stats.workerCount = job->workerCount;
+            _stats.averageNearby = job->results.empty() ? 0 : static_cast<uint32>(totalNearby / job->results.size());
+            _stats.maxNearby = maxNearby;
+        }
+
+        _jobInFlight.store(false);
+    }
+
+    std::vector<std::thread> _workers;
+    std::mutex _jobMutex;
+    std::condition_variable _jobCondition;
+    std::shared_ptr<AsyncNearbyPlayerJob> _currentJob;
+    std::atomic<bool> _running{false};
+    std::atomic<bool> _stopping{false};
+    std::atomic<bool> _jobInFlight{false};
+
+    std::mutex _statsMutex;
+    std::shared_ptr<AsyncNearbyPlayerPublished const> _results;
+    AsyncNearbyPlayerStats _stats;
+    uint32 _nextGeneration = 0;
+    uint32 _updateTimer = 0;
+    uint32 _logTimer = 0;
+    uint32 _lastLoggedGeneration = 0;
+};
+
+Player* ResolveAsyncNearbyPlayer(Player* bot, ObjectGuid const& guid, float range)
+{
+    if (!bot || guid.IsEmpty() || !guid.IsPlayer() || guid == bot->GetGUID())
+        return nullptr;
+
+    Player* player = ObjectAccessor::FindPlayer(guid);
+    if (!player || !player->IsInWorld() || player->IsDuringRemoveFromWorld() || player->GetMapId() != bot->GetMapId() ||
+        !player->IsAlive() || !bot->IsWithinDistInMap(player, range))
+        return nullptr;
+
+    return player;
+}
 }  // namespace
 
 PlayerbotChatHandler::PlayerbotChatHandler(Player* pMasterPlayer) : ChatHandler(pMasterPlayer->GetSession()) {}
@@ -5221,12 +5654,71 @@ bool PlayerbotAI::HasPlayerNearby(float range)
 
 void PlayerbotAI::UpdateAsyncActivityCache(uint32 diff) { AsyncActivityCache::Instance().Update(diff); }
 
+void PlayerbotAI::UpdateAsyncNearbyPlayerCache(uint32 diff) { AsyncNearbyPlayerCache::Instance().Update(diff); }
+
 bool PlayerbotAI::TryGetAsyncActivityAllowed(ActivityType activityType, bool& allowed)
 {
     if (activityType != ALL_ACTIVITY || !bot)
         return false;
 
     return AsyncActivityCache::Instance().TryGet(bot->GetGUID().GetCounter(), allowed);
+}
+
+bool PlayerbotAI::AppendAsyncNearestFriendlyPlayers(std::list<Unit*>& targets, float range)
+{
+    if (!bot)
+        return false;
+
+    GuidVector cachedPlayers;
+    if (!AsyncNearbyPlayerCache::Instance().TryGet(bot->GetGUID().GetCounter(), range, cachedPlayers))
+        return false;
+
+    for (ObjectGuid const& guid : cachedPlayers)
+    {
+        Player* player = ResolveAsyncNearbyPlayer(bot, guid, range);
+        if (player && bot->IsFriendlyTo(player))
+            targets.push_back(player);
+    }
+
+    return true;
+}
+
+bool PlayerbotAI::AppendAsyncNearestNonBotPlayers(std::list<Unit*>& targets, float range)
+{
+    if (!bot)
+        return false;
+
+    GuidVector cachedPlayers;
+    if (!AsyncNearbyPlayerCache::Instance().TryGet(bot->GetGUID().GetCounter(), range, cachedPlayers))
+        return false;
+
+    for (ObjectGuid const& guid : cachedPlayers)
+    {
+        Player* player = ResolveAsyncNearbyPlayer(bot, guid, range);
+        if (player)
+            targets.push_back(player);
+    }
+
+    return true;
+}
+
+bool PlayerbotAI::AppendAsyncPossiblePlayerTargets(std::list<Unit*>& targets, float range)
+{
+    if (!bot)
+        return false;
+
+    GuidVector cachedPlayers;
+    if (!AsyncNearbyPlayerCache::Instance().TryGet(bot->GetGUID().GetCounter(), range, cachedPlayers))
+        return false;
+
+    for (ObjectGuid const& guid : cachedPlayers)
+    {
+        Player* player = ResolveAsyncNearbyPlayer(bot, guid, range);
+        if (player && !player->IsCritter() && !bot->IsFriendlyTo(player))
+            targets.push_back(player);
+    }
+
+    return true;
 }
 
 bool PlayerbotAI::AllowActive(ActivityType activityType, bool allowSyncFallbackOnAsyncMiss)

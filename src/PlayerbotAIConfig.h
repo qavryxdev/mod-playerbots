@@ -92,6 +92,9 @@ public:
     bool asyncActivityCache;
     uint32 asyncActivityCacheThreads;
     uint32 asyncActivityCacheInterval;
+    bool asyncNearbyPlayerCache;
+    uint32 asyncNearbyPlayerCacheThreads;
+    uint32 asyncNearbyPlayerCacheInterval;
     bool asyncAVStrategyCache;
     uint32 asyncAVStrategyCacheThreads;
     uint32 asyncAVStrategyCacheInterval;
