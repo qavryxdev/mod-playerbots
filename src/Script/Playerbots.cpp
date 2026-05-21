@@ -25,6 +25,7 @@
 #include "GlobalScript.h"
 #include "GuildTaskMgr.h"
 #include "LFG.h"
+#include "Map.h"
 #include "PlayerScript.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotGuildMgr.h"
@@ -36,8 +37,253 @@
 #include "cmath"
 #include "BattleGroundTactics.h"
 
+#include <algorithm>
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
 namespace
 {
+class ZoneParallelBotAIUpdatePool
+{
+public:
+    ~ZoneParallelBotAIUpdatePool()
+    {
+        Stop();
+    }
+
+    void Run(std::vector<std::function<void()>>&& jobs, uint32 threadCount)
+    {
+        if (jobs.empty())
+            return;
+
+        std::unique_lock<std::mutex> runLock(_runMutex);
+        EnsureStarted(std::max<uint32>(1, threadCount));
+
+        {
+            std::lock_guard<std::mutex> lock(_queueMutex);
+            _pending += jobs.size();
+            for (std::function<void()>& job : jobs)
+                _jobs.emplace_back(std::move(job));
+        }
+
+        _queueCv.notify_all();
+
+        std::unique_lock<std::mutex> lock(_queueMutex);
+        _doneCv.wait(lock, [this]() { return _pending == 0 && _jobs.empty(); });
+    }
+
+    void Stop()
+    {
+        {
+            std::lock_guard<std::mutex> runLock(_runMutex);
+            {
+                std::lock_guard<std::mutex> lock(_queueMutex);
+                _stop = true;
+                _jobs.clear();
+                _pending = 0;
+            }
+
+            _queueCv.notify_all();
+            _doneCv.notify_all();
+
+            for (std::thread& worker : _workers)
+                if (worker.joinable())
+                    worker.join();
+
+            _workers.clear();
+            _threadCount = 0;
+            _stop = false;
+        }
+    }
+
+private:
+    void EnsureStarted(uint32 threadCount)
+    {
+        threadCount = std::max<uint32>(1, threadCount);
+
+        if (_threadCount == threadCount && !_workers.empty())
+            return;
+
+        StopWorkersLocked();
+
+        _stop = false;
+        _threadCount = threadCount;
+        _workers.reserve(threadCount);
+
+        for (uint32 i = 0; i < threadCount; ++i)
+            _workers.emplace_back(&ZoneParallelBotAIUpdatePool::WorkerLoop, this);
+
+        LOG_INFO("playerbots", "ZoneParallelBotAI started with {} worker thread(s)", threadCount);
+    }
+
+    void StopWorkersLocked()
+    {
+        {
+            std::lock_guard<std::mutex> lock(_queueMutex);
+            _stop = true;
+            _jobs.clear();
+            _pending = 0;
+        }
+
+        _queueCv.notify_all();
+        _doneCv.notify_all();
+
+        for (std::thread& worker : _workers)
+            if (worker.joinable())
+                worker.join();
+
+        _workers.clear();
+        _threadCount = 0;
+    }
+
+    void WorkerLoop()
+    {
+        for (;;)
+        {
+            std::function<void()> job;
+
+            {
+                std::unique_lock<std::mutex> lock(_queueMutex);
+                _queueCv.wait(lock, [this]() { return _stop || !_jobs.empty(); });
+
+                if (_stop && _jobs.empty())
+                    return;
+
+                job = std::move(_jobs.front());
+                _jobs.pop_front();
+            }
+
+            job();
+
+            {
+                std::lock_guard<std::mutex> lock(_queueMutex);
+                if (_pending > 0)
+                    --_pending;
+
+                if (_pending == 0 && _jobs.empty())
+                    _doneCv.notify_all();
+            }
+        }
+    }
+
+    std::mutex _runMutex;
+    std::mutex _queueMutex;
+    std::condition_variable _queueCv;
+    std::condition_variable _doneCv;
+    std::deque<std::function<void()>> _jobs;
+    std::vector<std::thread> _workers;
+    size_t _pending = 0;
+    uint32 _threadCount = 0;
+    bool _stop = false;
+};
+
+ZoneParallelBotAIUpdatePool& GetZoneParallelBotAIPool()
+{
+    static ZoneParallelBotAIUpdatePool pool;
+    return pool;
+}
+
+struct ZoneBotAIEntry
+{
+    Player* bot;
+    PlayerbotAI* ai;
+};
+
+uint32 GetZoneParallelBotAIThreadCount()
+{
+    uint32 threadCount = sPlayerbotAIConfig.zoneParallelBotAIThreads;
+
+    if (threadCount == 0)
+        threadCount = std::max<uint32>(1, std::thread::hardware_concurrency());
+
+    return std::max<uint32>(1, threadCount);
+}
+
+bool IsZoneParallelBotAIMap(Map const* map)
+{
+    return sPlayerbotAIConfig.zoneParallelBotAI && map && map->IsWorldMap() && !map->Instanceable() &&
+           !map->IsBattlegroundOrArena() && !map->IsDungeon();
+}
+
+bool ShouldDeferBotAIToZoneParallelUpdate(Player* player, PlayerbotAI* botAI)
+{
+    return botAI && !botAI->IsRealPlayer() && player && player->IsInWorld() && sRandomPlayerbotMgr.IsRandomBot(player) &&
+           IsZoneParallelBotAIMap(player->GetMap());
+}
+
+void UpdateBotAI(ZoneBotAIEntry const& entry, uint32 diff)
+{
+    if (!entry.bot || !entry.bot->IsInWorld() || !entry.ai)
+        return;
+
+    if (entry.ai->IsRealPlayer())
+        return;
+
+    entry.ai->UpdateAI(diff);
+}
+
+void UpdateZoneParallelBotAI(uint32 diff)
+{
+    std::unordered_map<uint32, std::vector<ZoneBotAIEntry>> botsByZone;
+    botsByZone.reserve(64);
+    size_t totalBots = 0;
+    PlayerBotMap const bots = sRandomPlayerbotMgr.GetAllBots();
+
+    for (PlayerBotMap::const_iterator itr = bots.begin(); itr != bots.end(); ++itr)
+    {
+        Player* const player = itr->second;
+
+        if (!player || !player->IsInWorld() || !sRandomPlayerbotMgr.IsRandomBot(player))
+            continue;
+
+        Map* const map = player->GetMap();
+        if (!IsZoneParallelBotAIMap(map))
+            continue;
+
+        PlayerbotAI* const botAI = PlayerbotsMgr::instance().GetPlayerbotAI(player);
+
+        if (!botAI || botAI->IsRealPlayer())
+            continue;
+
+        uint32 const mapId = player->GetMapId();
+        uint32 const zoneId = player->GetZoneId();
+        uint32 const bucket = (mapId << 16) ^ zoneId;
+        botsByZone[bucket].push_back({player, botAI});
+        ++totalBots;
+    }
+
+    if (totalBots == 0)
+        return;
+
+    if (totalBots < sPlayerbotAIConfig.zoneParallelBotAIMinBots || botsByZone.size() < 2)
+    {
+        for (auto& zoneBots : botsByZone)
+            for (ZoneBotAIEntry const& bot : zoneBots.second)
+                UpdateBotAI(bot, diff);
+
+        return;
+    }
+
+    std::vector<std::function<void()>> jobs;
+    jobs.reserve(botsByZone.size());
+
+    for (auto& zoneBots : botsByZone)
+    {
+        jobs.emplace_back([bots = std::move(zoneBots.second), diff]()
+        {
+            for (ZoneBotAIEntry const& bot : bots)
+                UpdateBotAI(bot, diff);
+        });
+    }
+
+    GetZoneParallelBotAIPool().Run(std::move(jobs), GetZoneParallelBotAIThreadCount());
+}
+
 bool IsBotOutgoingPacketHandled(uint16 opcode)
 {
     switch (opcode)
@@ -255,7 +501,8 @@ public:
 
         if (botAI != nullptr)
         {
-            botAI->UpdateAI(diff);
+            if (!ShouldDeferBotAIToZoneParallelUpdate(player, botAI))
+                botAI->UpdateAI(diff);
         }
 
         if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(player))
@@ -500,6 +747,7 @@ public:
         PlayerbotAI::UpdateAsyncNearbyPlayerCache(diff);
         BGTactics::UpdateAsyncAVStrategyCache(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
+        UpdateZoneParallelBotAI(diff);
     }
 };
 

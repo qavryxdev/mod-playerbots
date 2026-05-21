@@ -407,6 +407,14 @@ AiPlayerbot.AsyncAVTacticalOrders = 0
 # Worker threads only produce GUID -> assignment hints; main thread still validates and executes objectives safely.
 AiPlayerbot.AsyncAVObjectiveAssignments = 0
 
+# Experimental: run random bot AI updates on world maps through a persistent worker pool grouped by zone.
+# This targets the one-continent/one-thread bottleneck without touching battlegrounds, arenas, dungeons, or instances.
+# Bot movement, combat and spell decisions are still owned by the bot AI; the split only changes which worker executes
+# each zone bucket. Threads 0 = auto-detect logical CPU count. MinBots keeps small maps on the normal update path.
+AiPlayerbot.ZoneParallelBotAI = 1
+AiPlayerbot.ZoneParallelBotAIThreads = 0
+AiPlayerbot.ZoneParallelBotAIMinBots = 16
+
 # Inactivity delay
 AiPlayerbot.PassiveDelay = 10000
 

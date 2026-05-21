@@ -94,6 +94,9 @@ bool PlayerbotAIConfig::Initialize()
     asyncAVStrategyCacheInterval = sConfigMgr->GetOption<uint32>("AiPlayerbot.AsyncAVStrategyCacheInterval", 500);
     asyncAVTacticalOrders = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncAVTacticalOrders", false);
     asyncAVObjectiveAssignments = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncAVObjectiveAssignments", false);
+    zoneParallelBotAI = sConfigMgr->GetOption<bool>("AiPlayerbot.ZoneParallelBotAI", true);
+    zoneParallelBotAIThreads = sConfigMgr->GetOption<uint32>("AiPlayerbot.ZoneParallelBotAIThreads", 0);
+    zoneParallelBotAIMinBots = sConfigMgr->GetOption<uint32>("AiPlayerbot.ZoneParallelBotAIMinBots", 16);
     idleBotReactDelayMin = sConfigMgr->GetOption<uint32>("AiPlayerbot.IdleBotReactDelayMin", 50);
     idleBotReactDelayMax = sConfigMgr->GetOption<uint32>("AiPlayerbot.IdleBotReactDelayMax", 150);
     if (idleBotReactDelayMax < idleBotReactDelayMin)
