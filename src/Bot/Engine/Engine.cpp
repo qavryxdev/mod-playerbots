@@ -13,6 +13,16 @@
 #include "Strategy.h"
 #include "Timer.h"
 
+#include <algorithm>
+#include <utility>
+#include <vector>
+
+namespace
+{
+    using TriggerFire = std::pair<Trigger*, Event>;
+    thread_local std::vector<TriggerFire> triggerFires;
+}
+
 Engine::Engine(PlayerbotAI* botAI, AiObjectContext* factory) : PlayerbotAIAware(botAI), aiObjectContext(factory)
 {
     lastRelevance = 0.0f;
@@ -251,7 +261,7 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
     return actionExecuted;
 }
 
-ActionNode* Engine::CreateActionNode(std::string const name)
+ActionNode* Engine::CreateActionNode(std::string const& name)
 {
     ActionNode* node = actionNodeFactories.GetContextObject(name, botAI);
     if (node)
@@ -264,7 +274,7 @@ ActionNode* Engine::CreateActionNode(std::string const name)
 }
 
 bool Engine::MultiplyAndPush(
-    std::vector<NextAction> actions,
+    std::vector<NextAction> const& actions,
     float forceRelevance,
     bool skipPrerequisites,
     Event event,
@@ -273,12 +283,8 @@ bool Engine::MultiplyAndPush(
 {
     bool pushed = false;
 
-    for (NextAction nextAction : actions)
+    for (NextAction const& nextAction : actions)
     {
-        ActionNode* action = this->CreateActionNode(nextAction.getName());
-
-        this->InitializeAction(action);
-
         float k = nextAction.getRelevance();
 
         if (forceRelevance > 0.0f)
@@ -288,14 +294,20 @@ bool Engine::MultiplyAndPush(
 
         if (k > 0)
         {
+            if (queue.Update(nextAction.getName(), k))
+            {
+                pushed = true;
+                continue;
+            }
+
+            ActionNode* action = this->CreateActionNode(nextAction.getName());
+
             this->LogAction("PUSH:%s - %f (%s)", action->getName().c_str(), k, pushType);
             queue.Push(new ActionBasket(action, k, skipPrerequisites, event));
             pushed = true;
 
             continue;
         }
-
-        delete action;
 
     }
 
@@ -436,7 +448,17 @@ Strategy* Engine::GetStrategy(std::string const name)
 
 void Engine::ProcessTriggers(bool minimal)
 {
-    std::unordered_map<Trigger*, Event> fires;
+    triggerFires.clear();
+    triggerFires.reserve(triggers.size());
+
+    auto findFire = [](Trigger* trigger)
+    {
+        return std::find_if(triggerFires.begin(), triggerFires.end(), [trigger](TriggerFire const& fire)
+        {
+            return fire.first == trigger;
+        });
+    };
+
     uint32 now = getMSTime();
     for (std::vector<TriggerNode*>::iterator i = triggers.begin(); i != triggers.end(); i++)
     {
@@ -454,7 +476,7 @@ void Engine::ProcessTriggers(bool minimal)
         if (!trigger)
             continue;
 
-        if (fires.find(trigger) != fires.end())
+        if (findFire(trigger) != triggerFires.end())
             continue;
 
         if (testMode || trigger->needCheck(now))
@@ -471,7 +493,7 @@ void Engine::ProcessTriggers(bool minimal)
             if (!event)
                 continue;
 
-            fires[trigger] = event;
+            triggerFires.emplace_back(trigger, event);
             LogAction("T:%s", trigger->getName().c_str());
         }
     }
@@ -480,10 +502,11 @@ void Engine::ProcessTriggers(bool minimal)
     {
         TriggerNode* node = *i;
         Trigger* trigger = node->getTrigger();
-        if (fires.find(trigger) == fires.end())
+        auto fire = findFire(trigger);
+        if (fire == triggerFires.end())
             continue;
 
-        Event event = fires[trigger];
+        Event event = fire->second;
         MultiplyAndPush(node->getHandlers(), 0.0f, false, event, "trigger");
     }
 

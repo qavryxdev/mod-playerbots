@@ -20,14 +20,14 @@ public:
     bool Execute(Event /*event*/) override { return false; }
 
 protected:
-    std::vector<Item*> Find(std::string const qualifier);
+    std::vector<Item*> Find(std::string const& qualifier);
 };
 
 class ItemCountValue : public Uint32CalculatedValue, public Qualified, InventoryItemValueBase
 {
 public:
     ItemCountValue(PlayerbotAI* botAI, std::string const name = "inventory items")
-        : Uint32CalculatedValue(botAI, name), InventoryItemValueBase(botAI)
+        : Uint32CalculatedValue(botAI, name, 500), InventoryItemValueBase(botAI)
     {
     }
 

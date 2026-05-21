@@ -4,6 +4,7 @@
  */
 
 #include "PlayerbotAIConfig.h"
+#include <algorithm>
 #include <iostream>
 #include "Config.h"
 #include "NewRpgInfo.h"
@@ -76,6 +77,10 @@ bool PlayerbotAIConfig::Initialize()
     dispelAuraDuration = sConfigMgr->GetOption<int32>("AiPlayerbot.DispelAuraDuration", 700);
     reactDelay = sConfigMgr->GetOption<int32>("AiPlayerbot.ReactDelay", 100);
     dynamicReactDelay = sConfigMgr->GetOption<bool>("AiPlayerbot.DynamicReactDelay", true);
+    fastReactInWorld = sConfigMgr->GetOption<bool>("AiPlayerbot.FastReactInWorld", false);
+    fastReactInWorldCombatMultiplier = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("AiPlayerbot.FastReactInWorldCombatMultiplier", 2));
+    fastReactInWorldActiveDelayMin = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("AiPlayerbot.FastReactInWorldActiveDelayMin", 3));
+    fastReactInWorldActiveDelayMax = std::max<uint32>(fastReactInWorldActiveDelayMin, sConfigMgr->GetOption<uint32>("AiPlayerbot.FastReactInWorldActiveDelayMax", 8));
     idleBotAiThrottle = sConfigMgr->GetOption<bool>("AiPlayerbot.IdleBotAiThrottle", false);
     skipIdleBotMinimalAI = sConfigMgr->GetOption<bool>("AiPlayerbot.SkipIdleBotMinimalAI", false);
     asyncActivityCache = sConfigMgr->GetOption<bool>("AiPlayerbot.AsyncActivityCache", false);

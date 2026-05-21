@@ -53,18 +53,21 @@ public:
 
     Trigger* getTrigger() { return trigger; }
     void setTrigger(Trigger* trigger) { this->trigger = trigger; }
-    const std::string getName() { return name; }
+    std::string const& getName() const { return name; }
 
     std::vector<NextAction> getHandlers()
     {
-        std::vector<NextAction> result = this->handlers;
-
         if (trigger != nullptr)
         {
             std::vector<NextAction> extra = trigger->getHandlers();
+            std::vector<NextAction> result;
+            result.reserve(this->handlers.size() + extra.size());
+            result.insert(result.end(), this->handlers.begin(), this->handlers.end());
             result.insert(result.end(), extra.begin(), extra.end());
+            return result;
         }
 
+        std::vector<NextAction> result = this->handlers;
         return result;
     }
 

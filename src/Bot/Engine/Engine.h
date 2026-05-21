@@ -91,13 +91,13 @@ public:
     bool testMode;
 
 private:
-    bool MultiplyAndPush(std::vector<NextAction> actions, float forceRelevance, bool skipPrerequisites, Event event,
+    bool MultiplyAndPush(std::vector<NextAction> const& actions, float forceRelevance, bool skipPrerequisites, Event event,
                          const char* pushType);
     void Reset();
     void ProcessTriggers(bool minimal);
     void PushDefaultActions();
     void PushAgain(ActionNode* actionNode, float relevance, Event event);
-    ActionNode* CreateActionNode(std::string const name);
+    ActionNode* CreateActionNode(std::string const& name);
     Action* InitializeAction(ActionNode* actionNode);
     bool ListenAndExecute(Action* action, Event event);
 

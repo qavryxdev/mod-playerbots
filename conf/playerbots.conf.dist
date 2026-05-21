@@ -359,6 +359,14 @@ AiPlayerbot.ReactDelay = 100
 # Dynamically adjust react delay for bots in different status to reduce server lags
 AiPlayerbot.DynamicReactDelay = 1
 
+# Faster reaction cadence for active random bots in the open world.
+# Inactive bots still obey BotActiveAlone/IdleBotAiThrottle and stay cheap.
+# With ReactDelay 100: combat=200ms, active non-combat=300..800ms by default.
+AiPlayerbot.FastReactInWorld = 0
+AiPlayerbot.FastReactInWorldCombatMultiplier = 2
+AiPlayerbot.FastReactInWorldActiveDelayMin = 3
+AiPlayerbot.FastReactInWorldActiveDelayMax = 8
+
 # Slow down only random bots that are inactive by BotActiveAlone rules.
 # Combat, BG/arena, real-player-owned, nearby, grouped, LFG, guild/friend, and other forced-active bots keep normal delay.
 # Delay is ReactDelay multiplied by a random value in this range.

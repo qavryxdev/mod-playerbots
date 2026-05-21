@@ -6,6 +6,8 @@
 #ifndef PLAYERBOT_QUEUE_H
 #define PLAYERBOT_QUEUE_H
 
+#include <string>
+
 #include "Action.h"
 #include "Common.h"
 
@@ -31,6 +33,12 @@ public:
      * action to the queue.
      */
     void Push(ActionBasket* action);
+
+    /**
+     * @brief Refreshes an existing queued action without allocating a duplicate basket
+     * @return true when an existing action with the same name was found
+     */
+    bool Update(std::string const& actionName, float relevance);
 
     /**
      * @brief Removes and returns the action with highest relevance
@@ -72,21 +80,6 @@ private:
      * @return Pointer to the highest relevance basket, or nullptr if queue is empty
      */
     ActionBasket* findHighestRelevanceBasket() const;
-
-    /**
-     * @brief Extracts action from basket and handles basket cleanup
-     */
-    ActionNode* extractAndDeleteBasket(ActionBasket* basket);
-
-    /**
-     * @brief Collects all expired baskets into the provided list
-     */
-    void collectExpiredBaskets(std::list<ActionBasket*>& expiredBaskets);
-
-    /**
-     * @brief Removes and deletes all baskets in the provided list
-     */
-    void removeAndDeleteBaskets(std::list<ActionBasket*>& basketsToRemove);
 
     std::list<ActionBasket*> actions; /**< Container for action baskets */
 };

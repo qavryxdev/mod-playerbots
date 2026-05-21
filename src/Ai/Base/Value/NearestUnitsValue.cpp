@@ -15,6 +15,9 @@ uint32 NearestUnitsValue::GetEffectiveCheckInterval() const
     if (!bot || bot->InBattleground() || bot->InArena() || bot->IsInCombat())
         return checkInterval;
 
+    if (bot->isMoving())
+        return checkInterval < 150 ? 150 : checkInterval;
+
     return checkInterval < 250 ? 250 : checkInterval;
 }
 

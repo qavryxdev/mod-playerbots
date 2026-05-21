@@ -7,15 +7,9 @@
 
 #include "PlayerbotAI.h"
 
-std::vector<Item*> InventoryItemValueBase::Find(std::string const qualifier)
+std::vector<Item*> InventoryItemValueBase::Find(std::string const& qualifier)
 {
-    std::vector<Item*> result;
-
-    std::vector<Item*> items = InventoryAction::parseItems(qualifier);
-    for (Item* item : items)
-        result.push_back(item);
-
-    return result;
+    return InventoryAction::parseItems(qualifier);
 }
 
 uint32 ItemCountValue::Calculate()

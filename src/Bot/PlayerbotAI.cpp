@@ -7331,6 +7331,21 @@ uint32 PlayerbotAI::GetReactDelay()
         return base * urand(minMultiplier, maxMultiplier);
     };
 
+    auto fastWorldDelay = [&]() -> uint32
+    {
+        if (!sPlayerbotAIConfig.fastReactInWorld || !bot || bot->InBattleground() || bot->InArena())
+            return 0;
+
+        if (bot->IsInCombat() || currentState == BOT_STATE_COMBAT)
+            return base * sPlayerbotAIConfig.fastReactInWorldCombatMultiplier;
+
+        if (uint32 idleDelay = idleRandomBotDelay())
+            return idleDelay;
+
+        return base * urand(sPlayerbotAIConfig.fastReactInWorldActiveDelayMin,
+                            sPlayerbotAIConfig.fastReactInWorldActiveDelayMax);
+    };
+
     // If dynamic react delay is disabled, use a static calculation
     if (!sPlayerbotAIConfig.dynamicReactDelay)
     {
@@ -7346,6 +7361,9 @@ uint32 PlayerbotAI::GetReactDelay()
 
         if (!inCombat)
         {
+            if (uint32 delay = fastWorldDelay())
+                return delay;
+
             if (uint32 idleDelay = idleRandomBotDelay())
                 return idleDelay;
 
@@ -7353,7 +7371,12 @@ uint32 PlayerbotAI::GetReactDelay()
         }
 
         else if (inCombat)
+        {
+            if (uint32 delay = fastWorldDelay())
+                return delay;
+
             return static_cast<uint32>(base * 2.5f);
+        }
 
         return base;
     }
@@ -7376,6 +7399,9 @@ uint32 PlayerbotAI::GetReactDelay()
             return static_cast<uint32>(base * (sPlayerbotAIConfig.fastReactInBG ? 1.0f : 10.0f));
         }
     }
+
+    if (uint32 delay = fastWorldDelay())
+        return delay;
 
     // When in combat, return 5 times the base
     if (bot->IsInCombat() || currentState == BOT_STATE_COMBAT)

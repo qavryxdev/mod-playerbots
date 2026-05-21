@@ -17,4 +17,4 @@ ActionBasket::ActionBasket(ActionNode* action, float relevance, bool skipPrerequ
 {
 }
 
-bool ActionBasket::isExpired(uint32_t msecs) { return getMSTime() - created >= msecs; }
+bool ActionBasket::isExpired(uint32_t msecs, uint32_t now) { return now - created >= msecs; }

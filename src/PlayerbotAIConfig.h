@@ -296,6 +296,8 @@ public:
     std::vector<uint32> pvpProhibitedZoneIds;
     std::vector<uint32> pvpProhibitedAreaIds;
     bool fastReactInBG;
+    bool fastReactInWorld;
+    uint32 fastReactInWorldCombatMultiplier, fastReactInWorldActiveDelayMin, fastReactInWorldActiveDelayMax;
     bool allianceAVMoveDebug;
 
     bool randombotsWalkingRPG;

@@ -182,7 +182,7 @@ void InventoryAction::TellItem(ItemTemplate const* proto, uint32 count, bool sou
     botAI->TellMaster(out.str());
 }
 
-std::vector<Item*> InventoryAction::parseItems(std::string const text, IterateItemsMask mask)
+std::vector<Item*> InventoryAction::parseItems(std::string const& text, IterateItemsMask mask)
 {
     std::set<Item*> found;
     size_t pos = text.find(" ");

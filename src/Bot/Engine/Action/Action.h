@@ -9,33 +9,28 @@
 #include "Event.h"
 #include "Value.h"
 
+#include <utility>
+
 class PlayerbotAI;
 class Unit;
 
 class NextAction
 {
 public:
-    NextAction(std::string const name, float relevance = 0.0f)
-        : relevance(relevance), name(name) {}                                  // name after relevance - whipowill
+    NextAction(std::string name, float relevance = 0.0f)
+        : relevance(relevance), name(std::move(name)) {}                       // name after relevance - whipowill
     NextAction(NextAction const& o) : relevance(o.relevance), name(o.name) {}  // name after relevance - whipowill
     NextAction& operator=(NextAction const& o) = default;
 
-    std::string const getName() { return name; }
-    float getRelevance() { return relevance; }
+    std::string const& getName() const { return name; }
+    float getRelevance() const { return relevance; }
 
     static std::vector<NextAction> merge(std::vector<NextAction> const& what, std::vector<NextAction> const& with)
     {
-        std::vector<NextAction> result = {};
-
-        for (NextAction const& action : what)
-        {
-            result.push_back(action);
-        }
-
-        for (NextAction const& action : with)
-        {
-            result.push_back(action);
-        }
+        std::vector<NextAction> result;
+        result.reserve(what.size() + with.size());
+        result.insert(result.end(), what.begin(), what.end());
+        result.insert(result.end(), with.begin(), with.end());
 
         return result;
     };
@@ -110,16 +105,16 @@ public:
     ) :
     name(std::move(name)),
     action(nullptr),
-    continuers(continuers),
-    alternatives(alternatives),
-    prerequisites(prerequisites)
+    continuers(std::move(continuers)),
+    alternatives(std::move(alternatives)),
+    prerequisites(std::move(prerequisites))
     {}
 
     virtual ~ActionNode() = default;
 
     Action* getAction() { return action; }
     void setAction(Action* action) { this->action = action; }
-    const std::string getName() { return name; }
+    std::string const& getName() const { return name; }
 
     std::vector<NextAction> getContinuers()
     {
@@ -155,7 +150,8 @@ public:
     bool isSkipPrerequisites() { return skipPrerequisites; }
     void AmendRelevance(float k) { relevance *= k; }
     void setRelevance(float relevance) { this->relevance = relevance; }
-    bool isExpired(uint32_t msecs);
+    void Refresh(uint32_t now) { created = now; }
+    bool isExpired(uint32_t msecs, uint32_t now);
 
 private:
     ActionNode* action;
