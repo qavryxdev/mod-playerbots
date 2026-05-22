@@ -18,6 +18,9 @@
 </div>
 
 # Playerbots Module
+
+This fork is a fully parallelized version of `mod-playerbots`, focused on large-scale bot populations and multi-core server performance. It is designed to let server owners run thousands of playerbots at the same time, with practical capacity limited primarily by available RAM, database throughput, and the hardware profile of the host machine.
+
 `mod-playerbots` is an [AzerothCore](https://www.azerothcore.org/) module that adds player-like bots to a server. The project is based off [IKE3's Playerbots](https://github.com/ike3/mangosbot).
 
 Features include:
