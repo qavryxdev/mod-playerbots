@@ -44,7 +44,7 @@ Supported platforms are Ubuntu, Windows, and macOS. Other Linux distributions ma
 ```bash
 git clone https://github.com/mod-playerbots/azerothcore-wotlk.git --branch=Playerbot
 cd azerothcore-wotlk/modules
-git clone https://github.com/mod-playerbots/mod-playerbots.git --branch=master
+git clone https://github.com/qavryxdev/mod-playerbots.git --branch=master
 ```
 
 Then build the server following the platform-specific instructions in our **[Installation Guide](https://github.com/mod-playerbots/mod-playerbots/wiki/Installation-Guide)**.
