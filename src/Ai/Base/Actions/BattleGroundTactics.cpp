@@ -6394,7 +6394,14 @@ bool BGTactics::selectObjective(bool reset)
                     if (!go || !go->isSpawned())
                         continue;
 
-                    if (maxDistance > 0.0f && bot->GetDistance(go) > maxDistance)
+                    float const distance = bot->GetDistance(go);
+                    bool const northernDefender = isDefender && botX > -180.0f && !allianceSnowfallForward;
+                    bool const forwardRecap = nodeId == BG_AV_NODES_ICEBLOOD_GRAVE ||
+                                              IsAllianceForwardGraveyardAttackTarget(nodeId);
+                    if (northernDefender && allianceRushInfo.IsActive() && forwardRecap && distance > 220.0f)
+                        continue;
+
+                    if (maxDistance > 0.0f && distance > maxDistance)
                         continue;
 
                     recapObjectives.push_back(go);
