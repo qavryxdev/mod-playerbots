@@ -69,6 +69,7 @@ public:
         creators["kick on enemy healer"] = &RogueTriggerFactoryInternal::kick_on_enemy_healer;
         creators["unstealth"] = &RogueTriggerFactoryInternal::unstealth;
         creators["sap"] = &RogueTriggerFactoryInternal::sap;
+        creators["blind"] = &RogueTriggerFactoryInternal::blind;
         creators["in stealth"] = &RogueTriggerFactoryInternal::in_stealth;
         creators["no stealth"] = &RogueTriggerFactoryInternal::no_stealth;
         creators["stealth"] = &RogueTriggerFactoryInternal::stealth;
@@ -91,6 +92,7 @@ private:
     static Trigger* kick_on_enemy_healer(PlayerbotAI* botAI) { return new KickInterruptEnemyHealerSpellTrigger(botAI); }
     static Trigger* unstealth(PlayerbotAI* botAI) { return new UnstealthTrigger(botAI); }
     static Trigger* sap(PlayerbotAI* botAI) { return new SapTrigger(botAI); }
+    static Trigger* blind(PlayerbotAI* botAI) { return new BlindTrigger(botAI); }
     static Trigger* in_stealth(PlayerbotAI* botAI) { return new InStealthTrigger(botAI); }
     static Trigger* no_stealth(PlayerbotAI* botAI) { return new NoStealthTrigger(botAI); }
     static Trigger* stealth(PlayerbotAI* botAI) { return new StealthTrigger(botAI); }

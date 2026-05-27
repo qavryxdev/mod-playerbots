@@ -23,6 +23,7 @@ public:
         creators["cleanse spirit"] = &cleanse_spirit;
         creators["cleanse spirit poison on party"] = &cleanse_spirit_poison_on_party;
         creators["cleanse spirit disease on party"] = &cleanse_spirit_disease_on_party;
+        creators["hex"] = &hex;
     }
 
 private:
@@ -103,6 +104,13 @@ private:
                               /*A*/ { NextAction("cure toxins disease on party") },
                               /*C*/ {});
     }
+    static ActionNode* hex([[maybe_unused]] PlayerbotAI* botAI)
+    {
+        return new ActionNode("hex",
+                              /*P*/ {},
+                              /*A*/ {},
+                              /*C*/ {});
+    }
 };
 
 GenericShamanStrategy::GenericShamanStrategy(PlayerbotAI* botAI) : CombatStrategy(botAI)
@@ -114,6 +122,7 @@ void GenericShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     CombatStrategy::InitTriggers(triggers);
 
+    triggers.push_back(new TriggerNode("hex", { NextAction("hex", ACTION_INTERRUPT + 1), }));
     triggers.push_back(new TriggerNode("wind shear", { NextAction("wind shear", 23.0f), }));
     triggers.push_back(new TriggerNode("wind shear on enemy healer", { NextAction("wind shear on enemy healer", 23.0f), }));
     triggers.push_back(new TriggerNode("purge", { NextAction("purge", ACTION_DISPEL), }));

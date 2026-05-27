@@ -20,4 +20,13 @@ public:
     Unit* Calculate() override;
 };
 
+namespace ai::cc
+{
+    bool HasActiveCrowdControl(Unit* target);
+    bool IsGoodPolymorphTarget(PlayerbotAI* botAI, Unit* target);
+    bool IsDiminishingBlocked(PlayerbotAI* botAI, Unit* target, std::string const& spell);
+    int32 GetDiminishingPenalty(PlayerbotAI* botAI, Unit* target, std::string const& spell);
+    void RecordCrowdControl(PlayerbotAI* botAI, Unit* target, std::string const& spell);
+}
+
 #endif

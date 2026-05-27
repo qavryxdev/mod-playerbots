@@ -5,6 +5,7 @@
 
 #include "MageActions.h"
 #include <cmath>
+#include "CcTargetValue.h"
 #include "UseItemAction.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
@@ -12,6 +13,18 @@
 #include "SharedDefines.h"
 
 Value<Unit*>* CastPolymorphAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }
+
+bool CastPolymorphAction::isPossible()
+{
+    Unit* target = GetTarget();
+    return ai::cc::IsGoodPolymorphTarget(botAI, target) && CastCrowdControlSpellAction::isPossible();
+}
+
+bool CastPolymorphAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::cc::IsGoodPolymorphTarget(botAI, target) && CastCrowdControlSpellAction::isUseful();
+}
 
 bool UseManaSapphireAction::isUseful()
 {

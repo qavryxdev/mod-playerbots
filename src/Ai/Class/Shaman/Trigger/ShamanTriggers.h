@@ -149,6 +149,8 @@ public:
     WindShearInterruptEnemyHealerSpellTrigger(PlayerbotAI* botAI) : InterruptEnemyHealerTrigger(botAI, "wind shear") {}
 };
 
+CC_TRIGGER(HexTrigger, "hex");
+
 class PurgeTrigger : public TargetAuraDispelTrigger
 {
 public:

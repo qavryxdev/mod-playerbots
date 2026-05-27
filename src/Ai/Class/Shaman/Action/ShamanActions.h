@@ -166,6 +166,8 @@ public:
         CastSpellOnEnemyHealerAction(botAI, "wind shear") {}
 };
 
+CC_ACTION(CastHexAction, "hex");
+
 class CastPurgeAction : public CastSpellAction
 {
 public:

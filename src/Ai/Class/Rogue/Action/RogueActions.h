@@ -104,10 +104,10 @@ public:
     bool isUseful() override;
 };
 
-class CastBlindAction : public CastDebuffSpellAction
+class CastBlindAction : public CastCrowdControlSpellAction
 {
 public:
-    CastBlindAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "blind") {}
+    CastBlindAction(PlayerbotAI* botAI) : CastCrowdControlSpellAction(botAI, "blind") {}
 };
 
 class CastBladeFlurryAction : public CastBuffSpellAction

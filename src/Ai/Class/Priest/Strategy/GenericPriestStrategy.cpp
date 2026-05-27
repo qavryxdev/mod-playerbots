@@ -38,6 +38,10 @@ void GenericPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode("enemy too close for spell",
                                        { NextAction("flee", ACTION_MOVE + 9) }));
+    triggers.push_back(new TriggerNode("enemy is close",
+                                       { NextAction("psychic scream", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("being attacked",
+                                       { NextAction("psychic scream", ACTION_EMERGENCY + 3) }));
     triggers.push_back(new TriggerNode("often", { NextAction("apply oil", 1.0f) }));
     triggers.push_back(new TriggerNode("being attacked",
         { NextAction("power word: shield", ACTION_HIGH + 1) }));

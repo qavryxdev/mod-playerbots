@@ -180,6 +180,12 @@ public:
     bool isPossible() override;
 };
 
+class CastWarlockDeathCoilAction : public CastSpellAction
+{
+public:
+    CastWarlockDeathCoilAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "death coil") {}
+};
+
 class CastSpellLockAction : public CastSpellAction
 {
 public:

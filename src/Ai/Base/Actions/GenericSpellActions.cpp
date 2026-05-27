@@ -18,6 +18,7 @@
 #include "Group.h"
 #include "Chat.h"
 #include "Ai/Base/Util/GenericBuffUtils.h"
+#include "CcTargetValue.h"
 #include "PlayerbotAI.h"
 
 using ai::buff::MakeAuraQualifierForBuff;
@@ -342,11 +343,29 @@ Value<Unit*>* CastSnareSpellAction::GetTargetValue() { return context->GetValue<
 
 Value<Unit*>* CastCrowdControlSpellAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }
 
-bool CastCrowdControlSpellAction::Execute(Event /*event*/) { return botAI->CastSpell(getName(), GetTarget()); }
+bool CastCrowdControlSpellAction::Execute(Event /*event*/)
+{
+    Unit* target = GetTarget();
+    bool const cast = botAI->CastSpell(getName(), target);
+    if (cast)
+        ai::cc::RecordCrowdControl(botAI, target, getName());
 
-bool CastCrowdControlSpellAction::isPossible() { return botAI->CanCastSpell(getName(), GetTarget()); }
+    return cast;
+}
 
-bool CastCrowdControlSpellAction::isUseful() { return true; }
+bool CastCrowdControlSpellAction::isPossible()
+{
+    Unit* target = GetTarget();
+    return target && !ai::cc::HasActiveCrowdControl(target) &&
+           !ai::cc::IsDiminishingBlocked(botAI, target, getName()) &&
+           botAI->CanCastSpell(getName(), target);
+}
+
+bool CastCrowdControlSpellAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return target && !botAI->HasAura(getName(), target) && !ai::cc::HasActiveCrowdControl(target);
+}
 
 std::string const CastProtectSpellAction::GetTargetName() { return "party member to protect"; }
 

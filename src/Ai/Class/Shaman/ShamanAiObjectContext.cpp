@@ -137,6 +137,7 @@ public:
     ShamanATriggerFactoryInternal()
     {
         creators["wind shear"] = &ShamanATriggerFactoryInternal::wind_shear;
+        creators["hex"] = &ShamanATriggerFactoryInternal::hex;
         creators["purge"] = &ShamanATriggerFactoryInternal::purge;
         creators["main hand weapon no imbue"] = &ShamanATriggerFactoryInternal::main_hand_weapon_no_imbue;
         creators["off hand weapon no imbue"] = &ShamanATriggerFactoryInternal::off_hand_weapon_no_imbue;
@@ -213,6 +214,7 @@ private:
     static Trigger* water_breathing_on_party(PlayerbotAI* botAI) { return new WaterBreathingOnPartyTrigger(botAI); }
     static Trigger* water_walking_on_party(PlayerbotAI* botAI) { return new WaterWalkingOnPartyTrigger(botAI); }
     static Trigger* wind_shear(PlayerbotAI* botAI) { return new WindShearInterruptSpellTrigger(botAI); }
+    static Trigger* hex(PlayerbotAI* botAI) { return new HexTrigger(botAI); }
     static Trigger* purge(PlayerbotAI* botAI) { return new PurgeTrigger(botAI); }
     static Trigger* main_hand_weapon_no_imbue(PlayerbotAI* botAI) { return new MainHandWeaponNoImbueTrigger(botAI); }
     static Trigger* off_hand_weapon_no_imbue(PlayerbotAI* botAI) { return new OffHandWeaponNoImbueTrigger(botAI); }
@@ -264,6 +266,7 @@ public:
         creators["lightning shield"] = &ShamanAiObjectContextInternal::lightning_shield;
         creators["wind shear"] = &ShamanAiObjectContextInternal::wind_shear;
         creators["wind shear on enemy healer"] = &ShamanAiObjectContextInternal::wind_shear_on_enemy_healer;
+        creators["hex"] = &ShamanAiObjectContextInternal::hex;
         creators["rockbiter weapon main hand"] = &ShamanAiObjectContextInternal::rockbiter_weapon_main_hand;
         creators["flametongue weapon main hand"] = &ShamanAiObjectContextInternal::flametongue_weapon_main_hand;
         creators["flametongue weapon off hand"] = &ShamanAiObjectContextInternal::flametongue_weapon_off_hand;
@@ -372,6 +375,7 @@ private:
     static Action* lightning_shield(PlayerbotAI* botAI) { return new CastLightningShieldAction(botAI); }
     static Action* fire_nova(PlayerbotAI* botAI) { return new CastFireNovaAction(botAI); }
     static Action* wind_shear(PlayerbotAI* botAI) { return new CastWindShearAction(botAI); }
+    static Action* hex(PlayerbotAI* botAI) { return new CastHexAction(botAI); }
     static Action* rockbiter_weapon_main_hand(PlayerbotAI* botAI) { return new CastRockbiterWeaponMainHandAction(botAI); }
     static Action* flametongue_weapon_main_hand(PlayerbotAI* botAI) { return new CastFlametongueWeaponMainHandAction(botAI); }
     static Action* flametongue_weapon_off_hand(PlayerbotAI* botAI) { return new CastFlametongueWeaponOffHandAction(botAI); }

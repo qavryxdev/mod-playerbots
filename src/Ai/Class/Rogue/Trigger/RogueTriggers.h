@@ -97,6 +97,12 @@ public:
     bool IsPossible();
 };
 
+class BlindTrigger : public HasCcTargetTrigger
+{
+public:
+    BlindTrigger(PlayerbotAI* botAI) : HasCcTargetTrigger(botAI, "blind") {}
+};
+
 class SprintTrigger : public BuffTrigger
 {
 public:

@@ -12,6 +12,7 @@ public:
     {
         creators["banish on cc"] = &banish_on_cc;
         creators["fear on cc"] = &fear_on_cc;
+        creators["death coil"] = &death_coil;
         creators["spell lock"] = &spell_lock;
         creators["devour magic purge"] = &devour_magic_purge;
         creators["devour magic cleanse"] = &devour_magic_cleanse;
@@ -20,6 +21,7 @@ public:
 private:
     static ActionNode* banish_on_cc(PlayerbotAI*) { return new ActionNode("banish on cc", {}, {}, {}); }
     static ActionNode* fear_on_cc(PlayerbotAI*) { return new ActionNode("fear on cc", {}, {}, {}); }
+    static ActionNode* death_coil(PlayerbotAI*) { return new ActionNode("death coil", {}, { NextAction("fear on cc") }, {}); }
     static ActionNode* spell_lock(PlayerbotAI*) { return new ActionNode("spell lock", {}, {}, {}); }
     static ActionNode* devour_magic_purge(PlayerbotAI*) { return new ActionNode("devour magic purge", {}, {}, {}); }
     static ActionNode* devour_magic_cleanse(PlayerbotAI*) { return new ActionNode("devour magic cleanse", {}, {}, {}); }
@@ -92,6 +94,22 @@ void GenericWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             "devour magic cleanse",
             {
                 NextAction("devour magic cleanse", 50.0f)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "being attacked",
+            {
+                NextAction("death coil", ACTION_EMERGENCY + 4)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "critical health",
+            {
+                NextAction("death coil", ACTION_EMERGENCY + 5)
             }
         )
     );

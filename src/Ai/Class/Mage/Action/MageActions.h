@@ -215,11 +215,13 @@ public:
 
 // CC, Interrupt, and Dispel Actions
 
-class CastPolymorphAction : public CastBuffSpellAction
+class CastPolymorphAction : public CastCrowdControlSpellAction
 {
 public:
-    CastPolymorphAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "polymorph") {}
+    CastPolymorphAction(PlayerbotAI* botAI) : CastCrowdControlSpellAction(botAI, "polymorph") {}
     Value<Unit*>* GetTargetValue() override;
+    bool isPossible() override;
+    bool isUseful() override;
 };
 
 class CastSpellstealAction : public CastSpellAction

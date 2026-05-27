@@ -274,6 +274,7 @@ public:
         creators["drain life"] = &WarlockAiObjectContextInternal::drain_life;
         creators["banish on cc"] = &WarlockAiObjectContextInternal::banish_on_cc;
         creators["fear on cc"] = &WarlockAiObjectContextInternal::fear_on_cc;
+        creators["death coil"] = &WarlockAiObjectContextInternal::death_coil;
         creators["spell lock"] = &WarlockAiObjectContextInternal::spell_lock;
         creators["devour magic purge"] = &WarlockAiObjectContextInternal::devour_magic_purge;
         creators["devour magic cleanse"] = &WarlockAiObjectContextInternal::devour_magic_cleanse;
@@ -347,6 +348,7 @@ private:
     static Action* drain_life(PlayerbotAI* botAI) { return new CastDrainLifeAction(botAI); }
     static Action* banish_on_cc(PlayerbotAI* botAI) { return new CastBanishOnCcAction(botAI); }
     static Action* fear_on_cc(PlayerbotAI* botAI) { return new CastFearOnCcAction(botAI); }
+    static Action* death_coil(PlayerbotAI* botAI) { return new CastWarlockDeathCoilAction(botAI); }
     static Action* spell_lock(PlayerbotAI* botAI) { return new CastSpellLockAction(botAI); }
     static Action* devour_magic_purge(PlayerbotAI* botAI) { return new CastDevourMagicPurgeAction(botAI); }
     static Action* devour_magic_cleanse(PlayerbotAI* botAI) { return new CastDevourMagicCleanseAction(botAI); }

@@ -15,6 +15,7 @@
 #include "Playerbots.h"
 #include "ServerFacade.h"
 #include "Unit.h"
+#include "UnitDefines.h"
 #include "Timer.h"
 #include <unordered_map>
 #include <mutex>
@@ -36,7 +37,10 @@ bool CastBanishOnCcAction::isPossible()
 
     // Only possible on elementals or demons
     uint32 creatureType = target->GetCreatureType();
-    if (creatureType != CREATURE_TYPE_DEMON && creatureType != CREATURE_TYPE_ELEMENTAL)
+    Player* playerTarget = target->ToPlayer();
+    bool const isTreeDruid = playerTarget && playerTarget->getClass() == CLASS_DRUID &&
+                             playerTarget->GetShapeshiftForm() == FORM_TREE;
+    if (creatureType != CREATURE_TYPE_DEMON && creatureType != CREATURE_TYPE_ELEMENTAL && !isTreeDruid)
         return false;
 
     // Use base class to check spell available, range, etc

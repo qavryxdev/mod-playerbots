@@ -12,6 +12,7 @@ public:
         creators["envenom"] = &envenom;
         creators["backstab"] = &backstab;
         creators["rupture"] = &rupture;
+        creators["blind"] = &blind;
     }
 
 private:
@@ -48,6 +49,15 @@ private:
             "rupture",
             /*P*/ {},
             /*A*/ { NextAction("eviscerate") },
+            /*C*/ {}
+        );
+    }
+    static ActionNode* blind([[maybe_unused]] PlayerbotAI* botAI)
+    {
+        return new ActionNode(
+            "blind",
+            /*P*/ {},
+            /*A*/ {},
             /*C*/ {}
         );
     }
@@ -176,6 +186,15 @@ void AssassinationRogueStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
             "kick on enemy healer",
             {
                 NextAction("kick on enemy healer", ACTION_INTERRUPT + 1),
+            }
+        )
+    );
+
+    triggers.push_back(
+        new TriggerNode(
+            "blind",
+            {
+                NextAction("blind", ACTION_INTERRUPT + 1),
             }
         )
     );
