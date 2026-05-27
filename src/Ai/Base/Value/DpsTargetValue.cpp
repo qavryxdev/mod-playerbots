@@ -5,8 +5,162 @@
 
 #include "DpsTargetValue.h"
 
+#include "ObjectGuid.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "ServerFacade.h"
+#include "Spell.h"
+#include "SpellAuraDefines.h"
+
+#include <algorithm>
+#include <limits>
+#include <unordered_set>
+
+namespace
+{
+    bool IsPvpTargetingContext(Player* bot)
+    {
+        return bot && (bot->InBattleground() || bot->InArena() || bot->duel);
+    }
+
+    bool IsBreakableCrowdControlled(Unit* target)
+    {
+        return target && (target->IsPolymorphed() || target->HasAuraType(SPELL_AURA_MOD_CONFUSE) ||
+                          target->HasAuraType(SPELL_AURA_MOD_FEAR));
+    }
+
+    SpellInfo const* GetCurrentCastingSpell(Unit* target)
+    {
+        if (!target)
+            return nullptr;
+
+        Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        if (spell && spell->m_spellInfo)
+            return spell->m_spellInfo;
+
+        spell = target->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+        return spell ? spell->m_spellInfo : nullptr;
+    }
+
+    bool IsCastingHelpfulSpell(Unit* target)
+    {
+        if (SpellInfo const* spellInfo = GetCurrentCastingSpell(target))
+            return spellInfo->IsPositive() ||
+                   PlayerbotAI::IsHealingSpell(spellInfo->SpellFamilyName, spellInfo->SpellFamilyFlags);
+
+        return false;
+    }
+
+    bool IsAttackingFriendlyHealer(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* victim = target && target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
+        return victim && !botAI->IsOpposing(victim) && botAI->IsHeal(victim);
+    }
+
+    bool IsEnemyPlayerOrOwnedUnit(PlayerbotAI* botAI, Unit* target)
+    {
+        if (!botAI || !target)
+            return false;
+
+        Player* owner = target->ToPlayer();
+        if (!owner)
+            owner = target->GetCharmerOrOwnerPlayerOrPlayerItself();
+
+        return owner && botAI->IsOpposing(owner);
+    }
+}
+
+class PvpFindTargetSmartStrategy : public FindTargetStrategy
+{
+public:
+    PvpFindTargetSmartStrategy(PlayerbotAI* botAI)
+        : FindTargetStrategy(botAI), bestScore(std::numeric_limits<int32>::min())
+    {
+    }
+
+    void CheckAttacker(Unit* attacker, ThreatManager*) override { CheckCandidate(attacker, true); }
+
+    void CheckCandidate(Unit* target, bool allowNpcCombatTarget = false)
+    {
+        Player* bot = botAI->GetBot();
+        if (!target || !target->IsAlive() || target == bot)
+            return;
+
+        if (!target->IsInWorld() || target->GetMapId() != bot->GetMapId() || bot->IsFriendlyTo(target) ||
+            !bot->IsValidAttackTarget(target) || !bot->IsWithinLOSInMap(target) || IsBreakableCrowdControlled(target))
+            return;
+
+        if (Group* group = bot->GetGroup())
+        {
+            ObjectGuid guid = group->GetTargetIcon(4);
+            if (guid && target->GetGUID() == guid)
+                return;
+        }
+
+        bool const isHighPriority = IsHighPriority(target);
+        bool const isEnemyPlayerUnit = IsEnemyPlayerOrOwnedUnit(botAI, target);
+        bool const isNpcCombatTarget =
+            allowNpcCombatTarget && !isEnemyPlayerUnit && (target->GetVictim() == bot || IsAttackingFriendlyHealer(botAI, target));
+        if (!isEnemyPlayerUnit && !isHighPriority && !isNpcCombatTarget)
+            return;
+
+        int32 score = 0;
+        Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        Player* playerTarget = target->ToPlayer();
+        bool const isEnemyHealer = playerTarget && botAI->IsHeal(playerTarget);
+        bool const isCastingHeal = IsCastingHelpfulSpell(target);
+        bool const isProtectingHealer = IsAttackingFriendlyHealer(botAI, target);
+        float const distance = ServerFacade::instance().GetDistance2d(bot, target);
+        float const attackRange =
+            botAI->IsRanged(bot) ? sPlayerbotAIConfig.spellDistance : sPlayerbotAIConfig.meleeDistance + 5.0f;
+
+        if (isHighPriority)
+            score += 100000;
+
+        if (isEnemyPlayerUnit)
+            score += 220;
+
+        if (isEnemyHealer)
+            score += 520;
+
+        if (isCastingHeal)
+            score += 480;
+
+        if (isProtectingHealer)
+            score += 420;
+
+        if (target->GetVictim() == bot)
+            score += botAI->IsHeal(bot) ? 260 : 120;
+
+        float const healthPct = target->GetHealthPct();
+        if (healthPct < 20.0f)
+            score += 360;
+        else if (healthPct < 35.0f)
+            score += 240;
+        else if (healthPct < 50.0f)
+            score += 120;
+
+        if (target == currentTarget)
+            score += 220;
+
+        if (bot->GetVictim() == target)
+            score += 80;
+
+        if (distance <= attackRange)
+            score += 140;
+        else
+            score -= static_cast<int32>(std::min(distance, 80.0f));
+
+        if (!result || score > bestScore)
+        {
+            result = target;
+            bestScore = score;
+        }
+    }
+
+private:
+    int32 bestScore;
+};
 
 class FindMaxThreatGapTargetStrategy : public FindTargetStrategy
 {
@@ -274,6 +428,43 @@ Unit* DpsTargetValue::Calculate()
     Unit* rti = RtiTargetValue::Calculate();
     if (rti)
         return rti;
+
+    if (IsPvpTargetingContext(bot))
+    {
+        PvpFindTargetSmartStrategy strategy(botAI);
+        std::unordered_set<ObjectGuid> checked;
+
+        auto checkGuid = [&](ObjectGuid const& guid)
+        {
+            if (!guid || checked.find(guid) != checked.end())
+                return;
+
+            checked.insert(guid);
+            strategy.CheckCandidate(botAI->GetUnit(guid));
+        };
+
+        if (Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
+            checkGuid(currentTarget->GetGUID());
+
+        GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        for (ObjectGuid const& guid : attackers)
+            checkGuid(guid);
+
+        if (Unit* enemyPlayer = botAI->GetAiObjectContext()->GetValue<Unit*>("enemy player target")->Get())
+            checkGuid(enemyPlayer->GetGUID());
+
+        GuidVector possibleTargets = botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets")->Get();
+        uint8 scanned = 0;
+        for (ObjectGuid const& guid : possibleTargets)
+        {
+            checkGuid(guid);
+            if (++scanned >= 32)
+                break;
+        }
+
+        if (Unit* target = strategy.GetResult())
+            return target;
+    }
 
     float dps = AI_VALUE(float, "estimated group dps");
 

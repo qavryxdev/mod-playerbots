@@ -74,6 +74,82 @@ namespace
     {
         return bot && (bot->HasUnitState(UNIT_STATE_LOST_CONTROL) || bot->IsPolymorphed() || bot->HasConfuseAura());
     }
+
+    SpellInfo const* GetCurrentInterruptCandidate(Unit* target)
+    {
+        if (!target)
+            return nullptr;
+
+        Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        if (spell && spell->m_spellInfo)
+            return spell->m_spellInfo;
+
+        spell = target->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+        return spell ? spell->m_spellInfo : nullptr;
+    }
+
+    bool HasPvPControlEffect(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return false;
+
+        if (spellInfo->GetSpellSpecific() == SPELL_SPECIFIC_MAGE_POLYMORPH ||
+            spellInfo->GetSpellSpecific() == SPELL_SPECIFIC_CHARM)
+            return true;
+
+        for (uint8 i = EFFECT_0; i <= EFFECT_2; ++i)
+        {
+            if (spellInfo->Effects[i].Effect != SPELL_EFFECT_APPLY_AURA)
+                continue;
+
+            switch (spellInfo->Effects[i].ApplyAuraName)
+            {
+                case SPELL_AURA_MOD_CHARM:
+                case SPELL_AURA_MOD_CONFUSE:
+                case SPELL_AURA_MOD_FEAR:
+                case SPELL_AURA_MOD_PACIFY:
+                case SPELL_AURA_MOD_PACIFY_SILENCE:
+                case SPELL_AURA_MOD_POSSESS:
+                case SPELL_AURA_MOD_ROOT:
+                case SPELL_AURA_MOD_SILENCE:
+                case SPELL_AURA_MOD_STUN:
+                    return true;
+                default:
+                    break;
+            }
+        }
+
+        return false;
+    }
+
+    bool IsWorthInterruptingPvpSpell(PlayerbotAI* botAI, Unit* target, SpellInfo const* spellInfo)
+    {
+        if (!botAI || !target || !spellInfo)
+            return false;
+
+        Player* bot = botAI->GetBot();
+        if (!bot || !target->IsPlayer() || !(bot->InBattleground() || bot->InArena() || bot->duel))
+            return true;
+
+        if (spellInfo->IsPositive() || PlayerbotAI::IsHealingSpell(spellInfo->SpellFamilyName, spellInfo->SpellFamilyFlags))
+            return true;
+
+        if (HasPvPControlEffect(spellInfo))
+            return true;
+
+        Unit* victim = target->GetVictim();
+        Player* playerVictim = victim ? victim->ToPlayer() : nullptr;
+        if (playerVictim && !botAI->IsOpposing(playerVictim))
+        {
+            if (botAI->IsHeal(playerVictim))
+                return true;
+
+            if (spellInfo->IsChanneled() || spellInfo->CalcCastTime(target) >= 1500)
+                return true;
+        }
+
+        return false;
+    }
 }
 
 std::vector<std::string> PlayerbotAI::dispel_whitelist = {
@@ -5379,6 +5455,10 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string const sp
 
     uint32 spellid = aiObjectContext->GetValue<uint32>("spell id", spell)->Get();
     if (!spellid || !target->IsNonMeleeSpellCast(true))
+        return false;
+
+    SpellInfo const* targetSpellInfo = GetCurrentInterruptCandidate(target);
+    if (!targetSpellInfo || !IsWorthInterruptingPvpSpell(this, target, targetSpellInfo))
         return false;
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellid);
