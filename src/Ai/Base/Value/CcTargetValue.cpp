@@ -7,9 +7,11 @@
 
 #include "Action.h"
 #include "AiObjectContext.h"
+#include "Battleground.h"
 #include "Group.h"
 #include "ObjectGuid.h"
 #include "PlayerbotAI.h"
+#include "PositionValue.h"
 #include "ServerFacade.h"
 #include "Spell.h"
 #include "SpellMgr.h"
@@ -98,11 +100,13 @@ namespace
             return false;
 
         Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (spell && spell->m_spellInfo && spell->m_spellInfo->IsPositive())
+        if (spell && spell->m_spellInfo && (spell->m_spellInfo->IsPositive() ||
+            PlayerbotAI::IsHealingSpell(spell->m_spellInfo->SpellFamilyName, spell->m_spellInfo->SpellFamilyFlags)))
             return true;
 
         spell = target->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
-        return spell && spell->m_spellInfo && spell->m_spellInfo->IsPositive();
+        return spell && spell->m_spellInfo && (spell->m_spellInfo->IsPositive() ||
+            PlayerbotAI::IsHealingSpell(spell->m_spellInfo->SpellFamilyName, spell->m_spellInfo->SpellFamilyFlags));
     }
 
     bool HasPeriodicDamage(Unit* target)
@@ -158,6 +162,70 @@ namespace
         Player* player = target ? target->ToPlayer() : nullptr;
         return botAI && player && player->getClass() == CLASS_DRUID && player->GetShapeshiftForm() == FORM_TREE &&
                botAI->IsHeal(player);
+    }
+
+    bool GetActiveAVObjective(PlayerbotAI* botAI, Player* bot, PositionInfo& objective)
+    {
+        if (!botAI || !bot)
+            return false;
+
+        Battleground* bg = bot->GetBattleground();
+        if (!bg)
+            return false;
+
+        BattlegroundTypeId bgType = bg->GetBgTypeID();
+        if (bgType == BATTLEGROUND_RB)
+            bgType = bg->GetBgTypeID(true);
+
+        if (bgType != BATTLEGROUND_AV)
+            return false;
+
+        PositionMap& positions = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get();
+        auto const itr = positions.find("bg objective");
+        if (itr == positions.end() || !itr->second.valueSet)
+            return false;
+
+        objective = itr->second;
+        return true;
+    }
+
+    bool IsNearObjective(Unit* unit, PositionInfo const& objective, float radius)
+    {
+        if (!unit || !objective.valueSet)
+            return false;
+
+        float const dx = unit->GetPositionX() - objective.x;
+        float const dy = unit->GetPositionY() - objective.y;
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    bool IsAttackingFriendlyHealer(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* victim = target && target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
+        return victim && !botAI->IsOpposing(victim) && botAI->IsHeal(victim);
+    }
+
+    bool CanFreeCcDuringAVObjective(PlayerbotAI* botAI, Unit* target, bool threatTarget)
+    {
+        if (threatTarget)
+            return true;
+
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        PositionInfo objective;
+        if (!GetActiveAVObjective(botAI, bot, objective))
+            return true;
+
+        if (!target)
+            return false;
+
+        if (target->GetVictim() == bot || IsAttackingFriendlyHealer(botAI, target))
+            return true;
+
+        float const distanceToBot = ServerFacade::instance().GetDistance2d(bot, target);
+        if (distanceToBot <= 18.0f)
+            return true;
+
+        return IsNearObjective(bot, objective, 60.0f) && IsNearObjective(target, objective, 38.0f);
     }
 }
 
@@ -270,13 +338,16 @@ public:
 public:
     void CheckAttacker(Unit* creature, ThreatManager* /*threatMgr*/) override
     {
-        CheckCandidate(creature);
+        CheckCandidate(creature, true);
     }
 
-    void CheckCandidate(Unit* creature)
+    void CheckCandidate(Unit* creature, bool threatTarget = false)
     {
         Player* bot = botAI->GetBot();
         if (!creature || !creature->IsAlive() || creature == bot)
+            return;
+
+        if (!CanFreeCcDuringAVObjective(botAI, creature, threatTarget))
             return;
 
         if (!botAI->CanCastSpell(spell, creature))
@@ -401,24 +472,24 @@ Unit* CcTargetValue::Calculate()
     FindTargetForCcStrategy strategy(botAI, qualifier);
     std::unordered_set<ObjectGuid> checked;
 
-    auto checkGuid = [&](ObjectGuid const& guid)
+    auto checkGuid = [&](ObjectGuid const& guid, bool threatTarget = false)
     {
         if (!guid || checked.find(guid) != checked.end())
             return;
 
         checked.insert(guid);
-        strategy.CheckCandidate(botAI->GetUnit(guid));
+        strategy.CheckCandidate(botAI->GetUnit(guid), threatTarget);
     };
 
     if (Unit* rtiTarget = *botAI->GetAiObjectContext()->GetValue<Unit*>("rti cc target"))
-        checkGuid(rtiTarget->GetGUID());
+        checkGuid(rtiTarget->GetGUID(), true);
 
     if (Unit* healer = botAI->GetAiObjectContext()->GetValue<Unit*>("enemy healer target", qualifier)->Get())
         checkGuid(healer->GetGUID());
 
     GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
     for (ObjectGuid const& guid : attackers)
-        checkGuid(guid);
+        checkGuid(guid, true);
 
     Player* bot = botAI->GetBot();
     if (bot->InBattleground() || bot->InArena() || bot->duel)

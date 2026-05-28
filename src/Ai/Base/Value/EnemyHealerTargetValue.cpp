@@ -5,8 +5,10 @@
 
 #include "EnemyHealerTargetValue.h"
 
+#include "Battleground.h"
 #include "ObjectGuid.h"
 #include "Playerbots.h"
+#include "PositionValue.h"
 #include "ServerFacade.h"
 #include "Spell.h"
 
@@ -32,6 +34,70 @@ namespace
 
         return nullptr;
     }
+
+    bool GetActiveAVObjective(PlayerbotAI* botAI, Player* bot, PositionInfo& objective)
+    {
+        if (!botAI || !bot)
+            return false;
+
+        Battleground* bg = bot->GetBattleground();
+        if (!bg)
+            return false;
+
+        BattlegroundTypeId bgType = bg->GetBgTypeID();
+        if (bgType == BATTLEGROUND_RB)
+            bgType = bg->GetBgTypeID(true);
+
+        if (bgType != BATTLEGROUND_AV)
+            return false;
+
+        PositionMap& positions = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get();
+        auto const itr = positions.find("bg objective");
+        if (itr == positions.end() || !itr->second.valueSet)
+            return false;
+
+        objective = itr->second;
+        return true;
+    }
+
+    bool IsNearObjective(Unit* unit, PositionInfo const& objective, float radius)
+    {
+        if (!unit || !objective.valueSet)
+            return false;
+
+        float const dx = unit->GetPositionX() - objective.x;
+        float const dy = unit->GetPositionY() - objective.y;
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    bool IsAttackingFriendlyHealer(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* victim = target && target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
+        return victim && !botAI->IsOpposing(victim) && botAI->IsHeal(victim);
+    }
+
+    bool CanScanPvpHealerDuringAVObjective(PlayerbotAI* botAI, Unit* target, bool threatTarget)
+    {
+        if (threatTarget)
+            return true;
+
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        PositionInfo objective;
+        if (!GetActiveAVObjective(botAI, bot, objective))
+            return true;
+
+        if (!target)
+            return false;
+
+        if (target->GetVictim() == bot || IsAttackingFriendlyHealer(botAI, target))
+            return true;
+
+        float const distanceToBot = ServerFacade::instance().GetDistance2d(bot, target);
+        if (distanceToBot <= 18.0f)
+            return true;
+
+        return IsNearObjective(bot, objective, 60.0f) && IsNearObjective(target, objective, 38.0f);
+    }
 }
 
 Unit* EnemyHealerTargetValue::Calculate()
@@ -42,7 +108,7 @@ Unit* EnemyHealerTargetValue::Calculate()
     int32 bestScore = std::numeric_limits<int32>::min();
     std::unordered_set<ObjectGuid> checked;
 
-    auto checkGuid = [&](ObjectGuid const& guid)
+    auto checkGuid = [&](ObjectGuid const& guid, bool threatTarget)
     {
         if (!guid || checked.find(guid) != checked.end())
             return;
@@ -53,6 +119,9 @@ Unit* EnemyHealerTargetValue::Calculate()
             return;
 
         if (ServerFacade::instance().GetDistance2d(bot, unit) > botAI->GetRange("spell"))
+            return;
+
+        if (!CanScanPvpHealerDuringAVObjective(botAI, unit, threatTarget))
             return;
 
         if (!botAI->IsInterruptableSpellCasting(unit, spell))
@@ -85,7 +154,7 @@ Unit* EnemyHealerTargetValue::Calculate()
 
     GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
     for (ObjectGuid const guid : attackers)
-        checkGuid(guid);
+        checkGuid(guid, true);
 
     if (bot->InBattleground() || bot->InArena() || bot->duel)
     {
@@ -93,7 +162,7 @@ Unit* EnemyHealerTargetValue::Calculate()
         uint8 scanned = 0;
         for (ObjectGuid const guid : possibleTargets)
         {
-            checkGuid(guid);
+            checkGuid(guid, false);
             if (++scanned >= 32)
                 break;
         }
