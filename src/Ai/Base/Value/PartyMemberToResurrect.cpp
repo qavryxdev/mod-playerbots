@@ -33,6 +33,7 @@ public:
     {
         Player* player = unit->ToPlayer();
         return player && !player->isResurrectRequested() && player->getDeathState() == DeathState::Corpse &&
+               !player->HasPlayerFlag(PLAYER_FLAGS_GHOST) &&
                !value->IsTargetOfSpellCast(player, predicate);
     }
 

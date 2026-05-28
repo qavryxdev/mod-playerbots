@@ -65,6 +65,13 @@ namespace
 
         return false;
     }
+
+    bool IsValidResurrectTarget(Unit* target)
+    {
+        Player* player = target ? target->ToPlayer() : nullptr;
+        return player && player->IsInWorld() && !player->IsAlive() && !player->isResurrectRequested() &&
+               player->getDeathState() == DeathState::Corpse && !player->HasPlayerFlag(PLAYER_FLAGS_GHOST);
+    }
 }
 
 CastSpellAction::CastSpellAction(PlayerbotAI* botAI, std::string const spell)
@@ -380,6 +387,16 @@ CastBuffSpellAction::CastBuffSpellAction(PlayerbotAI* botAI, std::string const s
 Value<Unit*>* CastSpellOnEnemyHealerAction::GetTargetValue()
 {
     return context->GetValue<Unit*>("enemy healer target", spell);
+}
+
+bool ResurrectPartyMemberAction::isPossible()
+{
+    return IsValidResurrectTarget(GetTarget()) && CastSpellAction::isPossible();
+}
+
+bool ResurrectPartyMemberAction::isUseful()
+{
+    return IsValidResurrectTarget(GetTarget()) && CastSpellAction::isUseful();
 }
 
 Value<Unit*>* CastSnareSpellAction::GetTargetValue() { return context->GetValue<Unit*>("snare target", spell); }
