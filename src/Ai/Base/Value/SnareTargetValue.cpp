@@ -6,10 +6,12 @@
 #include "SnareTargetValue.h"
 
 #include "AiObjectContext.h"
+#include "ObjectGuid.h"
 #include "PlayerbotAI.h"
 #include "ServerFacade.h"
 
 #include <limits>
+#include <unordered_set>
 
 namespace
 {
@@ -24,24 +26,30 @@ Unit* SnareTargetValue::Calculate()
 {
     std::string const spell = qualifier;
 
-    GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
     Unit* result = nullptr;
     int32 bestScore = std::numeric_limits<int32>::min();
+    std::unordered_set<ObjectGuid> checked;
 
-    for (ObjectGuid const guid : attackers)
+    auto checkGuid = [&](ObjectGuid const guid)
     {
+        if (!guid || checked.find(guid) != checked.end())
+            return;
+
+        checked.insert(guid);
         Unit* unit = botAI->GetUnit(guid);
         if (!unit)
-            continue;
+            return;
 
         if (bot->GetDistance(unit) > botAI->GetRange("spell"))
-            continue;
+            return;
 
         if (botAI->HasAura(spell, unit, false, true))
-            continue;
+            return;
 
         Unit* chaseTarget;
         int32 score = 0;
+        bool const peelsFriendlyHealer = IsFriendlyHealerVictim(botAI, unit);
+        bool const peelsSelf = unit->GetVictim() == bot || unit->GetTarget() == bot->GetGUID();
         switch (unit->GetMotionMaster()->GetCurrentMovementGeneratorType())
         {
             case FLEEING_MOTION_TYPE:
@@ -51,7 +59,7 @@ Unit* SnareTargetValue::Calculate()
             {
                 chaseTarget = ServerFacade::instance().GetChaseTarget(unit);
                 if (!chaseTarget)
-                    continue;
+                    return;
                 Player* chaseTargetPlayer = ObjectAccessor::FindPlayer(chaseTarget->GetGUID());
                 // check if need to snare
                 bool shouldSnare = true;
@@ -67,7 +75,7 @@ Unit* SnareTargetValue::Calculate()
                     shouldSnare = false;
 
                 if (!chaseTargetPlayer || !shouldSnare || botAI->IsTank(chaseTargetPlayer))
-                    continue;
+                    return;
 
                 score += 180;
                 if (botAI->IsHeal(chaseTargetPlayer))
@@ -77,7 +85,11 @@ Unit* SnareTargetValue::Calculate()
                 break;
             }
             default:
-                continue;
+                if (!unit->isMoving() || unit->HasAuraType(SPELL_AURA_MOD_ROOT) || (!peelsFriendlyHealer && !peelsSelf))
+                    return;
+
+                score += peelsFriendlyHealer ? 360 : 120;
+                break;
         }
 
         if (unit->IsPlayer())
@@ -95,6 +107,25 @@ Unit* SnareTargetValue::Calculate()
         {
             result = unit;
             bestScore = score;
+        }
+    };
+
+    GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+    for (ObjectGuid const guid : attackers)
+        checkGuid(guid);
+
+    if (bot->InBattleground() || bot->InArena() || bot->duel)
+    {
+        GuidVector possibleTargets = botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets")->Get();
+        uint8 scanned = 0;
+        for (ObjectGuid const guid : possibleTargets)
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            if (unit && (unit->GetVictim() == bot || IsFriendlyHealerVictim(botAI, unit)))
+                checkGuid(guid);
+
+            if (++scanned >= 32)
+                break;
         }
     }
 

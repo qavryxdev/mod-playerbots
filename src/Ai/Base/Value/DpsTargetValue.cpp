@@ -177,9 +177,19 @@ public:
         float const distance = ServerFacade::instance().GetDistance2d(bot, target);
         float const attackRange =
             botAI->IsRanged(bot) ? sPlayerbotAIConfig.spellDistance : sPlayerbotAIConfig.meleeDistance + 5.0f;
+        PositionInfo activeObjective;
+        bool const hasActiveObjective = GetActiveAVObjective(botAI, bot, activeObjective);
+        bool const targetOnObjective = hasActiveObjective && IsNearObjective(target, activeObjective, 16.0f);
 
         if (isHighPriority)
             score += 100000;
+
+        if (targetOnObjective)
+        {
+            score += 720;
+            if (target->IsNonMeleeSpellCast(true))
+                score += 520;
+        }
 
         if (isEnemyPlayerUnit)
             score += 220;
@@ -209,6 +219,17 @@ public:
 
         if (bot->GetVictim() == target)
             score += 80;
+
+        uint32 tankCount = 0;
+        uint32 dpsCount = 0;
+        GetPlayerCount(target, &tankCount, &dpsCount);
+        uint32 const friendlyPressure = tankCount + dpsCount;
+        if (friendlyPressure >= 3)
+            score += 320;
+        else if (friendlyPressure == 2)
+            score += 220;
+        else if (friendlyPressure == 1)
+            score += 90;
 
         if (distance <= attackRange)
             score += 140;

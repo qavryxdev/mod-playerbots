@@ -24,6 +24,49 @@
 using ai::buff::MakeAuraQualifierForBuff;
 using ai::spell::HasSpellOrCategoryCooldown;
 
+namespace
+{
+    constexpr uint32 SPELL_PVP_TRINKET = 42292;
+
+    bool HasHardCrowdControl(Player* bot)
+    {
+        return bot && (
+            bot->HasAuraType(SPELL_AURA_MOD_STUN) ||
+            bot->HasAuraType(SPELL_AURA_MOD_FEAR) ||
+            bot->HasAuraType(SPELL_AURA_MOD_CONFUSE) ||
+            bot->HasAuraType(SPELL_AURA_MOD_CHARM) ||
+            bot->HasAuraType(SPELL_AURA_AOE_CHARM) ||
+            bot->HasAuraWithMechanic(1 << MECHANIC_SLEEP) ||
+            bot->HasAuraWithMechanic(1 << MECHANIC_SAPPED));
+    }
+
+    bool HasMovementControl(Player* bot)
+    {
+        return bot && (bot->HasAuraType(SPELL_AURA_MOD_ROOT) || bot->isFrozen());
+    }
+
+    bool ShouldUsePvpCcBreakTrinket(PlayerbotAI* botAI, Player* bot)
+    {
+        if (!botAI || !bot)
+            return false;
+
+        bool const pvpContext = bot->InBattleground() || bot->InArena() || bot->duel;
+        if (!pvpContext)
+            return false;
+
+        GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        bool const pressured = !attackers.empty() || bot->GetHealthPct() < 60.0f;
+
+        if (HasHardCrowdControl(bot))
+            return pressured || botAI->IsHeal(bot) || bot->GetHealthPct() < 85.0f;
+
+        if (HasMovementControl(bot))
+            return pressured && (botAI->IsHeal(bot) || bot->GetHealthPct() < 55.0f || attackers.size() >= 2);
+
+        return false;
+    }
+}
+
 CastSpellAction::CastSpellAction(PlayerbotAI* botAI, std::string const spell)
     : Action(botAI, spell), range(botAI->GetRange("spell")), spell(spell)
 {
@@ -472,7 +515,19 @@ bool UseTrinketAction::UseTrinket(Item* item)
             spellId = item->GetTemplate()->Spells[i].SpellId;
             const SpellInfo* spellInfo = sSpellMgr->GetSpellInfo(spellId);
 
-            if (!spellInfo || !spellInfo->IsPositive())
+            if (!spellInfo)
+                return false;
+
+            bool const isPvpCcBreak = spellId == SPELL_PVP_TRINKET;
+            if (isPvpCcBreak)
+            {
+                if (!ShouldUsePvpCcBreakTrinket(botAI, bot))
+                    return false;
+
+                break;
+            }
+
+            if (!spellInfo->IsPositive())
                 return false;
 
             bool applyAura = false;

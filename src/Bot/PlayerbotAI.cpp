@@ -75,17 +75,16 @@ namespace
         return bot && (bot->HasUnitState(UNIT_STATE_LOST_CONTROL) || bot->IsPolymorphed() || bot->HasConfuseAura());
     }
 
-    SpellInfo const* GetCurrentInterruptCandidate(Unit* target)
+    Spell* GetCurrentInterruptCandidateSpell(Unit* target)
     {
         if (!target)
             return nullptr;
 
         Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL);
         if (spell && spell->m_spellInfo)
-            return spell->m_spellInfo;
+            return spell;
 
-        spell = target->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
-        return spell ? spell->m_spellInfo : nullptr;
+        return target->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
     }
 
     bool HasPvPControlEffect(SpellInfo const* spellInfo)
@@ -122,6 +121,50 @@ namespace
         return false;
     }
 
+    bool IsPriorityPvpDispelAura(PlayerbotAI* botAI, Unit* target, bool isFriend, SpellInfo const* spellInfo)
+    {
+        if (!botAI || !target || !spellInfo)
+            return false;
+
+        if (isFriend)
+        {
+            if (HasPvPControlEffect(spellInfo))
+                return true;
+
+            Player* player = target->ToPlayer();
+            if (player && botAI->IsHeal(player) && target->GetHealthPct() < 80.0f)
+                return true;
+
+            return target->GetHealthPct() < 45.0f;
+        }
+
+        for (uint8 i = EFFECT_0; i <= EFFECT_2; ++i)
+        {
+            if (spellInfo->Effects[i].Effect != SPELL_EFFECT_APPLY_AURA)
+                continue;
+
+            switch (spellInfo->Effects[i].ApplyAuraName)
+            {
+                case SPELL_AURA_SCHOOL_ABSORB:
+                case SPELL_AURA_SCHOOL_IMMUNITY:
+                case SPELL_AURA_PERIODIC_HEAL:
+                case SPELL_AURA_MOD_INCREASE_HEALTH:
+                case SPELL_AURA_MOD_INCREASE_HEALTH_PERCENT:
+                case SPELL_AURA_MOD_DAMAGE_DONE:
+                case SPELL_AURA_MOD_HEALING:
+                case SPELL_AURA_MOD_HEALING_PCT:
+                case SPELL_AURA_MOD_HEALING_DONE:
+                case SPELL_AURA_MOD_HEALING_DONE_PERCENT:
+                    return true;
+                default:
+                    break;
+            }
+        }
+
+        Player* player = target->ToPlayer();
+        return player && botAI->IsHeal(player);
+    }
+
     bool IsWorthInterruptingPvpSpell(PlayerbotAI* botAI, Unit* target, SpellInfo const* spellInfo)
     {
         if (!botAI || !target || !spellInfo)
@@ -149,6 +192,52 @@ namespace
         }
 
         return false;
+    }
+
+    bool IsUrgentPvpInterrupt(PlayerbotAI* botAI, Unit* target, SpellInfo const* spellInfo)
+    {
+        if (!botAI || !target || !spellInfo)
+            return false;
+
+        if (spellInfo->IsPositive() || PlayerbotAI::IsHealingSpell(spellInfo->SpellFamilyName, spellInfo->SpellFamilyFlags))
+            return true;
+
+        if (HasPvPControlEffect(spellInfo))
+            return true;
+
+        Unit* victim = target->GetVictim();
+        Player* playerVictim = victim ? victim->ToPlayer() : nullptr;
+        return playerVictim && !botAI->IsOpposing(playerVictim) &&
+               (botAI->IsHeal(playerVictim) || playerVictim->GetHealthPct() < 55.0f);
+    }
+
+    bool ShouldInterruptPvpSpellNow(PlayerbotAI* botAI, Unit* target, Spell* spell, SpellInfo const* spellInfo)
+    {
+        if (!botAI || !target || !spell || !spellInfo)
+            return false;
+
+        Player* bot = botAI->GetBot();
+        if (!bot || !target->IsPlayer() || !(bot->InBattleground() || bot->InArena() || bot->duel))
+            return true;
+
+        if (spellInfo->IsChanneled())
+            return true;
+
+        int32 const castTime = spellInfo->CalcCastTime(target);
+        int32 const remaining = spell->GetCastTimeRemaining();
+        if (castTime <= 1000 || remaining <= 0)
+            return true;
+
+        bool const urgent = IsUrgentPvpInterrupt(botAI, target, spellInfo);
+        if (urgent && bot->GetHealthPct() < 45.0f)
+            return true;
+
+        Unit* victim = target->GetVictim();
+        if (urgent && victim && victim->ToPlayer() && !botAI->IsOpposing(victim->ToPlayer()) && victim->GetHealthPct() < 45.0f)
+            return true;
+
+        int32 const threshold = urgent ? (castTime * 75 / 100) : (castTime * 50 / 100);
+        return remaining <= threshold;
     }
 }
 
@@ -5457,8 +5546,10 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string const sp
     if (!spellid || !target->IsNonMeleeSpellCast(true))
         return false;
 
-    SpellInfo const* targetSpellInfo = GetCurrentInterruptCandidate(target);
-    if (!targetSpellInfo || !IsWorthInterruptingPvpSpell(this, target, targetSpellInfo))
+    Spell* targetSpell = GetCurrentInterruptCandidateSpell(target);
+    SpellInfo const* targetSpellInfo = targetSpell ? targetSpell->m_spellInfo : nullptr;
+    if (!targetSpellInfo || !IsWorthInterruptingPvpSpell(this, target, targetSpellInfo) ||
+        !ShouldInterruptPvpSpellNow(this, target, targetSpell, targetSpellInfo))
         return false;
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellid);
@@ -5492,6 +5583,9 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
         return false;
 
     bool isFriend = bot->IsFriendlyTo(target);
+    bool const pvpContext = bot->InBattleground() || bot->InArena() || bot->duel;
+    bool lowPriorityFallback = false;
+    Unit* currentTarget = pvpContext ? aiObjectContext->GetValue<Unit*>("current target")->Get() : nullptr;
 
     Unit::VisibleAuraMap const* visibleAuras = target->GetVisibleAuras();
     if (!visibleAuras)
@@ -5522,10 +5616,16 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
             continue;
 
         if (canDispel(spellInfo, dispelType))
-            return true;
+        {
+            if (!pvpContext || IsPriorityPvpDispelAura(this, target, isFriend, spellInfo))
+                return true;
+
+            lowPriorityFallback = lowPriorityFallback || (!isFriend && target == currentTarget) ||
+                                  (isFriend && target->GetHealthPct() < 70.0f);
+        }
     }
 
-    return false;
+    return lowPriorityFallback;
 }
 
 #ifndef WIN32
