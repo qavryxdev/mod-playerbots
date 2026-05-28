@@ -3746,6 +3746,22 @@ static bool AllianceAVPositionIsSnowfallRespawn(PositionInfo const& pos)
            (pos.x <= -120.0f && pos.x >= -190.0f && pos.y >= -10.0f && pos.y <= 65.0f && pos.z >= 60.0f);
 }
 
+static bool AllianceAVPositionIsIcewingBunkerRidge(PositionInfo const& pos)
+{
+    if (!pos.valueSet)
+        return false;
+
+    return pos.x >= 170.0f && pos.x <= 235.0f && pos.y >= -395.0f && pos.y <= -335.0f && pos.z >= 38.0f;
+}
+
+static bool AllianceAVPositionIsStonehearthGraveObjective(Battleground* bg, PositionInfo const& pos)
+{
+    return AllianceAVPositionNearBGObject(bg, pos, BG_AV_OBJECT_FLAG_A_STONEHEART_GRAVE, 95.0f) ||
+           AllianceAVPositionNearBGObject(bg, pos, BG_AV_OBJECT_FLAG_H_STONEHEART_GRAVE, 95.0f) ||
+           AllianceAVPositionNearBGObject(bg, pos, BG_AV_OBJECT_FLAG_C_A_STONEHEART_GRAVE, 95.0f) ||
+           AllianceAVPositionNearBGObject(bg, pos, BG_AV_OBJECT_FLAG_C_H_STONEHEART_GRAVE, 95.0f);
+}
+
 static bool AVPositionIsSnowfallUpperPlateau(PositionInfo const& pos)
 {
     if (!pos.valueSet)
@@ -8258,6 +8274,15 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         }
 
         PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+        if (bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVPositionIsIcewingBunkerRidge(botPos) &&
+            AllianceAVPositionIsStonehearthGraveObjective(bg, pos))
+        {
+            Position const icewingRoadExit(195.369f, -407.750f, 42.876f);
+            if (!AllianceAVPositionIsNearPosition(botPos, icewingRoadExit, 8.0f))
+                return MoveTo(bot->GetMapId(), icewingRoadExit.GetPositionX(), icewingRoadExit.GetPositionY(),
+                              icewingRoadExit.GetPositionZ(), false, false, false, true);
+        }
+
         bool const snowfallExitApproach =
             AllianceAVPositionIsSnowfallRespawn(botPos) ||
             (botPos.x <= -150.0f && botPos.x >= -215.0f &&
