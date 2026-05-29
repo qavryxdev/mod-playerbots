@@ -178,6 +178,7 @@ class CastFearOnCcAction : public CastCrowdControlSpellAction
 public:
     CastFearOnCcAction(PlayerbotAI* botAI) : CastCrowdControlSpellAction(botAI, "fear") {}
     bool isPossible() override;
+    bool isUseful() override;
 };
 
 class CastWarlockDeathCoilAction : public CastSpellAction

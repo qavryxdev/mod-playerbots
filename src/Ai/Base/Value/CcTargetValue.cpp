@@ -266,6 +266,27 @@ namespace ai::cc
         return false;
     }
 
+    bool HasSpellRankFromCaster(Unit* target, ObjectGuid const& casterGuid, SpellInfo const* expectedSpellInfo)
+    {
+        if (!target || !casterGuid || !expectedSpellInfo)
+            return false;
+
+        Unit::AuraApplicationMap const& auras = target->GetAppliedAuras();
+        for (Unit::AuraApplicationMap::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
+        {
+            AuraApplication const* aurApp = itr->second;
+            Aura const* aura = aurApp ? aurApp->GetBase() : nullptr;
+            if (!aura || aura->IsRemoved() || aura->GetCasterGUID() != casterGuid)
+                continue;
+
+            SpellInfo const* spellInfo = aura->GetSpellInfo();
+            if (spellInfo && spellInfo->IsRankOf(expectedSpellInfo))
+                return true;
+        }
+
+        return false;
+    }
+
     Unit* GetActivePolymorphTarget(PlayerbotAI* botAI)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
@@ -290,6 +311,50 @@ namespace ai::cc
 
         if (Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
             if (HasPolymorphFromCaster(currentTarget, casterGuid))
+                return currentTarget;
+
+        GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        for (ObjectGuid const& guid : attackers)
+            if (Unit* unit = checkGuid(guid))
+                return unit;
+
+        GuidVector possibleTargets = botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets")->Get();
+        for (ObjectGuid const& guid : possibleTargets)
+            if (Unit* unit = checkGuid(guid))
+                return unit;
+
+        return nullptr;
+    }
+
+    Unit* GetActiveFearTarget(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot)
+            return nullptr;
+
+        uint32 const fearSpellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", "fear")->Get();
+        SpellInfo const* fearSpellInfo = fearSpellId ? sSpellMgr->GetSpellInfo(fearSpellId) : nullptr;
+        if (!fearSpellInfo)
+            return nullptr;
+
+        ObjectGuid const casterGuid = bot->GetGUID();
+        std::unordered_set<ObjectGuid> checked;
+
+        auto checkGuid = [&](ObjectGuid const& guid) -> Unit*
+        {
+            if (!guid || checked.find(guid) != checked.end())
+                return nullptr;
+
+            checked.insert(guid);
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsInWorld() || !unit->IsAlive() || unit->GetMapId() != bot->GetMapId())
+                return nullptr;
+
+            return HasSpellRankFromCaster(unit, casterGuid, fearSpellInfo) ? unit : nullptr;
+        };
+
+        if (Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
+            if (HasSpellRankFromCaster(currentTarget, casterGuid, fearSpellInfo))
                 return currentTarget;
 
         GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
@@ -535,6 +600,9 @@ private:
 Unit* CcTargetValue::Calculate()
 {
     if (qualifier == "polymorph" && ai::cc::GetActivePolymorphTarget(botAI))
+        return nullptr;
+
+    if (qualifier == "fear" && ai::cc::GetActiveFearTarget(botAI))
         return nullptr;
 
     FindTargetForCcStrategy strategy(botAI, qualifier);

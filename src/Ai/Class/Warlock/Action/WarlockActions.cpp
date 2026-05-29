@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include "CcTargetValue.h"
 #include "Event.h"
 #include "Item.h"
 #include "ObjectGuid.h"
@@ -50,6 +51,9 @@ bool CastBanishOnCcAction::isPossible()
 // Checks if the target marked with the moon icon can be feared
 bool CastFearOnCcAction::isPossible()
 {
+    if (ai::cc::GetActiveFearTarget(botAI))
+        return false;
+
     Unit* target = GetTarget();
     if (!target)
         return false;
@@ -61,6 +65,14 @@ bool CastFearOnCcAction::isPossible()
 
     // Use base class to check spell available, range, etc
     return CastCrowdControlSpellAction::isPossible();
+}
+
+bool CastFearOnCcAction::isUseful()
+{
+    if (ai::cc::GetActiveFearTarget(botAI))
+        return false;
+
+    return CastCrowdControlSpellAction::isUseful();
 }
 
 // Checks if the enemies are close enough to use Shadowflame

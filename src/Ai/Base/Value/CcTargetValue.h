@@ -24,6 +24,7 @@ namespace ai::cc
 {
     bool HasActiveCrowdControl(Unit* target);
     Unit* GetActivePolymorphTarget(PlayerbotAI* botAI);
+    Unit* GetActiveFearTarget(PlayerbotAI* botAI);
     bool IsGoodPolymorphTarget(PlayerbotAI* botAI, Unit* target);
     bool IsDiminishingBlocked(PlayerbotAI* botAI, Unit* target, std::string const& spell);
     int32 GetDiminishingPenalty(PlayerbotAI* botAI, Unit* target, std::string const& spell);
