@@ -15,6 +15,7 @@
 #include "ServerFacade.h"
 #include "Spell.h"
 #include "SpellMgr.h"
+#include "SpellAuras.h"
 #include "SpellAuraDefines.h"
 #include "Timer.h"
 #include "UnitDefines.h"
@@ -244,6 +245,66 @@ namespace ai::cc
             target->HasAuraType(SPELL_AURA_MOD_STUN));
     }
 
+    bool HasPolymorphFromCaster(Unit* target, ObjectGuid const& casterGuid)
+    {
+        if (!target || !casterGuid)
+            return false;
+
+        Unit::AuraApplicationMap const& auras = target->GetAppliedAuras();
+        for (Unit::AuraApplicationMap::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
+        {
+            AuraApplication const* aurApp = itr->second;
+            Aura const* aura = aurApp ? aurApp->GetBase() : nullptr;
+            if (!aura || aura->IsRemoved() || aura->GetCasterGUID() != casterGuid)
+                continue;
+
+            SpellInfo const* spellInfo = aura->GetSpellInfo();
+            if (spellInfo && spellInfo->GetSpellSpecific() == SPELL_SPECIFIC_MAGE_POLYMORPH)
+                return true;
+        }
+
+        return false;
+    }
+
+    Unit* GetActivePolymorphTarget(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot)
+            return nullptr;
+
+        ObjectGuid const casterGuid = bot->GetGUID();
+        std::unordered_set<ObjectGuid> checked;
+
+        auto checkGuid = [&](ObjectGuid const& guid) -> Unit*
+        {
+            if (!guid || checked.find(guid) != checked.end())
+                return nullptr;
+
+            checked.insert(guid);
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsInWorld() || !unit->IsAlive() || unit->GetMapId() != bot->GetMapId())
+                return nullptr;
+
+            return HasPolymorphFromCaster(unit, casterGuid) ? unit : nullptr;
+        };
+
+        if (Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
+            if (HasPolymorphFromCaster(currentTarget, casterGuid))
+                return currentTarget;
+
+        GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        for (ObjectGuid const& guid : attackers)
+            if (Unit* unit = checkGuid(guid))
+                return unit;
+
+        GuidVector possibleTargets = botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets")->Get();
+        for (ObjectGuid const& guid : possibleTargets)
+            if (Unit* unit = checkGuid(guid))
+                return unit;
+
+        return nullptr;
+    }
+
     bool IsGoodPolymorphTarget(PlayerbotAI* botAI, Unit* target)
     {
         if (!botAI || !target || !target->IsAlive())
@@ -252,6 +313,10 @@ namespace ai::cc
         Player* bot = botAI->GetBot();
         if (!bot || target == bot)
             return false;
+
+        if (Unit* activePolymorph = GetActivePolymorphTarget(botAI))
+            if (activePolymorph != target)
+                return false;
 
         Unit* currentTarget = *botAI->GetAiObjectContext()->GetValue<Unit*>("current target");
         if (target == currentTarget || bot->GetVictim() == target)
@@ -469,6 +534,9 @@ private:
 
 Unit* CcTargetValue::Calculate()
 {
+    if (qualifier == "polymorph" && ai::cc::GetActivePolymorphTarget(botAI))
+        return nullptr;
+
     FindTargetForCcStrategy strategy(botAI, qualifier);
     std::unordered_set<ObjectGuid> checked;
 

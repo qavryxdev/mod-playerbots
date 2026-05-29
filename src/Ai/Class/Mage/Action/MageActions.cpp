@@ -16,12 +16,18 @@ Value<Unit*>* CastPolymorphAction::GetTargetValue() { return context->GetValue<U
 
 bool CastPolymorphAction::isPossible()
 {
+    if (ai::cc::GetActivePolymorphTarget(botAI))
+        return false;
+
     Unit* target = GetTarget();
     return ai::cc::IsGoodPolymorphTarget(botAI, target) && CastCrowdControlSpellAction::isPossible();
 }
 
 bool CastPolymorphAction::isUseful()
 {
+    if (ai::cc::GetActivePolymorphTarget(botAI))
+        return false;
+
     Unit* target = GetTarget();
     return ai::cc::IsGoodPolymorphTarget(botAI, target) && CastCrowdControlSpellAction::isUseful();
 }
