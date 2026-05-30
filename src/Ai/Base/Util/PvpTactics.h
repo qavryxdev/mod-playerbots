@@ -26,6 +26,12 @@ namespace ai::pvp
     bool IsAttackingFriendlyHealer(PlayerbotAI* botAI, Unit* target);
     bool IsObjectiveRelevantEnemy(PlayerbotAI* botAI, Unit* target, bool threatTarget = false,
                                   float botObjectiveRadius = 60.0f, float targetObjectiveRadius = 38.0f);
+    bool HasActiveBattlegroundCaptureObjective(PlayerbotAI* botAI);
+    bool IsSelfDefenseTarget(Player* bot, Unit* target);
+    bool HasSelfDefenseAttacker(Player* bot);
+    bool IsCaptureObjectiveThreat(PlayerbotAI* botAI, Unit* target);
+    bool HasCaptureObjectiveThreat(PlayerbotAI* botAI);
+    bool CanEngageDuringBattlegroundCapture(PlayerbotAI* botAI, Unit* target);
 
     bool IsBreakableCrowdControlled(Unit* target);
     bool CanDamageTarget(PlayerbotAI* botAI, Unit* target, bool areaDamage = false);

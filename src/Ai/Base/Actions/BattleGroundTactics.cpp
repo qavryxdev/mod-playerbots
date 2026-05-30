@@ -39,6 +39,7 @@
 #include "Playerbots.h"
 #include "PositionValue.h"
 #include "PvpTriggers.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "Vehicle.h"
 
@@ -6049,8 +6050,20 @@ bool BGTactics::Execute(Event /*event*/)
         bool inCombat = bot->GetVehicle() ? (bool)AI_VALUE(Unit*, "enemy player target") : bot->IsInCombat();
         if (inCombat && !PlayerHasFlag::IsCapturingFlag(bot) && !ignoreIcebloodAssaultCombat)
         {
-            // bot->GetMotionMaster()->MovementExpired();
-            return false;
+            if (ai::pvp::HasActiveBattlegroundCaptureObjective(botAI) && !ai::pvp::HasSelfDefenseAttacker(bot) &&
+                !ai::pvp::HasCaptureObjectiveThreat(botAI))
+            {
+                context->GetValue<Unit*>("current target")->Set(nullptr);
+                bot->AttackStop();
+                bot->SetTarget(ObjectGuid::Empty);
+                bot->SetSelection(ObjectGuid());
+                botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+            }
+            else
+            {
+                // bot->GetMotionMaster()->MovementExpired();
+                return false;
+            }
         }
 
         if (!moveToObjective(false))
@@ -8483,36 +8496,48 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
     bool inCombat = bot->GetVehicle() ? (bool)AI_VALUE(Unit*, "enemy player target") : bot->IsInCombat();
     if (inCombat && !PlayerHasFlag::IsCapturingFlag(bot))
     {
-        Battleground* bg = bot->GetBattleground();
-        BattlegroundTypeId bgType = bg ? bg->GetBgTypeID() : BATTLEGROUND_TYPE_NONE;
-        if (bgType == BATTLEGROUND_RB && bg)
-            bgType = bg->GetBgTypeID(true);
-
-        if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        if (ai::pvp::HasActiveBattlegroundCaptureObjective(botAI) && !ai::pvp::HasSelfDefenseAttacker(bot) &&
+            !ai::pvp::HasCaptureObjectiveThreat(botAI))
         {
-            Unit* currentTarget = context->GetValue<Unit*>("current target")->Get();
-            Unit* enemyTarget = AI_VALUE(Unit*, "enemy player target");
-            if (AllianceAVShouldBreakIcebloodAssaultCombatLeash(bot, bg, currentTarget, enemyTarget))
-            {
-                context->GetValue<Unit*>("current target")->Set(nullptr);
-                if (bot->GetVictim() || currentTarget || enemyTarget)
-                {
-                    bot->AttackStop();
-                    bot->SetTarget(ObjectGuid::Empty);
-                    bot->SetSelection(ObjectGuid());
-                    botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
-                }
-            }
-            else
-                return false;
+            context->GetValue<Unit*>("current target")->Set(nullptr);
+            bot->AttackStop();
+            bot->SetTarget(ObjectGuid::Empty);
+            bot->SetSelection(ObjectGuid());
+            botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
         }
-        else if (bgType == BATTLEGROUND_AV)
-            return false;
-
-        if (bgType != BATTLEGROUND_AV)
+        else
         {
-            resetObjective();
-            return false;
+            Battleground* bg = bot->GetBattleground();
+            BattlegroundTypeId bgType = bg ? bg->GetBgTypeID() : BATTLEGROUND_TYPE_NONE;
+            if (bgType == BATTLEGROUND_RB && bg)
+                bgType = bg->GetBgTypeID(true);
+
+            if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+            {
+                Unit* currentTarget = context->GetValue<Unit*>("current target")->Get();
+                Unit* enemyTarget = AI_VALUE(Unit*, "enemy player target");
+                if (AllianceAVShouldBreakIcebloodAssaultCombatLeash(bot, bg, currentTarget, enemyTarget))
+                {
+                    context->GetValue<Unit*>("current target")->Set(nullptr);
+                    if (bot->GetVictim() || currentTarget || enemyTarget)
+                    {
+                        bot->AttackStop();
+                        bot->SetTarget(ObjectGuid::Empty);
+                        bot->SetSelection(ObjectGuid());
+                        botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+                    }
+                }
+                else
+                    return false;
+            }
+            else if (bgType == BATTLEGROUND_AV)
+                return false;
+
+            if (bgType != BATTLEGROUND_AV)
+            {
+                resetObjective();
+                return false;
+            }
         }
     }
 
@@ -8702,6 +8727,8 @@ bool BGTactics::startNewPathFree(std::vector<BattleBotPath*> const& vPaths)
  */
 bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<uint32> const& vFlagIds)
 {
+    (void)vPaths;
+
     // Basic sanity checks
     Battleground* bg = bot->GetBattleground();
     if (!bg)
@@ -8861,20 +8888,19 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
                             targetFlag->GetPositionZ(), 1.5f);
     }
 
-    // If we found a valid flag/base to interact with
+    // If we found a valid flag/base to interact with, only self-defense may interrupt capture duty.
     if (bgType != BATTLEGROUND_WS && bgType != BATTLEGROUND_AV)
     {
         if (targetFlag)
         {
-            // Check for enemy players near the flag using bot's targeting system
             Unit* enemyPlayer = AI_VALUE(Unit*, "enemy player target");
-            if (enemyPlayer && enemyPlayer->IsAlive())
+            if (enemyPlayer && enemyPlayer->IsAlive() &&
+                (ai::pvp::IsSelfDefenseTarget(bot, enemyPlayer) ||
+                 ai::pvp::IsCaptureObjectiveThreat(botAI, enemyPlayer)))
             {
-                // If enemy is near the flag, engage them before attempting capture
                 float enemyDist = enemyPlayer->GetDistance(targetFlag);
                 if (enemyDist < flagRange * 2.0f)
                 {
-                    // Set enemy as current target and let combat AI handle it
                     context->GetValue<Unit*>("current target")->Set(enemyPlayer);
                     return false;
                 }
@@ -8907,7 +8933,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             }
         }
 
-        // If friendlies are capturing, stay to defend but don't capture
+        // If friendlies are capturing, stay on the objective instead of switching to free PvP.
         if (numCapturing > 0 && capturingPlayer && bot->GetGUID() != capturingPlayer->GetGUID())
         {
             // Move away if too close to avoid crowding
@@ -8919,10 +8945,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
                 MoveTo(bot->GetMapId(), x, y, bot->GetPositionZ());
             }
 
-            // Reset objective and take new path for defending
-            resetObjective();
-            if (!startNewPathBegin(vPaths))
-                moveToObjective(true);
+            botAI->SetNextCheckDelay(250);
             return true;
         }
     }

@@ -10,6 +10,7 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "Spell.h"
 #include "SpellAuraDefines.h"
@@ -149,6 +150,9 @@ public:
 
         if (!target->IsInWorld() || target->GetMapId() != bot->GetMapId() || bot->IsFriendlyTo(target) ||
             !bot->IsValidAttackTarget(target) || !bot->IsWithinLOSInMap(target) || IsBreakableCrowdControlled(target))
+            return;
+
+        if (!ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target))
             return;
 
         if (!CanFreeTargetDuringAVObjective(botAI, target, allowNpcCombatTarget))
@@ -519,13 +523,13 @@ Unit* DpsTargetValue::Calculate()
         PvpFindTargetSmartStrategy strategy(botAI);
         std::unordered_set<ObjectGuid> checked;
 
-        auto checkGuid = [&](ObjectGuid const& guid)
+        auto checkGuid = [&](ObjectGuid const& guid, bool threatTarget = false)
         {
             if (!guid || checked.find(guid) != checked.end())
                 return;
 
             checked.insert(guid);
-            strategy.CheckCandidate(botAI->GetUnit(guid));
+            strategy.CheckCandidate(botAI->GetUnit(guid), threatTarget);
         };
 
         if (Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
@@ -533,7 +537,7 @@ Unit* DpsTargetValue::Calculate()
 
         GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
         for (ObjectGuid const& guid : attackers)
-            checkGuid(guid);
+            checkGuid(guid, true);
 
         if (Unit* enemyPlayer = botAI->GetAiObjectContext()->GetValue<Unit*>("enemy player target")->Get())
             checkGuid(enemyPlayer->GetGUID());

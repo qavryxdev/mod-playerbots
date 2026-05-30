@@ -10,6 +10,7 @@
 #include "LootObjectStack.h"
 #include "NewRpgStrategy.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "RtiTargetValue.h"
 #include "PossibleRpgTargetsValue.h"
 #include "PvpTriggers.h"
@@ -18,6 +19,10 @@
 bool AttackEnemyPlayerAction::isUseful()
 {
     if (PlayerHasFlag::IsCapturingFlag(bot))
+        return false;
+
+    if (ai::pvp::HasActiveBattlegroundCaptureObjective(botAI) && !ai::pvp::HasSelfDefenseAttacker(bot) &&
+        !ai::pvp::HasCaptureObjectiveThreat(botAI))
         return false;
 
     return !sPlayerbotAIConfig.IsPvpProhibited(bot->GetZoneId(), bot->GetAreaId());
@@ -140,6 +145,10 @@ bool AttackAnythingAction::isPossible() { return GetTarget() && AttackAction::is
 bool DpsAssistAction::isUseful()
 {
     if (PlayerHasFlag::IsCapturingFlag(bot))
+        return false;
+
+    if (ai::pvp::HasActiveBattlegroundCaptureObjective(botAI) && !ai::pvp::HasSelfDefenseAttacker(bot) &&
+        !ai::pvp::HasCaptureObjectiveThreat(botAI))
         return false;
 
     return true;

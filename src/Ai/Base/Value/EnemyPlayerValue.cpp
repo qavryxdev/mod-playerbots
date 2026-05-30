@@ -65,6 +65,9 @@ Unit* EnemyPlayerValue::Calculate()
             !AttackersValue::IsPossibleTarget(pTarget, bot))
             continue;
 
+        if (!ai::pvp::CanEngageDuringBattlegroundCapture(botAI, pTarget))
+            continue;
+
         if ((bot->GetTeamId() == TEAM_HORDE && pTarget->HasAura(23333)) ||
             (bot->GetTeamId() == TEAM_ALLIANCE && pTarget->HasAura(23335)))
             return pTarget;
@@ -99,6 +102,9 @@ Unit* EnemyPlayerValue::Calculate()
             continue;
 
         if (!AttackersValue::IsPossibleTarget(pTarget, bot))
+            continue;
+
+        if (!ai::pvp::CanEngageDuringBattlegroundCapture(botAI, pTarget))
             continue;
 
         if (bot->GetTeamId() == TEAM_HORDE)
@@ -144,6 +150,7 @@ Unit* EnemyPlayerValue::Calculate()
                     if (pAttacker->IsPlayer() && bot->IsWithinDist(pAttacker, maxAggroDistance * 2.0f) &&
                         bot->IsWithinLOSInMap(pAttacker) && pAttacker != pVictim && pAttacker->CanSeeOrDetect(bot) &&
                         AttackersValue::IsPossibleTarget(pAttacker, bot) &&
+                        ai::pvp::CanEngageDuringBattlegroundCapture(botAI, pAttacker) &&
                         ai::pvp::IsObjectiveRelevantEnemy(botAI, pAttacker, true))
                         return pAttacker;
             }

@@ -9,6 +9,7 @@
 #include "ObjectGuid.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "Spell.h"
 
@@ -119,6 +120,9 @@ Unit* EnemyHealerTargetValue::Calculate()
             return;
 
         if (ServerFacade::instance().GetDistance2d(bot, unit) > botAI->GetRange("spell"))
+            return;
+
+        if (!ai::pvp::CanEngageDuringBattlegroundCapture(botAI, unit))
             return;
 
         if (!CanScanPvpHealerDuringAVObjective(botAI, unit, threatTarget))

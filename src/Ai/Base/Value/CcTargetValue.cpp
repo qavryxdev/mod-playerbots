@@ -12,6 +12,7 @@
 #include "ObjectGuid.h"
 #include "PlayerbotAI.h"
 #include "PositionValue.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "Spell.h"
 #include "SpellMgr.h"
@@ -475,6 +476,9 @@ public:
     {
         Player* bot = botAI->GetBot();
         if (!creature || !creature->IsAlive() || creature == bot)
+            return;
+
+        if (!ai::pvp::CanEngageDuringBattlegroundCapture(botAI, creature))
             return;
 
         if (!CanFreeCcDuringAVObjective(botAI, creature, threatTarget))

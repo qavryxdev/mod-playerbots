@@ -7,6 +7,12 @@
 
 #include "AiObjectContext.h"
 #include "Battleground.h"
+#include "BattlegroundAB.h"
+#include "BattlegroundAV.h"
+#include "BattlegroundEY.h"
+#include "BattlegroundIC.h"
+#include "BattlegroundWS.h"
+#include "GameObject.h"
 #include "Group.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
@@ -20,6 +26,7 @@
 #include "Unit.h"
 
 #include <algorithm>
+#include <iterator>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -27,6 +34,7 @@
 namespace
 {
     constexpr uint32 InterruptReservationPruneMs = 3000;
+    constexpr uint32 CaptureBannerSpellId = 21651;
 
     struct InterruptReservationKey
     {
@@ -193,6 +201,235 @@ namespace
     {
         return bot && target && target->IsInWorld() && target->IsAlive() && target->GetMapId() == bot->GetMapId();
     }
+
+    BattlegroundTypeId GetRealBattlegroundType(Battleground* bg)
+    {
+        if (!bg)
+            return BATTLEGROUND_TYPE_NONE;
+
+        BattlegroundTypeId bgType = bg->GetBgTypeID();
+        return bgType == BATTLEGROUND_RB ? bg->GetBgTypeID(true) : bgType;
+    }
+
+    bool GetActiveBattlegroundObjective(PlayerbotAI* botAI, Player* bot, PositionInfo& objective)
+    {
+        if (!botAI || !bot || !bot->InBattleground())
+            return false;
+
+        PositionMap& positions = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get();
+        auto const itr = positions.find("bg objective");
+        if (itr == positions.end() || !itr->second.valueSet)
+            return false;
+
+        objective = itr->second;
+        return true;
+    }
+
+    bool IsPositionNear2d(PositionInfo const& position, float x, float y, float radius)
+    {
+        if (!position.valueSet)
+            return false;
+
+        float const dx = position.x - x;
+        float const dy = position.y - y;
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    bool IsObjectiveNearBgObject(Battleground* bg, PositionInfo const& objective, uint32 objectType, float radius)
+    {
+        GameObject* go = bg ? bg->GetBGObject(objectType) : nullptr;
+        return go && IsPositionNear2d(objective, go->GetPositionX(), go->GetPositionY(), radius);
+    }
+
+    bool IsObjectiveNearAnyBgObject(Battleground* bg, PositionInfo const& objective, uint32 const* objectTypes,
+                                    size_t objectTypeCount, float radius)
+    {
+        for (size_t i = 0; i < objectTypeCount; ++i)
+            if (IsObjectiveNearBgObject(bg, objective, objectTypes[i], radius))
+                return true;
+
+        return false;
+    }
+
+    bool IsObjectiveNearArathiNode(PositionInfo const& objective)
+    {
+        for (uint8 i = 0; i < BG_AB_DYNAMIC_NODES_COUNT; ++i)
+            if (IsPositionNear2d(objective, BG_AB_NodePositions[i][0], BG_AB_NodePositions[i][1], 32.0f))
+                return true;
+
+        return false;
+    }
+
+    bool IsObjectiveNearEyeNode(PositionInfo const& objective)
+    {
+        for (uint8 i = 0; i < EY_POINTS_MAX; ++i)
+            if (IsPositionNear2d(objective, BG_EY_TriggerPositions[i][0], BG_EY_TriggerPositions[i][1], 40.0f))
+                return true;
+
+        return false;
+    }
+
+    bool HasCaptureBannerCast(Player* bot)
+    {
+        if (!bot)
+            return false;
+
+        for (uint8 type = CURRENT_MELEE_SPELL; type <= CURRENT_CHANNELED_SPELL; ++type)
+        {
+            if (Spell* spell = bot->GetCurrentSpell(static_cast<CurrentSpellTypes>(type)))
+                if (spell->m_spellInfo && spell->m_spellInfo->Id == CaptureBannerSpellId)
+                    return true;
+        }
+
+        return false;
+    }
+
+    GameObject* GetCaptureBannerTarget(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        for (uint8 type = CURRENT_MELEE_SPELL; type <= CURRENT_CHANNELED_SPELL; ++type)
+        {
+            if (Spell* spell = unit->GetCurrentSpell(static_cast<CurrentSpellTypes>(type)))
+            {
+                if (spell->m_spellInfo && spell->m_spellInfo->Id == CaptureBannerSpellId)
+                    return spell->m_targets.GetGOTarget();
+            }
+        }
+
+        return nullptr;
+    }
+
+    bool IsCarryingBattlegroundFlag(Player* bot)
+    {
+        return bot && (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
+                       bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL));
+    }
+
+    bool IsAlteracCaptureObjective(Battleground* bg, PositionInfo const& objective)
+    {
+        static uint32 const avCaptureObjects[] =
+        {
+            BG_AV_OBJECT_FLAG_A_FIRSTAID_STATION,
+            BG_AV_OBJECT_FLAG_A_STORMPIKE_GRAVE,
+            BG_AV_OBJECT_FLAG_A_STONEHEART_GRAVE,
+            BG_AV_OBJECT_FLAG_A_SNOWFALL_GRAVE,
+            BG_AV_OBJECT_FLAG_A_ICEBLOOD_GRAVE,
+            BG_AV_OBJECT_FLAG_A_FROSTWOLF_GRAVE,
+            BG_AV_OBJECT_FLAG_A_FROSTWOLF_HUT,
+            BG_AV_OBJECT_FLAG_A_DUNBALDAR_SOUTH,
+            BG_AV_OBJECT_FLAG_A_DUNBALDAR_NORTH,
+            BG_AV_OBJECT_FLAG_A_ICEWING_BUNKER,
+            BG_AV_OBJECT_FLAG_A_STONEHEART_BUNKER,
+            BG_AV_OBJECT_FLAG_C_A_FIRSTAID_STATION,
+            BG_AV_OBJECT_FLAG_C_A_STORMPIKE_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_STONEHEART_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_SNOWFALL_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_ICEBLOOD_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_HUT,
+            BG_AV_OBJECT_FLAG_C_A_ICEBLOOD_TOWER,
+            BG_AV_OBJECT_FLAG_C_A_TOWER_POINT,
+            BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_ETOWER,
+            BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_WTOWER,
+            BG_AV_OBJECT_FLAG_C_H_FIRSTAID_STATION,
+            BG_AV_OBJECT_FLAG_C_H_STORMPIKE_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_STONEHEART_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_SNOWFALL_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_ICEBLOOD_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_HUT,
+            BG_AV_OBJECT_FLAG_C_H_DUNBALDAR_SOUTH,
+            BG_AV_OBJECT_FLAG_C_H_DUNBALDAR_NORTH,
+            BG_AV_OBJECT_FLAG_C_H_ICEWING_BUNKER,
+            BG_AV_OBJECT_FLAG_C_H_STONEHEART_BUNKER,
+            BG_AV_OBJECT_FLAG_H_FIRSTAID_STATION,
+            BG_AV_OBJECT_FLAG_H_STORMPIKE_GRAVE,
+            BG_AV_OBJECT_FLAG_H_STONEHEART_GRAVE,
+            BG_AV_OBJECT_FLAG_H_SNOWFALL_GRAVE,
+            BG_AV_OBJECT_FLAG_H_ICEBLOOD_GRAVE,
+            BG_AV_OBJECT_FLAG_H_FROSTWOLF_GRAVE,
+            BG_AV_OBJECT_FLAG_H_FROSTWOLF_HUT,
+            BG_AV_OBJECT_FLAG_H_ICEBLOOD_TOWER,
+            BG_AV_OBJECT_FLAG_H_TOWER_POINT,
+            BG_AV_OBJECT_FLAG_H_FROSTWOLF_ETOWER,
+            BG_AV_OBJECT_FLAG_H_FROSTWOLF_WTOWER,
+            BG_AV_OBJECT_FLAG_N_SNOWFALL_GRAVE
+        };
+
+        return IsObjectiveNearAnyBgObject(bg, objective, avCaptureObjects, std::size(avCaptureObjects), 45.0f);
+    }
+
+    bool IsAlteracContestedGraveyardObjective(Battleground* bg, PositionInfo const& objective)
+    {
+        static uint32 const avContestedGraveyardObjects[] =
+        {
+            BG_AV_OBJECT_FLAG_C_A_FIRSTAID_STATION,
+            BG_AV_OBJECT_FLAG_C_A_STORMPIKE_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_STONEHEART_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_SNOWFALL_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_ICEBLOOD_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_GRAVE,
+            BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_HUT,
+            BG_AV_OBJECT_FLAG_C_H_FIRSTAID_STATION,
+            BG_AV_OBJECT_FLAG_C_H_STORMPIKE_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_STONEHEART_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_SNOWFALL_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_ICEBLOOD_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_GRAVE,
+            BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_HUT
+        };
+
+        return IsObjectiveNearAnyBgObject(bg, objective, avContestedGraveyardObjects,
+                                          std::size(avContestedGraveyardObjects), 45.0f);
+    }
+
+    bool IsIsleCaptureObjective(Battleground* bg, PositionInfo const& objective)
+    {
+        static uint32 const icCaptureObjects[] =
+        {
+            BG_IC_GO_ALLIANCE_BANNER,
+            BG_IC_GO_HORDE_BANNER,
+            BG_IC_GO_WORKSHOP_BANNER,
+            BG_IC_GO_DOCKS_BANNER,
+            BG_IC_GO_HANGAR_BANNER,
+            BG_IC_GO_QUARRY_BANNER,
+            BG_IC_GO_REFINERY_BANNER
+        };
+
+        return IsObjectiveNearAnyBgObject(bg, objective, icCaptureObjects, std::size(icCaptureObjects), 45.0f);
+    }
+
+    bool IsEyeCaptureObjective(Battleground* bg, PositionInfo const& objective)
+    {
+        static uint32 const eyCaptureObjects[] =
+        {
+            BG_EY_OBJECT_FLAG_NETHERSTORM,
+            BG_EY_OBJECT_FLAG_FEL_REAVER,
+            BG_EY_OBJECT_FLAG_BLOOD_ELF,
+            BG_EY_OBJECT_FLAG_DRAENEI_RUINS,
+            BG_EY_OBJECT_FLAG_MAGE_TOWER,
+            BG_EY_OBJECT_TOWER_CAP_FEL_REAVER,
+            BG_EY_OBJECT_TOWER_CAP_BLOOD_ELF,
+            BG_EY_OBJECT_TOWER_CAP_DRAENEI_RUINS,
+            BG_EY_OBJECT_TOWER_CAP_MAGE_TOWER
+        };
+
+        return IsObjectiveNearAnyBgObject(bg, objective, eyCaptureObjects, std::size(eyCaptureObjects), 38.0f) ||
+               IsObjectiveNearEyeNode(objective);
+    }
+
+    bool IsWarsongCaptureObjective(Battleground* bg, PositionInfo const& objective)
+    {
+        static uint32 const wsCaptureObjects[] =
+        {
+            BG_WS_OBJECT_A_FLAG,
+            BG_WS_OBJECT_H_FLAG
+        };
+
+        return IsObjectiveNearAnyBgObject(bg, objective, wsCaptureObjects, std::size(wsCaptureObjects), 45.0f);
+    }
 }
 
 namespace ai::pvp
@@ -219,13 +456,7 @@ namespace ai::pvp
         if (!botAI || !bot || !IsInAlteracValley(bot))
             return false;
 
-        PositionMap& positions = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get();
-        auto const itr = positions.find("bg objective");
-        if (itr == positions.end() || !itr->second.valueSet)
-            return false;
-
-        objective = itr->second;
-        return true;
+        return GetActiveBattlegroundObjective(botAI, bot, objective);
     }
 
     bool IsNearObjective(Unit* unit, PositionInfo const& objective, float radius)
@@ -244,11 +475,161 @@ namespace ai::pvp
         return victim && botAI && !botAI->IsOpposing(victim) && botAI->IsHeal(victim);
     }
 
+    bool HasActiveBattlegroundCaptureObjective(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !bot->InBattleground() || bot->InArena())
+            return false;
+
+        if (HasCaptureBannerCast(bot) || IsCarryingBattlegroundFlag(bot))
+            return true;
+
+        Battleground* bg = bot->GetBattleground();
+        BattlegroundTypeId const bgType = GetRealBattlegroundType(bg);
+        PositionInfo objective;
+        if (!GetActiveBattlegroundObjective(botAI, bot, objective))
+            return false;
+
+        switch (bgType)
+        {
+            case BATTLEGROUND_AV:
+                if (IsAlteracContestedGraveyardObjective(bg, objective))
+                    return false;
+
+                return IsAlteracCaptureObjective(bg, objective);
+            case BATTLEGROUND_AB:
+                return IsObjectiveNearArathiNode(objective);
+            case BATTLEGROUND_IC:
+                return IsIsleCaptureObjective(bg, objective);
+            case BATTLEGROUND_EY:
+                return IsEyeCaptureObjective(bg, objective);
+            case BATTLEGROUND_WS:
+                return IsWarsongCaptureObjective(bg, objective);
+            default:
+                return false;
+        }
+    }
+
+    bool IsSelfDefenseTarget(Player* bot, Unit* target)
+    {
+        if (!IsSameMapUnit(bot, target))
+            return false;
+
+        if (target->GetVictim() == bot || target->GetTarget() == bot->GetGUID())
+            return true;
+
+        ObjectGuid const targetGuid = target->GetGUID();
+        Unit::AttackerSet const& attackers = bot->getAttackers();
+        for (Unit* attacker : attackers)
+        {
+            if (!attacker || !attacker->IsAlive())
+                continue;
+
+            if (attacker == target || attacker->GetGUID() == targetGuid)
+                return true;
+
+            Unit* owner = attacker->GetCharmerOrOwner();
+            if (owner && owner->GetGUID() == targetGuid)
+                return true;
+        }
+
+        return false;
+    }
+
+    bool HasSelfDefenseAttacker(Player* bot)
+    {
+        if (!bot || !bot->IsAlive())
+            return false;
+
+        Unit::AttackerSet const& attackers = bot->getAttackers();
+        for (Unit* attacker : attackers)
+            if (IsSelfDefenseTarget(bot, attacker))
+                return true;
+
+        return false;
+    }
+
+    bool IsCaptureObjectiveThreat(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        Player* playerTarget = target ? target->ToPlayer() : nullptr;
+        if (!IsSameMapUnit(bot, target) || !playerTarget || !botAI->IsOpposing(playerTarget))
+            return false;
+
+        PositionInfo objective;
+        if (!GetActiveBattlegroundObjective(botAI, bot, objective))
+            return false;
+
+        GameObject* captureTarget = GetCaptureBannerTarget(target);
+        if (!captureTarget)
+            return false;
+
+        bool const captureTargetMatchesObjective =
+            IsPositionNear2d(objective, captureTarget->GetPositionX(), captureTarget->GetPositionY(), 35.0f);
+        bool const targetIsOnObjective = IsNearObjective(target, objective, 14.0f);
+        bool const botCanInfluenceObjective = IsNearObjective(bot, objective, 70.0f) || bot->IsWithinDist(target, 45.0f);
+
+        return botCanInfluenceObjective && (captureTargetMatchesObjective || targetIsOnObjective);
+    }
+
+    bool HasCaptureObjectiveThreat(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !HasActiveBattlegroundCaptureObjective(botAI))
+            return false;
+
+        std::unordered_set<ObjectGuid> checked;
+        auto checkUnit = [&](Unit* unit) -> bool
+        {
+            if (!unit || !unit->GetGUID() || checked.find(unit->GetGUID()) != checked.end())
+                return false;
+
+            checked.insert(unit->GetGUID());
+            return IsCaptureObjectiveThreat(botAI, unit);
+        };
+
+        if (checkUnit(botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get()))
+            return true;
+
+        if (checkUnit(botAI->GetAiObjectContext()->GetValue<Unit*>("enemy player target")->Get()))
+            return true;
+
+        GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        for (ObjectGuid const& guid : attackers)
+            if (checkUnit(botAI->GetUnit(guid)))
+                return true;
+
+        GuidVector players = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest enemy players")->Get();
+        uint8 scanned = 0;
+        for (ObjectGuid const& guid : players)
+        {
+            if (checkUnit(botAI->GetUnit(guid)))
+                return true;
+
+            if (++scanned >= 24)
+                break;
+        }
+
+        return false;
+    }
+
+    bool CanEngageDuringBattlegroundCapture(PlayerbotAI* botAI, Unit* target)
+    {
+        if (!HasActiveBattlegroundCaptureObjective(botAI))
+            return true;
+
+        return IsSelfDefenseTarget(botAI ? botAI->GetBot() : nullptr, target) ||
+               IsCaptureObjectiveThreat(botAI, target);
+    }
+
     bool IsObjectiveRelevantEnemy(PlayerbotAI* botAI, Unit* target, bool threatTarget, float botObjectiveRadius,
                                   float targetObjectiveRadius)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
         if (!IsSameMapUnit(bot, target))
+            return false;
+
+        if (!CanEngageDuringBattlegroundCapture(botAI, target))
             return false;
 
         if (!IsInAlteracValley(bot))
