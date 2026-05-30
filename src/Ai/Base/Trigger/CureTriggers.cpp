@@ -8,10 +8,17 @@
 #include "Playerbots.h"
 #include "WorldBuffAction.h"
 
+#include <string>
+
 bool NeedCureTrigger::IsActive()
 {
     Unit* target = GetTarget();
     return target && target->IsInWorld() && botAI->HasAuraToDispel(target, dispelType);
+}
+
+Value<Unit*>* TargetAuraDispelTrigger::GetTargetValue()
+{
+    return context->GetValue<Unit*>("offensive dispel target", std::to_string(dispelType));
 }
 
 Value<Unit*>* PartyMemberNeedCureTrigger::GetTargetValue()

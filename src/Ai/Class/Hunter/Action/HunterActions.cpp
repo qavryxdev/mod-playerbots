@@ -9,6 +9,17 @@
 #include "GenericSpellActions.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
+#include "SharedDefines.h"
+
+#include <string>
+
+Unit* CastTranquilizingShotAction::GetTarget()
+{
+    if (Unit* magicTarget = context->GetValue<Unit*>("offensive dispel target", std::to_string(DISPEL_MAGIC))->Get())
+        return magicTarget;
+
+    return context->GetValue<Unit*>("offensive dispel target", std::to_string(DISPEL_ENRAGE))->Get();
+}
 
 bool CastViperStingAction::isUseful()
 {

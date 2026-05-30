@@ -62,6 +62,7 @@
 #include "NearestNonBotPlayersValue.h"
 #include "NearestNpcsValue.h"
 #include "NewPlayerNearbyValue.h"
+#include "OffensiveDispelTargetValue.h"
 #include "OutfitListValue.h"
 #include "PartyMemberToDispel.h"
 #include "PartyMemberToHeal.h"
@@ -152,6 +153,7 @@ public:
         creators["rti cc target"] = &ValueContext::rti_cc_target;
         creators["duel target"] = &ValueContext::duel_target;
         creators["party member to dispel"] = &ValueContext::party_member_to_dispel;
+        creators["offensive dispel target"] = &ValueContext::offensive_dispel_target;
         creators["party member to protect"] = &ValueContext::party_member_to_protect;
         creators["party member snared target"] = &ValueContext::party_member_snared_target;
         creators["health"] = &ValueContext::health;
@@ -453,6 +455,7 @@ private:
     static UntypedValue* party_member_to_heal(PlayerbotAI* botAI) { return new PartyMemberToHeal(botAI); }
     static UntypedValue* party_member_to_resurrect(PlayerbotAI* botAI) { return new PartyMemberToResurrect(botAI); }
     static UntypedValue* party_member_to_dispel(PlayerbotAI* botAI) { return new PartyMemberToDispel(botAI); }
+    static UntypedValue* offensive_dispel_target(PlayerbotAI* botAI) { return new OffensiveDispelTargetValue(botAI); }
     static UntypedValue* party_member_to_protect(PlayerbotAI* botAI) { return new PartyMemberToProtect(botAI); }
     static UntypedValue* party_member_snared_target(PlayerbotAI* botAI) { return new PartyMemberSnaredTargetValue(botAI); }
     static UntypedValue* current_target(PlayerbotAI* botAI) { return new CurrentTargetValue(botAI); }

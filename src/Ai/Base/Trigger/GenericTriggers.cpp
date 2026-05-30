@@ -14,6 +14,7 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
+#include "PvpTactics.h"
 #include "SharedDefines.h"
 #include "TemporarySummon.h"
 #include "ThreatManager.h"
@@ -366,7 +367,7 @@ bool BoostTrigger::IsActive()
         return false;
     Unit* target = AI_VALUE(Unit*, "current target");
     if (target && target->ToPlayer())
-        return true;
+        return ai::pvp::ShouldUseBurstCooldown(botAI, target);
     return AI_VALUE(uint8, "balance") <= balance;
 }
 
@@ -374,7 +375,7 @@ bool GenericBoostTrigger::IsActive()
 {
     Unit* target = AI_VALUE(Unit*, "current target");
     if (target && target->ToPlayer())
-        return true;
+        return ai::pvp::ShouldUseBurstCooldown(botAI, target);
     return AI_VALUE(uint8, "balance") <= balance;
 }
 
@@ -415,7 +416,9 @@ bool ItemCountTrigger::IsActive() { return static_cast<int64>(AI_VALUE2(uint32, 
 
 bool InterruptSpellTrigger::IsActive()
 {
-    return SpellTrigger::IsActive() && botAI->IsInterruptableSpellCasting(GetTarget(), getName());
+    Unit* target = GetTarget();
+    return SpellTrigger::IsActive() && botAI->IsInterruptableSpellCasting(target, getName()) &&
+           ai::pvp::TryReserveInterrupt(botAI, target, getName());
 }
 
 bool DeflectSpellTrigger::IsActive()

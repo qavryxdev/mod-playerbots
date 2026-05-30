@@ -228,6 +228,7 @@ class CastSpellstealAction : public CastSpellAction
 {
 public:
     CastSpellstealAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "spellsteal") {}
+    Value<Unit*>* GetTargetValue() override;
 };
 
 class CastCounterspellAction : public CastSpellAction

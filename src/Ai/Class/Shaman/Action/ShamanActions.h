@@ -172,6 +172,7 @@ class CastPurgeAction : public CastSpellAction
 {
 public:
     CastPurgeAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "purge") {}
+    Value<Unit*>* GetTargetValue() override;
 };
 
 class CastCleanseSpiritAction : public CastCureSpellAction

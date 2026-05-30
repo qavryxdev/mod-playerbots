@@ -57,6 +57,8 @@ void PriestCureStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(
         new TriggerNode("dispel magic", { NextAction("dispel magic", 41.0f) }));
+    triggers.push_back(
+        new TriggerNode("dispel magic on target", { NextAction("dispel magic on target", 40.5f) }));
     triggers.push_back(new TriggerNode("dispel magic on party",
                                        { NextAction("dispel magic on party", 40.0f) }));
     triggers.push_back(

@@ -20,6 +20,7 @@
 #include "Ai/Base/Util/GenericBuffUtils.h"
 #include "CcTargetValue.h"
 #include "PlayerbotAI.h"
+#include "PvpTactics.h"
 
 using ai::buff::MakeAuraQualifierForBuff;
 using ai::spell::HasSpellOrCategoryCooldown;
@@ -149,6 +150,15 @@ bool CastSpellAction::isUseful()
     if (!spellTarget->IsInWorld() || spellTarget->GetMapId() != bot->GetMapId())
         return false;
 
+    if (getThreatType() == ActionThreatType::Aoe && !ai::pvp::CurrentAoeIsSafe(botAI))
+        return false;
+
+    uint32 const spellId = AI_VALUE2(uint32, "spell id", spell);
+    SpellInfo const* spellInfo = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr;
+    if (ai::pvp::SpellCanBreakCrowdControl(spellInfo) &&
+        !ai::pvp::CanDamageTarget(botAI, spellTarget, getThreatType() == ActionThreatType::Aoe))
+        return false;
+
     // float combatReach = bot->GetCombatReach() + target->GetCombatReach();
     // if (!botAI->IsRanged(bot))
     //     combatReach += 4.0f / 3.0f;
@@ -181,8 +191,12 @@ bool CastSpellAction::isPossible()
         return false;
     }
 
+    Unit* target = GetTarget();
+    if (ai::pvp::IsInterruptSpell(spell) && !ai::pvp::TryReserveInterrupt(botAI, target, spell))
+        return false;
+
     // Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL); //not used, line marked for removal.
-    return botAI->CanCastSpell(spell, GetTarget());
+    return botAI->CanCastSpell(spell, target);
 }
 
 CastMeleeSpellAction::CastMeleeSpellAction(PlayerbotAI* botAI, std::string const spell) : CastSpellAction(botAI, spell)
@@ -597,6 +611,10 @@ bool CastDebuffSpellAction::isUseful()
     {
         return false;
     }
+
+    if (!ai::pvp::CanDamageTarget(botAI, target, false))
+        return false;
+
     return CastAuraSpellAction::isUseful() &&
            (target->GetHealth() / AI_VALUE(float, "estimated group dps")) >= needLifeTime;
 }

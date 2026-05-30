@@ -9,6 +9,13 @@
 #include "PlayerbotAI.h"
 #include "Action.h"
 
+#include <string>
+
+Value<Unit*>* CastPurgeAction::GetTargetValue()
+{
+    return context->GetValue<Unit*>("offensive dispel target", std::to_string(DISPEL_MAGIC));
+}
+
 bool CastTotemAction::isUseful()
 {
     return CastBuffSpellAction::isUseful()

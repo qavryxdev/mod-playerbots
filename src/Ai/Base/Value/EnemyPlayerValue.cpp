@@ -8,6 +8,7 @@
 #include "AttackersValue.h"
 #include "CombatManager.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "Vehicle.h"
 
@@ -120,7 +121,8 @@ Unit* EnemyPlayerValue::Calculate()
             continue;
 
         if (bot->IsWithinLOSInMap(pTarget) &&
-            (controllingCannon || (fabs(bot->GetPositionZ() - pTarget->GetPositionZ()) < 30.0f)))
+            (controllingCannon || (fabs(bot->GetPositionZ() - pTarget->GetPositionZ()) < 30.0f)) &&
+            ai::pvp::IsObjectiveRelevantEnemy(botAI, pTarget, false, 65.0f, 45.0f))
             return pTarget;
     }
 
@@ -141,7 +143,8 @@ Unit* EnemyPlayerValue::Calculate()
                 if (Unit* pAttacker = pMember->getAttackerForHelper())
                     if (pAttacker->IsPlayer() && bot->IsWithinDist(pAttacker, maxAggroDistance * 2.0f) &&
                         bot->IsWithinLOSInMap(pAttacker) && pAttacker != pVictim && pAttacker->CanSeeOrDetect(bot) &&
-                        AttackersValue::IsPossibleTarget(pAttacker, bot))
+                        AttackersValue::IsPossibleTarget(pAttacker, bot) &&
+                        ai::pvp::IsObjectiveRelevantEnemy(botAI, pAttacker, true))
                         return pAttacker;
             }
         }

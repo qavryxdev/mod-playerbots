@@ -5,6 +5,7 @@
 
 #include "MageActions.h"
 #include <cmath>
+#include <string>
 #include "CcTargetValue.h"
 #include "UseItemAction.h"
 #include "PlayerbotAIConfig.h"
@@ -13,6 +14,11 @@
 #include "SharedDefines.h"
 
 Value<Unit*>* CastPolymorphAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }
+
+Value<Unit*>* CastSpellstealAction::GetTargetValue()
+{
+    return context->GetValue<Unit*>("offensive dispel target", std::to_string(DISPEL_MAGIC));
+}
 
 bool CastPolymorphAction::isPossible()
 {

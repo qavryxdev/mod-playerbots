@@ -34,7 +34,7 @@ public:
     {
     }
 
-    std::string const GetTargetName() override { return "current target"; }
+    Value<Unit*>* GetTargetValue() override;
 };
 
 class PartyMemberNeedCureTrigger : public NeedCureTrigger

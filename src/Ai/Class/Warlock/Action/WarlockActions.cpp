@@ -15,6 +15,7 @@
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
+#include "SharedDefines.h"
 #include "Unit.h"
 #include "UnitDefines.h"
 #include "Timer.h"
@@ -73,6 +74,11 @@ bool CastFearOnCcAction::isUseful()
         return false;
 
     return CastCrowdControlSpellAction::isUseful();
+}
+
+Value<Unit*>* CastDevourMagicPurgeAction::GetTargetValue()
+{
+    return context->GetValue<Unit*>("offensive dispel target", std::to_string(DISPEL_MAGIC));
 }
 
 // Checks if the enemies are close enough to use Shadowflame

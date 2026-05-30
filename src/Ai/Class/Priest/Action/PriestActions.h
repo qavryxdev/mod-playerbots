@@ -10,6 +10,8 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 
+#include <string>
+
 class PlayerbotAI;
 
 // disc
@@ -21,7 +23,17 @@ BUFF_ACTION(CastPowerWordShieldAction, "power word: shield");
 BUFF_ACTION(CastInnerFireAction, "inner fire");
 CURE_ACTION(CastDispelMagicAction, "dispel magic");
 CURE_PARTY_ACTION(CastDispelMagicOnPartyAction, "dispel magic", DISPEL_MAGIC);
-SPELL_ACTION(CastDispelMagicOnTargetAction, "dispel magic");
+
+class CastDispelMagicOnTargetAction : public CastSpellAction
+{
+public:
+    CastDispelMagicOnTargetAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "dispel magic") {}
+    Value<Unit*>* GetTargetValue() override
+    {
+        return context->GetValue<Unit*>("offensive dispel target", std::to_string(DISPEL_MAGIC));
+    }
+};
+
 CC_ACTION(CastShackleUndeadAction, "shackle undead");
 SPELL_ACTION_U(CastManaBurnAction, "mana burn",
                AI_VALUE2(uint8, "mana", "self target") < 50 && AI_VALUE2(uint8, "mana", "current target") >= 20);

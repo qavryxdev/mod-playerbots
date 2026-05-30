@@ -197,8 +197,7 @@ class CastDevourMagicPurgeAction : public CastSpellAction
 {
 public:
     CastDevourMagicPurgeAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "devour magic") {}
-
-    std::string const GetTargetName() override { return "current target"; }
+    Value<Unit*>* GetTargetValue() override;
 };
 
 class CastDevourMagicCleanseAction : public CastSpellAction

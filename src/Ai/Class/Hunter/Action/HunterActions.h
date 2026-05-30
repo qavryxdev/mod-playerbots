@@ -304,6 +304,7 @@ class CastTranquilizingShotAction : public CastSpellAction
 public:
     CastTranquilizingShotAction(PlayerbotAI* botAI) :
         CastSpellAction(botAI, "tranquilizing shot") {}
+    Unit* GetTarget() override;
 };
 
 class CastViperStingAction : public CastDebuffSpellAction

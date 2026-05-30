@@ -76,6 +76,7 @@ public:
         creators["shadow word: pain on attacker"] = &PriestTriggerFactoryInternal::shadow_word_pain_on_attacker;
         creators["dispel magic"] = &PriestTriggerFactoryInternal::dispel_magic;
         creators["dispel magic on party"] = &PriestTriggerFactoryInternal::dispel_magic_party_member;
+        creators["dispel magic on target"] = &PriestTriggerFactoryInternal::dispel_magic_on_target;
         creators["cure disease"] = &PriestTriggerFactoryInternal::cure_disease;
         creators["party member cure disease"] = &PriestTriggerFactoryInternal::party_member_cure_disease;
         creators["power word: fortitude"] = &PriestTriggerFactoryInternal::power_word_fortitude;
@@ -121,6 +122,7 @@ private:
     }
     static Trigger* dispel_magic(PlayerbotAI* botAI) { return new DispelMagicTrigger(botAI); }
     static Trigger* dispel_magic_party_member(PlayerbotAI* botAI) { return new DispelMagicPartyMemberTrigger(botAI); }
+    static Trigger* dispel_magic_on_target(PlayerbotAI* botAI) { return new DispelMagicOnTargetTrigger(botAI); }
     static Trigger* cure_disease(PlayerbotAI* botAI) { return new CureDiseaseTrigger(botAI); }
     static Trigger* party_member_cure_disease(PlayerbotAI* botAI) { return new PartyMemberCureDiseaseTrigger(botAI); }
     static Trigger* power_word_fortitude(PlayerbotAI* botAI) { return new PowerWordFortitudeTrigger(botAI); }
