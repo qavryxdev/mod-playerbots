@@ -72,6 +72,21 @@ namespace
         return owner && botAI->IsOpposing(owner);
     }
 
+    bool IsAlteracTowerBowman(Unit* target)
+    {
+        if (!target || !target->ToCreature())
+            return false;
+
+        switch (target->GetEntry())
+        {
+            case 13358: // Stormpike Bowman
+            case 13359: // Frostwolf Bowman
+                return true;
+            default:
+                return false;
+        }
+    }
+
     bool GetActiveAVObjective(PlayerbotAI* botAI, Player* bot, PositionInfo& objective)
     {
         if (!botAI || !bot)
@@ -130,6 +145,33 @@ namespace
         // While AV pathing owns the bot, only fight free PvP targets that are on the same objective.
         return IsNearObjective(bot, objective, 60.0f) && IsNearObjective(target, objective, 38.0f);
     }
+
+    bool ShouldKeepCurrentAlteracTowerBowman(PlayerbotAI* botAI, Unit* candidate, Unit* currentTarget)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !candidate || !currentTarget || candidate == currentTarget)
+            return false;
+
+        if (!IsAlteracTowerBowman(candidate) || !IsAlteracTowerBowman(currentTarget))
+            return false;
+
+        if (!currentTarget->IsAlive() || !currentTarget->IsInWorld() || currentTarget->GetMapId() != bot->GetMapId() ||
+            bot->IsFriendlyTo(currentTarget) || !bot->IsValidAttackTarget(currentTarget) ||
+            !bot->IsWithinLOSInMap(currentTarget))
+            return false;
+
+        bool const currentBowmanIsEngaged =
+            currentTarget->GetVictim() == bot || currentTarget->GetTarget() == bot->GetGUID() || bot->GetVictim() == currentTarget;
+        if (!currentBowmanIsEngaged)
+            return false;
+
+        float const candidateDistance = ServerFacade::instance().GetDistance2d(bot, candidate);
+        float const currentDistance = ServerFacade::instance().GetDistance2d(bot, currentTarget);
+        float const stickRange =
+            botAI->IsRanged(bot) ? sPlayerbotAIConfig.spellDistance + 20.0f : sPlayerbotAIConfig.meleeDistance + 12.0f;
+
+        return currentDistance <= stickRange || currentDistance <= candidateDistance + 20.0f;
+    }
 }
 
 class PvpFindTargetSmartStrategy : public FindTargetStrategy
@@ -165,6 +207,10 @@ public:
                 return;
         }
 
+        Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        if (ShouldKeepCurrentAlteracTowerBowman(botAI, target, currentTarget))
+            return;
+
         bool const isHighPriority = IsHighPriority(target);
         bool const isEnemyPlayerUnit = IsEnemyPlayerOrOwnedUnit(botAI, target);
         bool const isNpcCombatTarget =
@@ -173,7 +219,6 @@ public:
             return;
 
         int32 score = 0;
-        Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
         Player* playerTarget = target->ToPlayer();
         bool const isEnemyHealer = playerTarget && botAI->IsHeal(playerTarget);
         bool const isCastingHeal = IsCastingHelpfulSpell(target);
@@ -220,6 +265,9 @@ public:
 
         if (target == currentTarget)
             score += 220;
+
+        if (target == currentTarget && IsAlteracTowerBowman(target))
+            score += 2500;
 
         if (bot->GetVictim() == target)
             score += 80;

@@ -1979,6 +1979,10 @@ static bool AsyncAVAllianceCanReleaseIdleNorthReserve(AsyncAVStrategyResult cons
     if (needsIcebloodMainForce)
         return true;
 
+    if ((mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_SETUP || mode == AV_MODE_DREK_PUSH) &&
+        result.allianceSouth >= 8)
+        return true;
+
     return result.allianceSouth >= 18 &&
            (mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
             mode == AV_MODE_SOUTH_TOWER_SPLIT || mode == AV_MODE_DREK_SETUP ||
@@ -2001,6 +2005,9 @@ static bool AsyncAVAllianceShouldScreenIdleNorthReserve(AsyncAVStrategyResult co
 {
     if (!AsyncAVAllianceNorthIsQuiet(result, threat, rushLevel) || needsIcebloodMainForce ||
         mode == AV_MODE_IBGY_BREAKTHROUGH)
+        return false;
+
+    if (mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_SETUP || mode == AV_MODE_DREK_PUSH)
         return false;
 
     return mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
@@ -3034,6 +3041,10 @@ static bool AllianceAVCanReleaseIdleNorthReserve(BattlegroundAV* av, AllianceAVR
     if (AllianceAVNeedsIcebloodMainForce(av, rushInfo, threat, mode))
         return true;
 
+    if ((mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_SETUP || mode == AV_MODE_DREK_PUSH) &&
+        rushInfo.allianceSouth >= 8)
+        return true;
+
     return rushInfo.allianceSouth >= 18 &&
            (mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
            mode == AV_MODE_SOUTH_TOWER_SPLIT || mode == AV_MODE_DREK_SETUP ||
@@ -3059,6 +3070,9 @@ static bool AllianceAVShouldScreenIdleNorthReserve(BattlegroundAV* av, AllianceA
         return false;
 
     if (mode == AV_MODE_IBGY_BREAKTHROUGH)
+        return false;
+
+    if (mode == AV_MODE_FROSTWOLF_LOCK || mode == AV_MODE_DREK_SETUP || mode == AV_MODE_DREK_PUSH)
         return false;
 
     return mode == AV_MODE_IBGY_PUSH || mode == AV_MODE_IBGY_GUARD ||
