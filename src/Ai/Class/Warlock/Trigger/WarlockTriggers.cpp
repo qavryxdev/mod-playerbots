@@ -35,6 +35,24 @@ uint32 GetSoulstoneCount(Player* bot)
     return count;
 }
 
+namespace
+{
+    bool IsPvpContext(Player* bot)
+    {
+        return bot && (bot->InBattleground() || bot->InArena() || bot->duel || bot->IsPvP() || bot->IsFFAPvP());
+    }
+
+    bool IsEnemyTreeHealerDruid(PlayerbotAI* botAI, Unit* target)
+    {
+        if (!botAI || !target)
+            return false;
+
+        Player* playerTarget = target->ToPlayer();
+        return playerTarget && botAI->IsOpposing(playerTarget) && playerTarget->getClass() == CLASS_DRUID &&
+               playerTarget->GetShapeshiftForm() == FORM_TREE && botAI->IsHeal(playerTarget);
+    }
+}
+
 bool SpellstoneTrigger::IsActive() { return BuffTrigger::IsActive() && AI_VALUE2(uint32, "item count", getName()) > 0; }
 
 bool FirestoneTrigger::IsActive() { return BuffTrigger::IsActive() && AI_VALUE2(uint32, "item count", getName()) > 0; }
@@ -50,12 +68,18 @@ bool TooManySoulShardsTrigger::IsActive() { return GetSoulShardCount(botAI->GetB
 
 bool OutOfSoulstoneTrigger::IsActive() { return GetSoulstoneCount(botAI->GetBot()) == 0; }
 
-// Checks if the target marked with the moon icon can be banished
+// Moon keeps normal PvE banish control; PvP also allows healer druids in Tree of Life.
 bool BanishTrigger::IsActive()
 {
     Unit* ccTarget = context->GetValue<Unit*>("cc target", "banish")->Get();
+    if (!ccTarget || !HasCcTargetTrigger::IsActive())
+        return false;
+
     Unit* moonTarget = context->GetValue<Unit*>("rti cc target")->Get();
-    return ccTarget && moonTarget && ccTarget == moonTarget && HasCcTargetTrigger::IsActive();
+    if (moonTarget && ccTarget == moonTarget)
+        return true;
+
+    return IsPvpContext(bot) && IsEnemyTreeHealerDruid(botAI, ccTarget);
 }
 
 // Checks if the target marked with the moon icon can be feared

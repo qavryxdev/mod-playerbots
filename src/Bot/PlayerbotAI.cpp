@@ -70,9 +70,48 @@ constexpr uint32 SPELL_DK_FROST_PRESENCE = 48263;
 
 namespace
 {
-    bool IsBotPreventedFromCasting(Player* bot)
+    bool IsBotCcBreakSpell(uint32 spellId)
     {
-        return bot && (bot->HasUnitState(UNIT_STATE_LOST_CONTROL) || bot->IsPolymorphed() || bot->HasConfuseAura());
+        switch (spellId)
+        {
+            case 42292:  // PvP Trinket
+            case 59752:  // Every Man for Himself
+            case 65547:  // PvP Trinket variant
+            case 7744:   // Will of the Forsaken
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool IsDruidShapeshiftSpell(uint32 spellId)
+    {
+        switch (spellId)
+        {
+            case 5487:   // Bear Form
+            case 9634:   // Dire Bear Form
+            case 768:    // Cat Form
+            case 783:    // Travel Form
+            case 1066:   // Aquatic Form
+            case 24858:  // Moonkin Form
+            case 33891:  // Tree of Life
+            case 33943:  // Flight Form
+            case 40120:  // Swift Flight Form
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool IsBotAllowedToCastWhileControlled(uint32 spellId)
+    {
+        return IsBotCcBreakSpell(spellId) || IsDruidShapeshiftSpell(spellId);
+    }
+
+    bool IsBotPreventedFromCasting(Player* bot, uint32 spellId = 0)
+    {
+        return bot && !IsBotAllowedToCastWhileControlled(spellId) &&
+               (bot->HasUnitState(UNIT_STATE_LOST_CONTROL) || bot->IsPolymorphed() || bot->HasConfuseAura());
     }
 
     Spell* GetCurrentInterruptCandidateSpell(Unit* target)
@@ -4500,7 +4539,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, bool checkHasSpell,
         return false;
     }
 
-    if (IsBotPreventedFromCasting(bot))
+    if (IsBotPreventedFromCasting(bot, spellid))
     {
         if (!sPlayerbotAIConfig.logInGroupOnly || (bot->GetGroup() && HasRealPlayerMaster()))
         {
@@ -4673,7 +4712,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, GameObject* goTarget, bool checkH
     if (!spellid)
         return false;
 
-    if (IsBotPreventedFromCasting(bot))
+    if (IsBotPreventedFromCasting(bot, spellid))
         return false;
 
     Pet* pet = bot->GetPet();
@@ -4731,7 +4770,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, float x, float y, float z, bool c
     if (!spellid)
         return false;
 
-    if (IsBotPreventedFromCasting(bot))
+    if (IsBotPreventedFromCasting(bot, spellid))
         return false;
 
     Pet* pet = bot->GetPet();
@@ -4797,7 +4836,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     if (!spellId)
         return false;
 
-    if (IsBotPreventedFromCasting(bot))
+    if (IsBotPreventedFromCasting(bot, spellId))
         return false;
 
     if (!target)
@@ -5084,7 +5123,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
     if (!spellId)
         return false;
 
-    if (IsBotPreventedFromCasting(bot))
+    if (IsBotPreventedFromCasting(bot, spellId))
         return false;
 
     Pet* pet = bot->GetPet();
