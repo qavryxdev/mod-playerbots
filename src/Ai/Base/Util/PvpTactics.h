@@ -31,6 +31,7 @@ namespace ai::pvp
     bool HasSelfDefenseAttacker(Player* bot);
     bool IsCaptureObjectiveThreat(PlayerbotAI* botAI, Unit* target);
     bool HasCaptureObjectiveThreat(PlayerbotAI* botAI);
+    bool ShouldPrioritizeBattlegroundCapture(PlayerbotAI* botAI);
     bool CanEngageDuringBattlegroundCapture(PlayerbotAI* botAI, Unit* target);
 
     bool IsBreakableCrowdControlled(Unit* target);

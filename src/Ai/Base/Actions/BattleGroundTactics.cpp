@@ -6064,8 +6064,7 @@ bool BGTactics::Execute(Event /*event*/)
         bool inCombat = bot->GetVehicle() ? (bool)AI_VALUE(Unit*, "enemy player target") : bot->IsInCombat();
         if (inCombat && !PlayerHasFlag::IsCapturingFlag(bot) && !ignoreIcebloodAssaultCombat)
         {
-            if (ai::pvp::HasActiveBattlegroundCaptureObjective(botAI) && !ai::pvp::HasSelfDefenseAttacker(bot) &&
-                !ai::pvp::HasCaptureObjectiveThreat(botAI))
+            if (ai::pvp::ShouldPrioritizeBattlegroundCapture(botAI))
             {
                 context->GetValue<Unit*>("current target")->Set(nullptr);
                 bot->AttackStop();
@@ -8510,8 +8509,7 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
     bool inCombat = bot->GetVehicle() ? (bool)AI_VALUE(Unit*, "enemy player target") : bot->IsInCombat();
     if (inCombat && !PlayerHasFlag::IsCapturingFlag(bot))
     {
-        if (ai::pvp::HasActiveBattlegroundCaptureObjective(botAI) && !ai::pvp::HasSelfDefenseAttacker(bot) &&
-            !ai::pvp::HasCaptureObjectiveThreat(botAI))
+        if (ai::pvp::ShouldPrioritizeBattlegroundCapture(botAI))
         {
             context->GetValue<Unit*>("current target")->Set(nullptr);
             bot->AttackStop();

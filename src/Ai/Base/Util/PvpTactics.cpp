@@ -307,7 +307,7 @@ namespace
                        bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL));
     }
 
-    bool IsAlteracCaptureObjective(Battleground* bg, PositionInfo const& objective)
+    uint32 const* GetAlteracCaptureObjectIds(size_t& objectCount)
     {
         static uint32 const avCaptureObjects[] =
         {
@@ -358,31 +358,142 @@ namespace
             BG_AV_OBJECT_FLAG_N_SNOWFALL_GRAVE
         };
 
-        return IsObjectiveNearAnyBgObject(bg, objective, avCaptureObjects, std::size(avCaptureObjects), 45.0f);
+        objectCount = std::size(avCaptureObjects);
+        return avCaptureObjects;
     }
 
-    bool IsAlteracContestedGraveyardObjective(Battleground* bg, PositionInfo const& objective)
+    bool IsAlteracCaptureObjective(Battleground* bg, PositionInfo const& objective)
     {
-        static uint32 const avContestedGraveyardObjects[] =
-        {
-            BG_AV_OBJECT_FLAG_C_A_FIRSTAID_STATION,
-            BG_AV_OBJECT_FLAG_C_A_STORMPIKE_GRAVE,
-            BG_AV_OBJECT_FLAG_C_A_STONEHEART_GRAVE,
-            BG_AV_OBJECT_FLAG_C_A_SNOWFALL_GRAVE,
-            BG_AV_OBJECT_FLAG_C_A_ICEBLOOD_GRAVE,
-            BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_GRAVE,
-            BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_HUT,
-            BG_AV_OBJECT_FLAG_C_H_FIRSTAID_STATION,
-            BG_AV_OBJECT_FLAG_C_H_STORMPIKE_GRAVE,
-            BG_AV_OBJECT_FLAG_C_H_STONEHEART_GRAVE,
-            BG_AV_OBJECT_FLAG_C_H_SNOWFALL_GRAVE,
-            BG_AV_OBJECT_FLAG_C_H_ICEBLOOD_GRAVE,
-            BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_GRAVE,
-            BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_HUT
-        };
+        size_t objectCount = 0;
+        uint32 const* avCaptureObjects = GetAlteracCaptureObjectIds(objectCount);
+        return IsObjectiveNearAnyBgObject(bg, objective, avCaptureObjects, objectCount, 45.0f);
+    }
 
-        return IsObjectiveNearAnyBgObject(bg, objective, avContestedGraveyardObjects,
-                                          std::size(avContestedGraveyardObjects), 45.0f);
+    bool GetAlteracObjectNodeId(uint32 objectType, uint8& nodeId)
+    {
+        switch (objectType)
+        {
+            case BG_AV_OBJECT_FLAG_A_FIRSTAID_STATION:
+            case BG_AV_OBJECT_FLAG_H_FIRSTAID_STATION:
+            case BG_AV_OBJECT_FLAG_C_A_FIRSTAID_STATION:
+            case BG_AV_OBJECT_FLAG_C_H_FIRSTAID_STATION:
+                nodeId = BG_AV_NODES_FIRSTAID_STATION;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_STORMPIKE_GRAVE:
+            case BG_AV_OBJECT_FLAG_H_STORMPIKE_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_A_STORMPIKE_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_H_STORMPIKE_GRAVE:
+                nodeId = BG_AV_NODES_STORMPIKE_GRAVE;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_STONEHEART_GRAVE:
+            case BG_AV_OBJECT_FLAG_H_STONEHEART_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_A_STONEHEART_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_H_STONEHEART_GRAVE:
+                nodeId = BG_AV_NODES_STONEHEART_GRAVE;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_SNOWFALL_GRAVE:
+            case BG_AV_OBJECT_FLAG_H_SNOWFALL_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_A_SNOWFALL_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_H_SNOWFALL_GRAVE:
+            case BG_AV_OBJECT_FLAG_N_SNOWFALL_GRAVE:
+                nodeId = BG_AV_NODES_SNOWFALL_GRAVE;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_ICEBLOOD_GRAVE:
+            case BG_AV_OBJECT_FLAG_H_ICEBLOOD_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_A_ICEBLOOD_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_H_ICEBLOOD_GRAVE:
+                nodeId = BG_AV_NODES_ICEBLOOD_GRAVE;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_FROSTWOLF_GRAVE:
+            case BG_AV_OBJECT_FLAG_H_FROSTWOLF_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_GRAVE:
+            case BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_GRAVE:
+                nodeId = BG_AV_NODES_FROSTWOLF_GRAVE;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_FROSTWOLF_HUT:
+            case BG_AV_OBJECT_FLAG_H_FROSTWOLF_HUT:
+            case BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_HUT:
+            case BG_AV_OBJECT_FLAG_C_H_FROSTWOLF_HUT:
+                nodeId = BG_AV_NODES_FROSTWOLF_HUT;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_DUNBALDAR_SOUTH:
+            case BG_AV_OBJECT_FLAG_C_H_DUNBALDAR_SOUTH:
+                nodeId = BG_AV_NODES_DUNBALDAR_SOUTH;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_DUNBALDAR_NORTH:
+            case BG_AV_OBJECT_FLAG_C_H_DUNBALDAR_NORTH:
+                nodeId = BG_AV_NODES_DUNBALDAR_NORTH;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_ICEWING_BUNKER:
+            case BG_AV_OBJECT_FLAG_C_H_ICEWING_BUNKER:
+                nodeId = BG_AV_NODES_ICEWING_BUNKER;
+                return true;
+            case BG_AV_OBJECT_FLAG_A_STONEHEART_BUNKER:
+            case BG_AV_OBJECT_FLAG_C_H_STONEHEART_BUNKER:
+                nodeId = BG_AV_NODES_STONEHEART_BUNKER;
+                return true;
+            case BG_AV_OBJECT_FLAG_H_ICEBLOOD_TOWER:
+            case BG_AV_OBJECT_FLAG_C_A_ICEBLOOD_TOWER:
+                nodeId = BG_AV_NODES_ICEBLOOD_TOWER;
+                return true;
+            case BG_AV_OBJECT_FLAG_H_TOWER_POINT:
+            case BG_AV_OBJECT_FLAG_C_A_TOWER_POINT:
+                nodeId = BG_AV_NODES_TOWER_POINT;
+                return true;
+            case BG_AV_OBJECT_FLAG_H_FROSTWOLF_ETOWER:
+            case BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_ETOWER:
+                nodeId = BG_AV_NODES_FROSTWOLF_ETOWER;
+                return true;
+            case BG_AV_OBJECT_FLAG_H_FROSTWOLF_WTOWER:
+            case BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_WTOWER:
+                nodeId = BG_AV_NODES_FROSTWOLF_WTOWER;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool AlteracNodeNeedsCaptureByTeam(BattlegroundAV* av, uint8 nodeId, TeamId teamId)
+    {
+        if (!av || nodeId >= BG_AV_NODES_MAX)
+            return false;
+
+        BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+        if (node.State == POINT_DESTROYED)
+            return false;
+
+        if (node.State == POINT_ASSAULTED)
+            return node.OwnerId != teamId && node.PrevOwnerId == teamId;
+
+        return node.OwnerId != teamId && node.TotalOwnerId != teamId;
+    }
+
+    bool IsAlteracUsableCaptureObjective(Player* bot, Battleground* bg, PositionInfo const& objective)
+    {
+        if (!bot || !bg || !objective.valueSet)
+            return false;
+
+        BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+        size_t objectCount = 0;
+        uint32 const* avCaptureObjects = GetAlteracCaptureObjectIds(objectCount);
+        for (size_t i = 0; i < objectCount; ++i)
+        {
+            uint32 const objectType = avCaptureObjects[i];
+            GameObject* go = bg->GetBGObject(objectType);
+            if (!go || !go->isSpawned() || go->GetGoState() != GO_STATE_READY ||
+                !IsPositionNear2d(objective, go->GetPositionX(), go->GetPositionY(), 45.0f))
+                continue;
+
+            uint8 nodeId = 0;
+            if (!GetAlteracObjectNodeId(objectType, nodeId) ||
+                !AlteracNodeNeedsCaptureByTeam(av, nodeId, bot->GetTeamId()))
+                continue;
+
+            if (bot->CanUseBattlegroundObject(go))
+                return true;
+        }
+
+        return false;
     }
 
     bool IsIsleCaptureObjective(Battleground* bg, PositionInfo const& objective)
@@ -493,10 +604,10 @@ namespace ai::pvp
         switch (bgType)
         {
             case BATTLEGROUND_AV:
-                if (IsAlteracContestedGraveyardObjective(bg, objective))
+                if (!IsAlteracCaptureObjective(bg, objective))
                     return false;
 
-                return IsAlteracCaptureObjective(bg, objective);
+                return IsAlteracUsableCaptureObjective(bot, bg, objective);
             case BATTLEGROUND_AB:
                 return IsObjectiveNearArathiNode(objective);
             case BATTLEGROUND_IC:
@@ -613,13 +724,28 @@ namespace ai::pvp
         return false;
     }
 
+    bool ShouldPrioritizeBattlegroundCapture(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !HasActiveBattlegroundCaptureObjective(botAI) || HasSelfDefenseAttacker(bot))
+            return false;
+
+        if (IsInAlteracValley(bot))
+            return true;
+
+        return !HasCaptureObjectiveThreat(botAI);
+    }
+
     bool CanEngageDuringBattlegroundCapture(PlayerbotAI* botAI, Unit* target)
     {
         if (!HasActiveBattlegroundCaptureObjective(botAI))
             return true;
 
-        return IsSelfDefenseTarget(botAI ? botAI->GetBot() : nullptr, target) ||
-               IsCaptureObjectiveThreat(botAI, target);
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (IsInAlteracValley(bot))
+            return IsSelfDefenseTarget(bot, target);
+
+        return IsSelfDefenseTarget(bot, target) || IsCaptureObjectiveThreat(botAI, target);
     }
 
     bool IsObjectiveRelevantEnemy(PlayerbotAI* botAI, Unit* target, bool threatTarget, float botObjectiveRadius,
