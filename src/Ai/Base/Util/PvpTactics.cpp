@@ -730,21 +730,26 @@ namespace ai::pvp
         if (!bot || !HasActiveBattlegroundCaptureObjective(botAI) || HasSelfDefenseAttacker(bot))
             return false;
 
-        if (IsInAlteracValley(bot))
+        if (HasCaptureBannerCast(bot) || IsCarryingBattlegroundFlag(bot))
             return true;
+
+        PositionInfo objective;
+        if (!GetActiveBattlegroundObjective(botAI, bot, objective))
+            return false;
+
+        float const commitRadius = IsInAlteracValley(bot) ? 75.0f : 55.0f;
+        if (!IsNearObjective(bot, objective, commitRadius))
+            return false;
 
         return !HasCaptureObjectiveThreat(botAI);
     }
 
     bool CanEngageDuringBattlegroundCapture(PlayerbotAI* botAI, Unit* target)
     {
-        if (!HasActiveBattlegroundCaptureObjective(botAI))
+        if (!ShouldPrioritizeBattlegroundCapture(botAI))
             return true;
 
         Player* bot = botAI ? botAI->GetBot() : nullptr;
-        if (IsInAlteracValley(bot))
-            return IsSelfDefenseTarget(bot, target);
-
         return IsSelfDefenseTarget(bot, target) || IsCaptureObjectiveThreat(botAI, target);
     }
 

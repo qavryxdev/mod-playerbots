@@ -178,7 +178,9 @@ class PvpFindTargetSmartStrategy : public FindTargetStrategy
 {
 public:
     PvpFindTargetSmartStrategy(PlayerbotAI* botAI)
-        : FindTargetStrategy(botAI), bestScore(std::numeric_limits<int32>::min())
+        : FindTargetStrategy(botAI),
+          bestScore(std::numeric_limits<int32>::min()),
+          currentTarget(botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
     {
     }
 
@@ -207,7 +209,6 @@ public:
                 return;
         }
 
-        Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
         if (ShouldKeepCurrentAlteracTowerBowman(botAI, target, currentTarget))
             return;
 
@@ -264,7 +265,7 @@ public:
             score += 120;
 
         if (target == currentTarget)
-            score += 220;
+            score += 420;
 
         if (target == currentTarget && IsAlteracTowerBowman(target))
             score += 2500;
@@ -288,7 +289,17 @@ public:
         else
             score -= static_cast<int32>(std::min(distance, 80.0f));
 
-        if (!result || score > bestScore)
+        int32 requiredScore = bestScore;
+        if (result == currentTarget && target != currentTarget && !isHighPriority && target->GetVictim() != bot)
+        {
+            int32 switchThreshold = 650;
+            if (isProtectingHealer || (isEnemyHealer && isCastingHeal))
+                switchThreshold = 260;
+
+            requiredScore += switchThreshold;
+        }
+
+        if (!result || score > requiredScore)
         {
             result = target;
             bestScore = score;
@@ -297,6 +308,7 @@ public:
 
 private:
     int32 bestScore;
+    Unit* currentTarget;
 };
 
 class FindMaxThreatGapTargetStrategy : public FindTargetStrategy

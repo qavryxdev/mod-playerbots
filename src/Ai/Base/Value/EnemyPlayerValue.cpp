@@ -54,9 +54,52 @@ Unit* EnemyPlayerValue::Calculate()
             controllingVehicle = true;
     }
 
+    Unit* pVictim = bot->GetVictim();
+    float const maxAggroDistance = GetMaxAttackDistance();
+    GuidVector players = AI_VALUE(GuidVector, "nearest enemy players");
+
+    auto isEnemyFlagCarrier = [&](Player const* pTarget)
+    {
+        if (bot->GetTeamId() == TEAM_HORDE)
+            return pTarget->HasAura(23333);
+
+        return pTarget->HasAura(23335);
+    };
+
+    auto isUsableEnemyPlayer = [&](Player* pTarget, float range)
+    {
+        if (!pTarget || pTarget == bot || !pTarget->CanSeeOrDetect(bot) || !bot->IsWithinDist(pTarget, range))
+            return false;
+
+        if (!AttackersValue::IsPossibleTarget(pTarget, bot))
+            return false;
+
+        if (!ai::pvp::CanEngageDuringBattlegroundCapture(botAI, pTarget))
+            return false;
+
+        if (!bot->IsWithinLOSInMap(pTarget))
+            return false;
+
+        return controllingCannon || (fabs(bot->GetPositionZ() - pTarget->GetPositionZ()) < 30.0f);
+    };
+
+    for (auto const& gTarget : players)
+    {
+        Unit* pUnit = botAI->GetUnit(gTarget);
+        Player* pTarget = pUnit ? dynamic_cast<Player*>(pUnit) : nullptr;
+        if (pTarget && isEnemyFlagCarrier(pTarget) && isUsableEnemyPlayer(pTarget, maxAggroDistance * 2.0f))
+            return pTarget;
+    }
+
+    if (Player* victimPlayer = pVictim ? pVictim->ToPlayer() : nullptr)
+    {
+        if (isUsableEnemyPlayer(victimPlayer, maxAggroDistance + 10.0f) &&
+            ai::pvp::IsObjectiveRelevantEnemy(botAI, victimPlayer, true))
+            return victimPlayer;
+    }
+
     // 1. Check units we are currently in PvP combat with.
     std::vector<Unit*> targets;
-    Unit* pVictim = bot->GetVictim();
     for (auto const& [guid, combatRef] : bot->GetCombatManager().GetPvPCombatRefs())
     {
         Unit* pTarget = combatRef->GetOther(bot);
@@ -86,8 +129,6 @@ Unit* EnemyPlayerValue::Calculate()
 
     // 2. Find enemy player in range.
 
-    GuidVector players = AI_VALUE(GuidVector, "nearest enemy players");
-    float const maxAggroDistance = GetMaxAttackDistance();
     for (auto const& gTarget : players)
     {
         Unit* pUnit = botAI->GetUnit(gTarget);
