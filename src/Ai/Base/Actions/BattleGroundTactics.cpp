@@ -1424,6 +1424,259 @@ static bool IsAllianceHordeTowerAttackTarget(uint8 nodeId)
            nodeId == BG_AV_NODES_FROSTWOLF_ETOWER || nodeId == BG_AV_NODES_FROSTWOLF_WTOWER;
 }
 
+static bool IsAlteracTowerOrBunkerNode(uint8 nodeId)
+{
+    return IsAllianceDefensiveTower(nodeId) || IsAllianceHordeTowerAttackTarget(nodeId);
+}
+
+static bool TryGetAlteracTowerOrBunkerFlagNode(Battleground* bg, GameObject* go, uint8& nodeId)
+{
+    if (!bg || !go)
+        return false;
+
+    std::pair<uint8, uint32> const towerFlags[] = {
+        {BG_AV_NODES_DUNBALDAR_SOUTH, BG_AV_OBJECT_FLAG_A_DUNBALDAR_SOUTH},
+        {BG_AV_NODES_DUNBALDAR_SOUTH, BG_AV_OBJECT_FLAG_C_H_DUNBALDAR_SOUTH},
+        {BG_AV_NODES_DUNBALDAR_NORTH, BG_AV_OBJECT_FLAG_A_DUNBALDAR_NORTH},
+        {BG_AV_NODES_DUNBALDAR_NORTH, BG_AV_OBJECT_FLAG_C_H_DUNBALDAR_NORTH},
+        {BG_AV_NODES_ICEWING_BUNKER, BG_AV_OBJECT_FLAG_A_ICEWING_BUNKER},
+        {BG_AV_NODES_ICEWING_BUNKER, BG_AV_OBJECT_FLAG_C_H_ICEWING_BUNKER},
+        {BG_AV_NODES_STONEHEART_BUNKER, BG_AV_OBJECT_FLAG_A_STONEHEART_BUNKER},
+        {BG_AV_NODES_STONEHEART_BUNKER, BG_AV_OBJECT_FLAG_C_H_STONEHEART_BUNKER},
+        {BG_AV_NODES_ICEBLOOD_TOWER, BG_AV_OBJECT_FLAG_H_ICEBLOOD_TOWER},
+        {BG_AV_NODES_ICEBLOOD_TOWER, BG_AV_OBJECT_FLAG_C_A_ICEBLOOD_TOWER},
+        {BG_AV_NODES_TOWER_POINT, BG_AV_OBJECT_FLAG_H_TOWER_POINT},
+        {BG_AV_NODES_TOWER_POINT, BG_AV_OBJECT_FLAG_C_A_TOWER_POINT},
+        {BG_AV_NODES_FROSTWOLF_ETOWER, BG_AV_OBJECT_FLAG_H_FROSTWOLF_ETOWER},
+        {BG_AV_NODES_FROSTWOLF_ETOWER, BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_ETOWER},
+        {BG_AV_NODES_FROSTWOLF_WTOWER, BG_AV_OBJECT_FLAG_H_FROSTWOLF_WTOWER},
+        {BG_AV_NODES_FROSTWOLF_WTOWER, BG_AV_OBJECT_FLAG_C_A_FROSTWOLF_WTOWER},
+    };
+
+    for (auto const& [candidateNodeId, goId] : towerFlags)
+    {
+        if (bg->GetBGObject(goId) == go)
+        {
+            nodeId = candidateNodeId;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool IsWrongFloorAlteracTowerFlag(Player* bot, Battleground* bg, GameObject* go)
+{
+    if (!bot || !bg || !go)
+        return false;
+
+    uint8 nodeId = 0;
+    if (!TryGetAlteracTowerOrBunkerFlagNode(bg, go, nodeId) || !IsAlteracTowerOrBunkerNode(nodeId))
+        return false;
+
+    if (std::fabs(bot->GetPositionZ() - go->GetPositionZ()) <= 4.5f)
+        return false;
+
+    return !bot->IsWithinLOSInMap(go);
+}
+
+static bool TryGetAlteracTowerOrBunkerObjectiveNode(PositionInfo const& objectivePos, uint8& nodeId)
+{
+    if (!objectivePos.valueSet)
+        return false;
+
+    for (auto const& [candidateNodeId, data] : AVNodeMovementTargets)
+    {
+        if (!IsAlteracTowerOrBunkerNode(candidateNodeId))
+            continue;
+
+        float const dx = objectivePos.x - data.pos.GetPositionX();
+        float const dy = objectivePos.y - data.pos.GetPositionY();
+        if (dx * dx + dy * dy <= 20.0f * 20.0f &&
+            std::fabs(objectivePos.z - data.pos.GetPositionZ()) <= 35.0f)
+        {
+            nodeId = candidateNodeId;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool GetAlteracTowerOrBunkerAccessPath(uint8 nodeId, std::vector<Position> const*& path)
+{
+    static std::vector<Position> const dunBaldarSouth = {
+        Position(562.523f, -74.503f, 37.947f),
+        Position(558.097f, -70.984f, 52.488f),
+        Position(556.551f, -77.240f, 51.931f),
+    };
+    static std::vector<Position> const dunBaldarNorth = {
+        Position(664.505f, -139.452f, 49.670f),
+        Position(674.576f, -147.101f, 56.543f),
+        Position(670.664f, -142.031f, 63.666f),
+    };
+    static std::vector<Position> const icewingBunker = {
+        Position(195.369f, -407.750f, 42.876f),
+        Position(210.619f, -376.938f, 49.268f),
+        Position(196.605f, -369.187f, 56.391f),
+        Position(200.310f, -361.232f, 56.387f),
+    };
+    static std::vector<Position> const stonehearthBunker = {
+        Position(-129.793f, -481.160f, 27.735f),
+        Position(-154.076f, -466.929f, 41.064f),
+        Position(-151.638f, -439.521f, 40.380f),
+        Position(-156.302f, -440.032f, 40.403f),
+    };
+    static std::vector<Position> const icebloodTower = {
+        Position(-574.093f, -312.653f, 44.791f),
+        Position(-566.035f, -273.907f, 52.958f),
+        Position(-572.667f, -267.923f, 56.854f),
+        Position(-571.476f, -257.234f, 63.322f),
+        Position(-561.021f, -262.689f, 68.459f),
+        Position(-568.318f, -267.100f, 75.001f),
+        Position(-569.702f, -265.362f, 75.009f),
+    };
+    static std::vector<Position> const towerPoint = {
+        Position(-754.564f, -344.804f, 67.422f),
+        Position(-764.109f, -366.069f, 70.093f),
+        Position(-773.333f, -364.653f, 79.235f),
+        Position(-776.072f, -368.046f, 84.356f),
+        Position(-777.564f, -368.521f, 90.670f),
+        Position(-768.199f, -363.105f, 90.895f),
+    };
+    static std::vector<Position> const frostwolfEastTower = {
+        Position(-1304.870f, -304.525f, 91.837f),
+        Position(-1301.770f, -310.974f, 95.825f),
+        Position(-1305.580f, -320.625f, 102.166f),
+        Position(-1293.890f, -313.478f, 107.328f),
+        Position(-1304.600f, -310.754f, 113.859f),
+        Position(-1303.737f, -314.070f, 113.868f),
+    };
+    static std::vector<Position> const frostwolfWestTower = {
+        Position(-1308.240f, -273.260f, 92.051f),
+        Position(-1302.260f, -262.858f, 95.927f),
+        Position(-1295.550f, -263.865f, 105.033f),
+        Position(-1304.430f, -273.682f, 107.612f),
+        Position(-1303.410f, -268.237f, 114.151f),
+        Position(-1300.648f, -267.356f, 114.151f),
+    };
+
+    switch (nodeId)
+    {
+        case BG_AV_NODES_DUNBALDAR_SOUTH:
+            path = &dunBaldarSouth;
+            return true;
+        case BG_AV_NODES_DUNBALDAR_NORTH:
+            path = &dunBaldarNorth;
+            return true;
+        case BG_AV_NODES_ICEWING_BUNKER:
+            path = &icewingBunker;
+            return true;
+        case BG_AV_NODES_STONEHEART_BUNKER:
+            path = &stonehearthBunker;
+            return true;
+        case BG_AV_NODES_ICEBLOOD_TOWER:
+            path = &icebloodTower;
+            return true;
+        case BG_AV_NODES_TOWER_POINT:
+            path = &towerPoint;
+            return true;
+        case BG_AV_NODES_FROSTWOLF_ETOWER:
+            path = &frostwolfEastTower;
+            return true;
+        case BG_AV_NODES_FROSTWOLF_WTOWER:
+            path = &frostwolfWestTower;
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool IsAlteracTowerOrBunkerSameFloorOrVisible(Player* bot, Position const& position)
+{
+    if (!bot)
+        return false;
+
+    if (std::fabs(bot->GetPositionZ() - position.GetPositionZ()) <= 4.5f)
+        return true;
+
+    return bot->IsWithinLOS(position.GetPositionX(), position.GetPositionY(), position.GetPositionZ());
+}
+
+static bool IsUnsafeAlteracTowerOrBunkerDirectMove(Player* bot, PositionInfo const& objectivePos)
+{
+    if (!bot || !objectivePos.valueSet)
+        return false;
+
+    uint8 nodeId = 0;
+    if (!TryGetAlteracTowerOrBunkerObjectiveNode(objectivePos, nodeId))
+        return false;
+
+    Position const objective(objectivePos.x, objectivePos.y, objectivePos.z);
+    return !IsAlteracTowerOrBunkerSameFloorOrVisible(bot, objective);
+}
+
+static bool SelectAlteracTowerOrBunkerAccessTarget(Player* bot, PositionInfo const& objectivePos, Position& target)
+{
+    if (!bot || !objectivePos.valueSet)
+        return false;
+
+    uint8 nodeId = 0;
+    if (!TryGetAlteracTowerOrBunkerObjectiveNode(objectivePos, nodeId))
+        return false;
+
+    float const objective2d = bot->GetDistance2d(objectivePos.x, objectivePos.y);
+    float const objectiveZDiff = std::fabs(bot->GetPositionZ() - objectivePos.z);
+    if (objective2d > 140.0f || objectiveZDiff < 4.0f)
+        return false;
+
+    std::vector<Position> const* path = nullptr;
+    if (!GetAlteracTowerOrBunkerAccessPath(nodeId, path) || !path || path->empty())
+        return false;
+
+    uint32 const lastPoint = static_cast<uint32>(path->size() - 1);
+    uint32 closestPoint = static_cast<uint32>(path->size());
+    float closestDistance = FLT_MAX;
+
+    for (uint32 i = 0; i < path->size(); ++i)
+    {
+        Position const& waypoint = path->at(i);
+        if (!IsAlteracTowerOrBunkerSameFloorOrVisible(bot, waypoint))
+            continue;
+
+        float const distance = bot->GetDistance(waypoint.GetPositionX(), waypoint.GetPositionY(), waypoint.GetPositionZ());
+        if (distance < closestDistance)
+        {
+            closestDistance = distance;
+            closestPoint = i;
+        }
+    }
+
+    if (closestPoint >= path->size())
+        return false;
+
+    uint32 targetPoint = closestPoint;
+    bool targetIsAccessProgression = false;
+    if (closestPoint == lastPoint)
+    {
+        if (objective2d > 22.0f || objectiveZDiff < 4.0f)
+            return false;
+
+        targetPoint = 0;
+    }
+    else if (closestDistance <= 8.0f)
+    {
+        targetPoint = closestPoint + 1;
+        targetIsAccessProgression = true;
+    }
+
+    if (!targetIsAccessProgression && !IsAlteracTowerOrBunkerSameFloorOrVisible(bot, path->at(targetPoint)))
+        return false;
+
+    target = path->at(targetPoint);
+    return true;
+}
+
 static bool IsAllianceForwardGraveyardAttackTarget(uint8 nodeId)
 {
     return nodeId == BG_AV_NODES_FROSTWOLF_GRAVE || nodeId == BG_AV_NODES_FROSTWOLF_HUT;
@@ -7012,11 +7265,14 @@ bool BGTactics::selectObjective(bool reset)
                 }
 
                 float rx, ry, rz;
+                bool const multiFloorTowerObjective = linkedNodeId && IsAlteracTowerOrBunkerNode(*linkedNodeId);
                 if (linkedNodeId && AVNodeMovementTargets.count(*linkedNodeId))
                 {
                     const AVNodePositionData& data = AVNodeMovementTargets[*linkedNodeId];
                     float maxRadius = data.maxRadius;
-                    if (team == TEAM_ALLIANCE && IsAllianceDefensiveTower(*linkedNodeId) && maxRadius <= 0.0f)
+                    if (multiFloorTowerObjective)
+                        maxRadius = std::min(maxRadius, 1.0f);
+                    else if (team == TEAM_ALLIANCE && IsAllianceDefensiveTower(*linkedNodeId) && maxRadius <= 0.0f)
                         maxRadius = 5.0f;
 
                     float const radius = maxRadius > 0.0f ? frand(0.8f, maxRadius) : 0.0f;
@@ -7025,7 +7281,8 @@ bool BGTactics::selectObjective(bool reset)
                 else
                     bot->GetRandomPoint(objPos, frand(-2.0f, 2.0f), rx, ry, rz);
 
-                ResolveBattleGroundGroundZ(bot, rx, ry, rz);
+                if (!multiFloorTowerObjective)
+                    ResolveBattleGroundGroundZ(bot, rx, ry, rz);
 
                 pos.Set(rx, ry, rz, BgObjective->GetMapId());
                 posMap["bg objective"] = pos;
@@ -8232,6 +8489,34 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 return selectObjectiveWp(vPaths_AV);
         }
 
+        if (bgType == BATTLEGROUND_AV && IsUnsafeAlteracTowerOrBunkerDirectMove(bot, pos))
+        {
+            Position accessTarget;
+            if (SelectAlteracTowerOrBunkerAccessTarget(bot, pos, accessTarget))
+            {
+                bool const moved = MoveTo(bot->GetMapId(), accessTarget.GetPositionX(), accessTarget.GetPositionY(),
+                                          accessTarget.GetPositionZ());
+                if (bot->GetTeamId() == TEAM_ALLIANCE)
+                {
+                    uint8 const role = context->GetValue<uint32>("bg role")->Get();
+                    LogAllianceAVMoveDebug(bot, bg, pos,
+                                           moved ? "move_tower_access_direct_true" : "move_tower_access_direct_false",
+                                           role, 255, false, AI_VALUE(Unit*, "enemy player target"),
+                                           bot->GetDistance2d(accessTarget.GetPositionX(), accessTarget.GetPositionY()),
+                                           0);
+                }
+                return moved;
+            }
+
+            if (bot->GetTeamId() == TEAM_ALLIANCE)
+            {
+                uint8 const role = context->GetValue<uint32>("bg role")->Get();
+                LogAllianceAVMoveDebug(bot, bg, pos, "move_tower_direct_blocked", role, 255, false,
+                                       AI_VALUE(Unit*, "enemy player target"));
+            }
+            return false;
+        }
+
         if (!ignoreDist && ServerFacade::instance().IsDistanceGreaterThan(ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y), directMoveLimit))
         {
             // std::ostringstream out;
@@ -8320,6 +8605,22 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
             BattleBotWaypoint const& snowfallFlagAnchor = exitPath->back();
             if (bot->GetDistance(snowfallFlagAnchor.x, snowfallFlagAnchor.y, snowfallFlagAnchor.z) > 12.0f)
                 return MoveTo(bot->GetMapId(), snowfallFlagAnchor.x, snowfallFlagAnchor.y, snowfallFlagAnchor.z);
+        }
+
+        Position accessTarget;
+        if (SelectAlteracTowerOrBunkerAccessTarget(bot, pos, accessTarget))
+        {
+            bool const moved = MoveTo(bot->GetMapId(), accessTarget.GetPositionX(), accessTarget.GetPositionY(),
+                                      accessTarget.GetPositionZ());
+            if (bot->GetTeamId() == TEAM_ALLIANCE)
+            {
+                uint8 const role = context->GetValue<uint32>("bg role")->Get();
+                LogAllianceAVMoveDebug(bot, bg, pos, moved ? "move_tower_access_true" : "move_tower_access_false",
+                                       role, 255, false, AI_VALUE(Unit*, "enemy player target"),
+                                       bot->GetDistance2d(accessTarget.GetPositionX(), accessTarget.GetPositionY()),
+                                       0);
+            }
+            return moved;
         }
     }
     else if (bgType == BATTLEGROUND_EY)
@@ -8881,6 +9182,9 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         if (!AllianceAVCanUseNearbyFlagDuringControlTempo(bot, bg, go, bgRole))
             continue;
 
+        if (bgType == BATTLEGROUND_AV && IsWrongFloorAlteracTowerFlag(bot, bg, go))
+            continue;
+
         // Check if we're close enough to approach or interact with the flag.
         float const dist = bot->GetDistance(go);
         if (flagSearchRange && dist > flagSearchRange)
@@ -8982,6 +9286,9 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             continue;
 
         if (!AllianceAVCanUseNearbyFlagDuringControlTempo(bot, bg, go, bgRole))
+            continue;
+
+        if (bgType == BATTLEGROUND_AV && IsWrongFloorAlteracTowerFlag(bot, bg, go))
             continue;
 
         // Verify we can interact with it
