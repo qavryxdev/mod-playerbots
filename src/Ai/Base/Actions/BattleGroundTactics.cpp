@@ -4265,6 +4265,29 @@ static bool AllianceAVPositionIsContestedAllianceDefenseObjective(Battleground* 
     return false;
 }
 
+static bool AllianceAVPositionIsAllianceStartPlateau(PositionInfo const& pos)
+{
+    if (!pos.valueSet)
+        return false;
+
+    return pos.x >= 730.0f && pos.x <= 890.0f &&
+           pos.y >= -535.0f && pos.y <= -440.0f &&
+           pos.z >= 85.0f;
+}
+
+static bool AllianceAVObjectiveNeedsStartPlateauExit(Battleground* bg, BattlegroundAV* av, PositionInfo const& pos)
+{
+    if (!bg || !av || !pos.valueSet || pos.z > 75.0f)
+        return false;
+
+    if (AllianceAVPositionIsAllianceDefenseRun(bg, pos) ||
+        AllianceAVPositionIsContestedAllianceDefenseObjective(bg, av, pos))
+        return true;
+
+    return AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_ANTIRUSH_STORMPIKE_ROAD, 95.0f) ||
+           AllianceAVPositionIsNearPosition(pos, AV_ALLIANCE_ANTIRUSH_DUNBALDAR_ROAD, 95.0f);
+}
+
 static bool AllianceAVObjectIsOneOf(Battleground* bg, GameObject* go, uint32 const* ids, size_t count)
 {
     if (!bg || !go)
@@ -8585,6 +8608,42 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         }
 
         PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+        if (bot->GetTeamId() == TEAM_ALLIANCE)
+        {
+            BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+            if (AllianceAVPositionIsAllianceStartPlateau(botPos) &&
+                AllianceAVObjectiveNeedsStartPlateauExit(bg, av, pos))
+            {
+                BattleBotPath& exitPath = vPath_AV_AllianceSpawn_To_AllianceCrossroad1;
+                uint32 closestPoint = 0;
+                float closestDistance = FLT_MAX;
+                for (uint32 i = 0; i < exitPath.size(); ++i)
+                {
+                    BattleBotWaypoint const& waypoint = exitPath[i];
+                    float const distance = bot->GetDistance(waypoint.x, waypoint.y, waypoint.z);
+                    if (distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        closestPoint = i;
+                    }
+                }
+
+                uint32 targetPoint = closestPoint;
+                if (closestDistance <= 10.0f && closestPoint + 1 < exitPath.size())
+                    targetPoint = closestPoint + 1;
+
+                BattleBotWaypoint const& waypoint = exitPath[targetPoint];
+                bool const moved = MoveTo(bot->GetMapId(), waypoint.x, waypoint.y, waypoint.z);
+                uint8 const role = context->GetValue<uint32>("bg role")->Get();
+                LogAllianceAVMoveDebug(bot, bg, pos,
+                                       moved ? "move_alliance_start_exit_true" : "move_alliance_start_exit_false",
+                                       role, 255, false, AI_VALUE(Unit*, "enemy player target"),
+                                       ServerFacade::instance().GetDistance2d(bot, waypoint.x, waypoint.y),
+                                       exitPath.size());
+                return moved;
+            }
+        }
+
         if (bot->GetTeamId() == TEAM_ALLIANCE && AllianceAVPositionIsIcewingBunkerRidge(botPos) &&
             AllianceAVPositionIsStonehearthGraveObjective(bg, pos))
         {
