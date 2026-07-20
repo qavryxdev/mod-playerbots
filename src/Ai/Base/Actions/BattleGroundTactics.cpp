@@ -138,6 +138,8 @@ enum BattleBotWsgWaitSpot
 std::unordered_map<uint32, BGStrategyData> bgStrategies;
 static std::unordered_map<uint32, uint32> avAllianceDebugLogTimers;
 static std::unordered_map<uint64, uint32> avAllianceMoveDebugLogTimers;
+static std::unordered_map<uint64, uint32> avTowerFlagCaptureDebugLogTimers;
+static std::mutex avTowerFlagCaptureDebugLogTimersMutex;
 
 struct AllianceAVModeState
 {
@@ -1465,21 +1467,6 @@ static bool TryGetAlteracTowerOrBunkerFlagNode(Battleground* bg, GameObject* go,
     return false;
 }
 
-static bool IsWrongFloorAlteracTowerFlag(Player* bot, Battleground* bg, GameObject* go)
-{
-    if (!bot || !bg || !go)
-        return false;
-
-    uint8 nodeId = 0;
-    if (!TryGetAlteracTowerOrBunkerFlagNode(bg, go, nodeId) || !IsAlteracTowerOrBunkerNode(nodeId))
-        return false;
-
-    if (std::fabs(bot->GetPositionZ() - go->GetPositionZ()) <= 4.5f)
-        return false;
-
-    return !bot->IsWithinLOSInMap(go);
-}
-
 static bool TryGetAlteracTowerOrBunkerObjectiveNode(PositionInfo const& objectivePos, uint8& nodeId)
 {
     if (!objectivePos.valueSet)
@@ -1675,6 +1662,55 @@ static bool SelectAlteracTowerOrBunkerAccessTarget(Player* bot, PositionInfo con
 
     target = path->at(targetPoint);
     return true;
+}
+
+static bool GetAlteracTowerOrBunkerCaptureAnchor(Battleground* bg, GameObject* flag, Position& target)
+{
+    if (!bg || !flag)
+        return false;
+
+    uint8 nodeId = 0;
+    if (!TryGetAlteracTowerOrBunkerFlagNode(bg, flag, nodeId))
+        return false;
+
+    std::vector<Position> const* path = nullptr;
+    if (!GetAlteracTowerOrBunkerAccessPath(nodeId, path) || !path || path->empty())
+        return false;
+
+    target = path->back();
+    return true;
+}
+
+static bool IsAlteracTowerOrBunkerCaptureGeometryValid(Player* bot, Battleground* bg, GameObject* flag,
+                                                        SpellInfo const* spellInfo, bool& atInteractDistance,
+                                                        bool& onCaptureFloor, bool& hasStaticLineOfSight)
+{
+    if (!bot || !bg || !flag || !spellInfo)
+        return false;
+
+    atInteractDistance = flag->IsAtInteractDistance(bot, spellInfo);
+    onCaptureFloor = true;
+    hasStaticLineOfSight = true;
+
+    uint8 nodeId = 0;
+    if (!TryGetAlteracTowerOrBunkerFlagNode(bg, flag, nodeId))
+        return atInteractDistance;
+
+    onCaptureFloor = std::fabs(bot->GetPositionZ() - flag->GetPositionZ()) <= 4.5f;
+    if (!onCaptureFloor)
+    {
+        hasStaticLineOfSight = false;
+        return false;
+    }
+
+    // Object-to-object LoS aims at the banner hit sphere, which is embedded in some AV tower floors. Test an
+    // eye-height point above the banner base instead. M2 models are ignored, while terrain and WMO walls remain.
+    uint32 lineOfSightChecks = LINEOFSIGHT_ALL_CHECKS;
+    lineOfSightChecks &= ~LINEOFSIGHT_CHECK_GOBJECT_M2;
+    hasStaticLineOfSight = bot->IsWithinLOS(flag->GetPositionX(), flag->GetPositionY(), flag->GetPositionZ(),
+                                            VMAP::ModelIgnoreFlags::M2, LineOfSightChecks(lineOfSightChecks));
+
+    return atInteractDistance && hasStaticLineOfSight;
 }
 
 static bool IsAllianceForwardGraveyardAttackTarget(uint8 nodeId)
@@ -5881,6 +5917,36 @@ static void LogAllianceAVMoveDebug(Player* bot, Battleground* bg, PositionInfo c
              targetIcebloodDistance, targetTowerRun ? 1 : 0);
 }
 
+static void LogAlteracTowerFlagCaptureGeometry(Player* bot, Battleground* bg, GameObject* flag,
+                                                bool atInteractDistance, bool onCaptureFloor,
+                                                bool hasStaticLineOfSight)
+{
+    if (!sPlayerbotAIConfig.allianceAVMoveDebug || !bot || !bg || !flag)
+        return;
+
+    uint8 nodeId = 0;
+    if (!TryGetAlteracTowerOrBunkerFlagNode(bg, flag, nodeId))
+        return;
+
+    uint64 const key = (uint64(bot->GetGUID().GetCounter()) << 32) | flag->GetGUID().GetCounter();
+    uint32 const now = getMSTime();
+    {
+        std::lock_guard<std::mutex> guard(avTowerFlagCaptureDebugLogTimersMutex);
+        auto const itr = avTowerFlagCaptureDebugLogTimers.find(key);
+        if (itr != avTowerFlagCaptureDebugLogTimers.end() && now - itr->second < 2000)
+            return;
+
+        avTowerFlagCaptureDebugLogTimers[key] = now;
+    }
+
+    LOG_DEBUG("playerbots",
+              "AV tower capture geometry bot={} team={} node={} flagEntry={} flagGuid={} dist={:.2f} interact={} floor={} los={} bot=({:.1f},{:.1f},{:.1f}) flag=({:.1f},{:.1f},{:.1f})",
+              bot->GetName(), static_cast<uint32>(bot->GetTeamId()), static_cast<uint32>(nodeId), flag->GetEntry(),
+              flag->GetGUID().GetCounter(), bot->GetDistance(flag), atInteractDistance ? 1 : 0,
+              onCaptureFloor ? 1 : 0, hasStaticLineOfSight ? 1 : 0, bot->GetPositionX(), bot->GetPositionY(),
+              bot->GetPositionZ(), flag->GetPositionX(), flag->GetPositionY(), flag->GetPositionZ());
+}
+
 static uint32 AB_AttackObjectives[] = {
     BG_AB_NODE_STABLES,
     BG_AB_NODE_BLACKSMITH,
@@ -9215,6 +9281,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
 
     // First identify which flag/base we're trying to interact with
     GameObject* targetFlag = nullptr;
+    float targetFlagDistance = FLT_MAX;
     for (ObjectGuid const guid : closeObjects)
     {
         GameObject* go = botAI->GetGameObject(guid);
@@ -9241,7 +9308,7 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         if (!AllianceAVCanUseNearbyFlagDuringControlTempo(bot, bg, go, bgRole))
             continue;
 
-        if (bgType == BATTLEGROUND_AV && IsWrongFloorAlteracTowerFlag(bot, bg, go))
+        if (!bot->CanUseBattlegroundObject(go) && bgType != BATTLEGROUND_WS)
             continue;
 
         // Check if we're close enough to approach or interact with the flag.
@@ -9251,14 +9318,51 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             continue;
         }
 
-        targetFlag = go;
-        break;
+        if (dist < targetFlagDistance)
+        {
+            targetFlag = go;
+            targetFlagDistance = dist;
+        }
     }
 
     if (targetFlag && bgType == BATTLEGROUND_AV)
     {
-        float const dist = bot->GetDistance(targetFlag);
-        if (dist > flagRange)
+        uint8 towerOrBunkerNode = 0;
+        bool const isTowerOrBunkerFlag =
+            TryGetAlteracTowerOrBunkerFlagNode(bg, targetFlag, towerOrBunkerNode);
+
+        if (isTowerOrBunkerFlag)
+        {
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_CAPTURE_BANNER);
+            if (!spellInfo)
+                return false;
+
+            bool atInteractDistance = false;
+            bool onCaptureFloor = false;
+            bool hasStaticLineOfSight = false;
+            if (!IsAlteracTowerOrBunkerCaptureGeometryValid(bot, bg, targetFlag, spellInfo, atInteractDistance,
+                                                             onCaptureFloor, hasStaticLineOfSight))
+            {
+                LogAlteracTowerFlagCaptureGeometry(bot, bg, targetFlag, atInteractDistance, onCaptureFloor,
+                                                   hasStaticLineOfSight);
+
+                PositionInfo const flagPos(targetFlag->GetPositionX(), targetFlag->GetPositionY(),
+                                           targetFlag->GetPositionZ(), bot->GetMapId());
+                Position accessTarget;
+                if (SelectAlteracTowerOrBunkerAccessTarget(bot, flagPos, accessTarget))
+                    return MoveTo(bot->GetMapId(), accessTarget.GetPositionX(), accessTarget.GetPositionY(),
+                                  accessTarget.GetPositionZ());
+
+                Position captureAnchor;
+                if (GetAlteracTowerOrBunkerCaptureAnchor(bg, targetFlag, captureAnchor) &&
+                    bot->GetDistance2d(captureAnchor.GetPositionX(), captureAnchor.GetPositionY()) > 0.25f)
+                    return MoveTo(bot->GetMapId(), captureAnchor.GetPositionX(), captureAnchor.GetPositionY(),
+                                  captureAnchor.GetPositionZ());
+
+                return false;
+            }
+        }
+        else if (targetFlagDistance > flagRange)
             return MoveNear(bot->GetMapId(), targetFlag->GetPositionX(), targetFlag->GetPositionY(),
                             targetFlag->GetPositionZ(), 1.5f);
     }
@@ -9286,6 +9390,11 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
     // Check if friendly players are already capturing
     if (!closePlayers.empty() && bgType != BATTLEGROUND_EY)
     {
+        uint8 towerOrBunkerNode = 0;
+        bool const isAlteracTowerOrBunkerFlag =
+            bgType == BATTLEGROUND_AV && targetFlag &&
+            TryGetAlteracTowerOrBunkerFlagNode(bg, targetFlag, towerOrBunkerNode);
+
         // Track number of friendly players capturing and the closest one
         uint32 numCapturing = 0;
         Unit* capturingPlayer = nullptr;
@@ -9300,7 +9409,9 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
                     spell = pFriend->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
                 }
 
-                if (spell && spell->m_spellInfo && spell->m_spellInfo->Id == SPELL_CAPTURE_BANNER)
+                GameObject* capturedFlag = spell ? spell->m_targets.GetGOTarget() : nullptr;
+                if (spell && spell->m_spellInfo && spell->m_spellInfo->Id == SPELL_CAPTURE_BANNER && targetFlag &&
+                    capturedFlag && capturedFlag->GetGUID() == targetFlag->GetGUID())
                 {
                     numCapturing++;
                     capturingPlayer = pFriend;
@@ -9311,8 +9422,15 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         // If friendlies are capturing, stay on the objective instead of switching to free PvP.
         if (numCapturing > 0 && capturingPlayer && bot->GetGUID() != capturingPlayer->GetGUID())
         {
-            // Move away if too close to avoid crowding
-            if (bot->GetDistance2d(capturingPlayer) < 3.0f)
+            // Tower interiors are too narrow for the normal 5-yard spacing move. Keep reinforcements in the
+            // capture area while their teammate channels instead of making them oscillate around the banner.
+            if (isAlteracTowerOrBunkerFlag)
+            {
+                if (bot->isMoving())
+                    bot->StopMoving();
+            }
+            // Move away if too close to avoid crowding in open objectives.
+            else if (bot->GetDistance2d(capturingPlayer) < 3.0f)
             {
                 float angle = bot->GetAngle(capturingPlayer);
                 float x = bot->GetPositionX() + 5.0f * cos(angle);
@@ -9333,6 +9451,10 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         if (!go)
             continue;
 
+        // Selection, friendly-capture coordination and the cast must all refer to the same banner.
+        if (!targetFlag || go->GetGUID() != targetFlag->GetGUID())
+            continue;
+
         bool const isEyCenterFlag = eyeBg && eyCenterFlag && eyCenterFlag->GetGUID() == go->GetGUID();
 
         // Validate this is a capture target
@@ -9347,15 +9469,12 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         if (!AllianceAVCanUseNearbyFlagDuringControlTempo(bot, bg, go, bgRole))
             continue;
 
-        if (bgType == BATTLEGROUND_AV && IsWrongFloorAlteracTowerFlag(bot, bg, go))
-            continue;
-
         // Verify we can interact with it
         if (!bot->CanUseBattlegroundObject(go) && bgType != BATTLEGROUND_WS)
             continue;
 
         float const dist = bot->GetDistance(go);
-        if (flagRange && dist > flagRange)
+        if (bgType != BATTLEGROUND_AV && flagRange && dist > flagRange)
             continue;
 
         // Special handling for WSG and EY base flags
@@ -9403,25 +9522,64 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             case BATTLEGROUND_AB:
             case BATTLEGROUND_IC:
             {
-                // Prevent capturing from inside flag pole
-                if (dist < 0.75f)
+                // Open-field flags still need a small collision escape. AV banners are captured immediately when
+                // the core interaction range and static LoS checks pass; moving away here caused tower reset loops.
+                if (bgType != BATTLEGROUND_AV && dist < 0.75f)
                 {
                     float const moveDist = bot->GetObjectSize() + go->GetObjectSize() + 0.1f;
                     return MoveTo(bot->GetMapId(), go->GetPositionX() + (urand(0, 1) ? -moveDist : moveDist),
                                   go->GetPositionY() + (urand(0, 1) ? -moveDist : moveDist), go->GetPositionZ());
                 }
 
-                // Dismount before capturing
+                // Cast the capture spell
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_CAPTURE_BANNER);
+                if (!spellInfo)
+                    return false;
+
+                if (bgType == BATTLEGROUND_AV)
+                {
+                    bool atInteractDistance = false;
+                    bool onCaptureFloor = false;
+                    bool hasStaticLineOfSight = false;
+                    if (!IsAlteracTowerOrBunkerCaptureGeometryValid(bot, bg, go, spellInfo, atInteractDistance,
+                                                                     onCaptureFloor, hasStaticLineOfSight))
+                    {
+                        LogAlteracTowerFlagCaptureGeometry(bot, bg, go, atInteractDistance, onCaptureFloor,
+                                                           hasStaticLineOfSight);
+
+                        uint8 towerOrBunkerNode = 0;
+                        if (TryGetAlteracTowerOrBunkerFlagNode(bg, go, towerOrBunkerNode))
+                        {
+                            PositionInfo const flagPos(go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(),
+                                                       bot->GetMapId());
+                            Position accessTarget;
+                            if (SelectAlteracTowerOrBunkerAccessTarget(bot, flagPos, accessTarget))
+                                return MoveTo(bot->GetMapId(), accessTarget.GetPositionX(), accessTarget.GetPositionY(),
+                                              accessTarget.GetPositionZ());
+
+                            Position captureAnchor;
+                            if (GetAlteracTowerOrBunkerCaptureAnchor(bg, go, captureAnchor) &&
+                                bot->GetDistance2d(captureAnchor.GetPositionX(), captureAnchor.GetPositionY()) > 0.25f)
+                                return MoveTo(bot->GetMapId(), captureAnchor.GetPositionX(), captureAnchor.GetPositionY(),
+                                              captureAnchor.GetPositionZ());
+
+                            return false;
+                        }
+
+                        return MoveNear(bot->GetMapId(), go->GetPositionX(), go->GetPositionY(),
+                                        go->GetPositionZ(), 1.5f);
+                    }
+                }
+
+                // Dismount only after capture geometry is valid, avoiding mount loops during tower approach.
                 if (bot->IsMounted())
                     bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
 
                 if (bot->IsInDisallowedMountForm())
                     bot->RemoveAurasByType(SPELL_AURA_MOD_SHAPESHIFT);
 
-                // Cast the capture spell
-                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_CAPTURE_BANNER);
-                if (!spellInfo)
-                    return false;
+                if (bot->isMoving())
+                    bot->StopMoving();
 
                 Spell* spell = new Spell(bot, spellInfo, TRIGGERED_NONE);
                 spell->m_targets.SetGOTarget(go);
@@ -9429,7 +9587,10 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
 
                 botAI->WaitForSpellCast(spell);
 
-                resetObjective();
+                // AV banners change state after the capture channel. Resetting here reselects a failed banner and
+                // starts another channel immediately, which creates the visible capture-animation loop.
+                if (bgType != BATTLEGROUND_AV)
+                    resetObjective();
                 return true;
             }
             case BATTLEGROUND_WS:
