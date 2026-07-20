@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <cmath>
 #include <deque>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -1827,6 +1828,7 @@ enum AllianceAVObjectiveAssignment : uint8
     AV_ASSIGN_FROSTWOLF_LOCK = 6,
     AV_ASSIGN_DREK_PUSH = 7,
     AV_ASSIGN_ASSAULT_GUARD = 8,
+    AV_ASSIGN_BUNKER_RECAP = 9,
 };
 
 struct AllianceAVRushInfo
@@ -2036,6 +2038,7 @@ struct AsyncAVStrategyResult
     bool allianceObjectiveAssignmentsValid = false;
     std::array<AsyncAVAreaCounts, ASYNC_AV_AREA_MAX> areas;
     std::unordered_map<uint64, uint8> allianceObjectiveAssignments;
+    std::unordered_map<uint64, uint8> allianceBunkerRecapNodes;
 };
 
 using AsyncAVStrategyResultMap = std::unordered_map<uint32, AsyncAVStrategyResult>;
@@ -2050,6 +2053,7 @@ struct AsyncAVStrategyJob
     bool hordeCaptainAlive = false;
     std::vector<AsyncAVPlayerSnapshot> players;
     std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> nodes;
+    std::unordered_map<uint64, uint8> previousAllianceBunkerRecapNodes;
 };
 
 static bool AsyncAVAllianceNodeUnderHordePressure(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
@@ -2618,14 +2622,131 @@ static AllianceAVObjectiveAssignment AsyncAVBuildAllianceObjectiveAssignment(
     return AV_ASSIGN_ASSAULT_GUARD;
 }
 
+static bool AsyncAVAllianceBunkerNeedsRecap(AsyncAVStrategyJob const& job, uint8 nodeId)
+{
+    if (nodeId >= BG_AV_NODES_MAX)
+        return false;
+
+    AsyncAVNodeSnapshot const& node = job.nodes[nodeId];
+    return node.state == POINT_ASSAULTED && node.ownerId == TEAM_HORDE &&
+           node.prevOwnerId == TEAM_ALLIANCE && node.totalOwnerId == TEAM_ALLIANCE;
+}
+
+static AsyncAVPlayerSnapshot const* AsyncAVFindPlayerSnapshot(AsyncAVStrategyJob const& job, uint64 guid)
+{
+    for (AsyncAVPlayerSnapshot const& player : job.players)
+        if (player.guid == guid)
+            return &player;
+
+    return nullptr;
+}
+
+static bool AsyncAVAllianceBunkerRecapperEligible(AsyncAVPlayerSnapshot const& player)
+{
+    return player.guid && player.isBot && player.teamId == TEAM_ALLIANCE && player.alive && player.role < 9;
+}
+
+static float AsyncAVAllianceBunkerRecapScore(AsyncAVPlayerSnapshot const& player, Position const& bunkerPosition)
+{
+    float const dx = player.x - bunkerPosition.GetPositionX();
+    float const dy = player.y - bunkerPosition.GetPositionY();
+    float score = dx * dx + dy * dy;
+
+    // Prefer a bot approaching from the south. A bot already far north of the bunker should not turn around unless
+    // there is no returning candidate, and combat is a preference penalty rather than a hard exclusion.
+    if (player.x > bunkerPosition.GetPositionX() + 140.0f)
+        score += 4000000.0f;
+    if (player.inCombat)
+        score += 40000.0f;
+
+    return score;
+}
+
+static void AsyncAVBuildAllianceBunkerRecapAssignments(AsyncAVStrategyJob const& job,
+                                                        AsyncAVStrategyResult& result)
+{
+    result.allianceBunkerRecapNodes.clear();
+    if (!result.allianceFullRecall || job.allianceStrategy != AV_STRATEGY_ALLIANCE_CONTROL_TEMPO)
+        return;
+
+    std::vector<uint8> contestedBunkers;
+    for (uint8 nodeId : {BG_AV_NODES_DUNBALDAR_SOUTH, BG_AV_NODES_DUNBALDAR_NORTH,
+                         BG_AV_NODES_ICEWING_BUNKER, BG_AV_NODES_STONEHEART_BUNKER})
+        if (AsyncAVAllianceBunkerNeedsRecap(job, nodeId))
+            contestedBunkers.push_back(nodeId);
+
+    std::sort(contestedBunkers.begin(), contestedBunkers.end(), [&](uint8 left, uint8 right)
+    {
+        uint32 const leftTimer = job.nodes[left].timer ? job.nodes[left].timer : std::numeric_limits<uint32>::max();
+        uint32 const rightTimer = job.nodes[right].timer ? job.nodes[right].timer : std::numeric_limits<uint32>::max();
+        return leftTimer != rightTimer ? leftTimer < rightTimer : left < right;
+    });
+
+    std::vector<uint64> assignedBots;
+    for (uint8 nodeId : contestedBunkers)
+    {
+        auto const positionItr = AVNodeMovementTargets.find(nodeId);
+        if (positionItr == AVNodeMovementTargets.end())
+            continue;
+
+        Position const& bunkerPosition = positionItr->second.pos;
+        AsyncAVPlayerSnapshot const* best = nullptr;
+        float bestScore = FLT_MAX;
+        for (AsyncAVPlayerSnapshot const& player : job.players)
+        {
+            if (!AsyncAVAllianceBunkerRecapperEligible(player) ||
+                std::find(assignedBots.begin(), assignedBots.end(), player.guid) != assignedBots.end())
+                continue;
+
+            float const score = AsyncAVAllianceBunkerRecapScore(player, bunkerPosition);
+            if (score < bestScore || (score == bestScore && (!best || player.guid < best->guid)))
+            {
+                best = &player;
+                bestScore = score;
+            }
+        }
+
+        // Retain the previous owner while it remains reasonably competitive. This prevents assignment churn while
+        // allowing a much closer returning bot to take over if the original recapper is delayed.
+        AsyncAVPlayerSnapshot const* previous = nullptr;
+        for (auto const& [guid, previousNode] : job.previousAllianceBunkerRecapNodes)
+        {
+            if (previousNode != nodeId ||
+                std::find(assignedBots.begin(), assignedBots.end(), guid) != assignedBots.end())
+                continue;
+
+            previous = AsyncAVFindPlayerSnapshot(job, guid);
+            if (!previous || !AsyncAVAllianceBunkerRecapperEligible(*previous))
+                previous = nullptr;
+            break;
+        }
+
+        if (previous)
+        {
+            float const previousScore = AsyncAVAllianceBunkerRecapScore(*previous, bunkerPosition);
+            if (!best || previousScore <= bestScore + 10000.0f)
+                best = previous;
+        }
+
+        if (!best)
+            continue;
+
+        result.allianceBunkerRecapNodes[best->guid] = nodeId;
+        assignedBots.push_back(best->guid);
+    }
+}
+
 static void AsyncAVBuildAllianceObjectiveAssignments(AsyncAVStrategyJob const& job, AsyncAVStrategyResult& result)
 {
     result.allianceObjectiveAssignments.clear();
+    AsyncAVBuildAllianceBunkerRecapAssignments(job, result);
 
     for (AsyncAVPlayerSnapshot const& player : job.players)
     {
-        AllianceAVObjectiveAssignment const assignment =
-            AsyncAVBuildAllianceObjectiveAssignment(job, result, player);
+        AllianceAVObjectiveAssignment assignment = AsyncAVBuildAllianceObjectiveAssignment(job, result, player);
+        if (result.allianceBunkerRecapNodes.find(player.guid) != result.allianceBunkerRecapNodes.end())
+            assignment = AV_ASSIGN_BUNKER_RECAP;
+
         if (assignment != AV_ASSIGN_NONE && player.guid)
             result.allianceObjectiveAssignments[player.guid] = static_cast<uint8>(assignment);
     }
@@ -2725,12 +2846,13 @@ public:
             _lastLoggedGeneration = sample.generation;
             AsyncAVAreaCounts const& ibgy = sample.areas[ASYNC_AV_AREA_ICEBLOOD_220];
             LOG_INFO("playerbots",
-                     "AsyncAVStrategyCache: instances={} sample={} players={} aliveA={} aliveH={} Hnorth={} Hdeep={} Hdb={} Asouth={} IBGY_A={} IBGY_H={} towersDown={} towerProgress={} defensePressure={} tactical={} assignments={} mode={} threat={} defenders={} workers={}",
+                     "AsyncAVStrategyCache: instances={} sample={} players={} aliveA={} aliveH={} Hnorth={} Hdeep={} Hdb={} Asouth={} IBGY_A={} IBGY_H={} towersDown={} towerProgress={} defensePressure={} tactical={} assignments={} bunkerRecappers={} mode={} threat={} defenders={} workers={}",
                      instanceCount, sample.instanceId, sample.playerCount, sample.aliveAlliance, sample.aliveHorde,
                      sample.hordeNorth, sample.hordeDeepNorth, sample.hordeDunBaldar, sample.allianceSouth,
                      ibgy.allianceAlive, ibgy.hordeAlive, sample.hordeTowersDown, sample.hordeTowerProgress,
                      sample.allianceDefensivePressure, sample.allianceTacticalOrdersValid ? 1 : 0,
                      static_cast<uint32>(sample.allianceObjectiveAssignments.size()),
+                     static_cast<uint32>(sample.allianceBunkerRecapNodes.size()),
                      GetAllianceAVBattlefieldModeName(static_cast<AllianceAVBattlefieldMode>(sample.allianceMode)),
                      GetAllianceAVThreatLevelName(static_cast<AllianceAVThreatLevel>(sample.allianceThreat)),
                      static_cast<uint32>(sample.allianceDefenderLimit), static_cast<uint32>(_workers.size()));
@@ -2764,6 +2886,15 @@ public:
         job->allianceStrategy = BGTactics::GetBotStrategyForTeam(bg, TEAM_ALLIANCE);
         job->hordeStrategy = BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE);
         job->hordeCaptainAlive = av->IsCaptainAlive(TEAM_HORDE);
+
+        std::shared_ptr<AsyncAVStrategyResultMap const> previousResults =
+            std::atomic_load_explicit(&_results, std::memory_order_acquire);
+        if (previousResults)
+        {
+            auto const previousItr = previousResults->find(instanceId);
+            if (previousItr != previousResults->end())
+                job->previousAllianceBunkerRecapNodes = previousItr->second.allianceBunkerRecapNodes;
+        }
 
         for (uint8 nodeId = BG_AV_NODES_FIRSTAID_STATION; nodeId < BG_AV_NODES_MAX; ++nodeId)
         {
@@ -3570,8 +3701,10 @@ static bool TryGetAsyncAllianceAVTactics(Battleground* bg, BattlegroundAV* av, A
 }
 
 static bool TryGetAsyncAllianceAVObjectiveAssignment(Battleground* bg, Player* bot,
-                                                     AllianceAVObjectiveAssignment& assignment)
+                                                     AllianceAVObjectiveAssignment& assignment,
+                                                     uint8& bunkerRecapNode)
 {
+    bunkerRecapNode = BG_AV_NODES_MAX;
     if (!sPlayerbotAIConfig.asyncAVObjectiveAssignments || !bg || !bot ||
         bot->GetTeamId() != TEAM_ALLIANCE)
         return false;
@@ -3589,7 +3722,32 @@ static bool TryGetAsyncAllianceAVObjectiveAssignment(Battleground* bg, Player* b
         return false;
 
     assignment = static_cast<AllianceAVObjectiveAssignment>(itr->second);
+    if (assignment == AV_ASSIGN_BUNKER_RECAP)
+    {
+        auto const bunkerItr = cached.allianceBunkerRecapNodes.find(bot->GetGUID().GetCounter());
+        if (bunkerItr == cached.allianceBunkerRecapNodes.end())
+            return false;
+
+        bunkerRecapNode = bunkerItr->second;
+    }
+
     return assignment != AV_ASSIGN_NONE;
+}
+
+static bool AllianceAVIsAssignedBunkerRecapObjective(Battleground* bg, Player* bot,
+                                                       PositionInfo const& objectivePos)
+{
+    if (!bg || !bot || bot->GetTeamId() != TEAM_ALLIANCE || !objectivePos.valueSet)
+        return false;
+
+    AllianceAVObjectiveAssignment assignment = AV_ASSIGN_NONE;
+    uint8 assignedNode = BG_AV_NODES_MAX;
+    if (!TryGetAsyncAllianceAVObjectiveAssignment(bg, bot, assignment, assignedNode) ||
+        assignment != AV_ASSIGN_BUNKER_RECAP)
+        return false;
+
+    uint8 objectiveNode = BG_AV_NODES_MAX;
+    return TryGetAlteracTowerOrBunkerObjectiveNode(objectivePos, objectiveNode) && objectiveNode == assignedNode;
 }
 
 static bool AllianceShouldTakeSnowfall(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
@@ -4848,6 +5006,28 @@ static GameObject* SelectAllianceAVDefenderObjective(Player* bot, Battleground* 
     });
 
     return candidates.front().go;
+}
+
+static GameObject* SelectAllianceAssignedBunkerRecapObjective(Battleground* bg, BattlegroundAV* av, uint8 nodeId)
+{
+    if (!bg || !av || nodeId >= BG_AV_NODES_MAX)
+        return nullptr;
+
+    BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+    if (node.State != POINT_ASSAULTED || node.OwnerId != TEAM_HORDE ||
+        node.PrevOwnerId != TEAM_ALLIANCE || node.TotalOwnerId != TEAM_ALLIANCE)
+        return nullptr;
+
+    for (auto const& [candidateNodeId, goId] : AV_AllianceTowerRecapObjectives)
+    {
+        if (candidateNodeId != nodeId)
+            continue;
+
+        GameObject* flag = bg->GetBGObject(goId);
+        return flag && flag->isSpawned() && flag->GetGoState() == GO_STATE_READY ? flag : nullptr;
+    }
+
+    return nullptr;
 }
 
 static bool AllianceControlsNode(BattlegroundAV* av, uint8 nodeId)
@@ -6647,8 +6827,10 @@ bool BGTactics::selectObjective(bool reset)
             bool const hasCachedAllianceTactics = team == TEAM_ALLIANCE &&
                 TryGetAsyncAllianceAVTactics(bg, av, cachedAllianceTactics);
             AllianceAVObjectiveAssignment cachedAllianceAssignment = AV_ASSIGN_NONE;
+            uint8 cachedAllianceBunkerRecapNode = BG_AV_NODES_MAX;
             bool const hasCachedAllianceAssignment = team == TEAM_ALLIANCE &&
-                TryGetAsyncAllianceAVObjectiveAssignment(bg, bot, cachedAllianceAssignment);
+                TryGetAsyncAllianceAVObjectiveAssignment(bg, bot, cachedAllianceAssignment,
+                                                          cachedAllianceBunkerRecapNode);
             if (hasCachedAllianceTactics)
             {
                 allianceRushInfo = cachedAllianceTactics.rushInfo;
@@ -6900,6 +7082,14 @@ bool BGTactics::selectObjective(bool reset)
                             objectiveReason = "async assignment assault guard";
                         break;
                     }
+                    case AV_ASSIGN_BUNKER_RECAP:
+                    {
+                        BgObjective = SelectAllianceAssignedBunkerRecapObjective(bg, av,
+                                                                                 cachedAllianceBunkerRecapNode);
+                        if (BgObjective)
+                            objectiveReason = "async assignment bunker recap";
+                        break;
+                    }
                     case AV_ASSIGN_NONE:
                     default:
                         break;
@@ -6907,6 +7097,12 @@ bool BGTactics::selectObjective(bool reset)
 
                 return BgObjective != nullptr;
             };
+
+            // A selected recapper owns this objective before generic emergency selection. Only that one bot detours;
+            // the rest of the recalled raid continues directly toward the northern defense.
+            if (!BgObjective && hasCachedAllianceAssignment &&
+                cachedAllianceAssignment == AV_ASSIGN_BUNKER_RECAP)
+                selectCachedAllianceAssignment();
 
             if (!BgObjective && allianceFinalDrekPush && !allianceNorthEmergency && !isDefender)
             {
@@ -8583,8 +8779,9 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             Position accessTarget;
             if (SelectAlteracTowerOrBunkerAccessTarget(bot, pos, accessTarget))
             {
+                bool const exactAccessWaypoint = AllianceAVIsAssignedBunkerRecapObjective(bg, bot, pos);
                 bool const moved = MoveTo(bot->GetMapId(), accessTarget.GetPositionX(), accessTarget.GetPositionY(),
-                                          accessTarget.GetPositionZ());
+                                          accessTarget.GetPositionZ(), false, false, false, exactAccessWaypoint);
                 if (bot->GetTeamId() == TEAM_ALLIANCE)
                 {
                     uint8 const role = context->GetValue<uint32>("bg role")->Get();
@@ -8735,8 +8932,9 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         Position accessTarget;
         if (SelectAlteracTowerOrBunkerAccessTarget(bot, pos, accessTarget))
         {
+            bool const exactAccessWaypoint = AllianceAVIsAssignedBunkerRecapObjective(bg, bot, pos);
             bool const moved = MoveTo(bot->GetMapId(), accessTarget.GetPositionX(), accessTarget.GetPositionY(),
-                                      accessTarget.GetPositionZ());
+                                      accessTarget.GetPositionZ(), false, false, false, exactAccessWaypoint);
             if (bot->GetTeamId() == TEAM_ALLIANCE)
             {
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
@@ -9348,16 +9546,17 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
 
                 PositionInfo const flagPos(targetFlag->GetPositionX(), targetFlag->GetPositionY(),
                                            targetFlag->GetPositionZ(), bot->GetMapId());
+                bool const exactAccessWaypoint = AllianceAVIsAssignedBunkerRecapObjective(bg, bot, flagPos);
                 Position accessTarget;
                 if (SelectAlteracTowerOrBunkerAccessTarget(bot, flagPos, accessTarget))
                     return MoveTo(bot->GetMapId(), accessTarget.GetPositionX(), accessTarget.GetPositionY(),
-                                  accessTarget.GetPositionZ());
+                                  accessTarget.GetPositionZ(), false, false, false, exactAccessWaypoint);
 
                 Position captureAnchor;
                 if (GetAlteracTowerOrBunkerCaptureAnchor(bg, targetFlag, captureAnchor) &&
                     bot->GetDistance2d(captureAnchor.GetPositionX(), captureAnchor.GetPositionY()) > 0.25f)
                     return MoveTo(bot->GetMapId(), captureAnchor.GetPositionX(), captureAnchor.GetPositionY(),
-                                  captureAnchor.GetPositionZ());
+                                  captureAnchor.GetPositionZ(), false, false, false, exactAccessWaypoint);
 
                 return false;
             }
@@ -9552,16 +9751,18 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
                         {
                             PositionInfo const flagPos(go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(),
                                                        bot->GetMapId());
+                            bool const exactAccessWaypoint =
+                                AllianceAVIsAssignedBunkerRecapObjective(bg, bot, flagPos);
                             Position accessTarget;
                             if (SelectAlteracTowerOrBunkerAccessTarget(bot, flagPos, accessTarget))
                                 return MoveTo(bot->GetMapId(), accessTarget.GetPositionX(), accessTarget.GetPositionY(),
-                                              accessTarget.GetPositionZ());
+                                              accessTarget.GetPositionZ(), false, false, false, exactAccessWaypoint);
 
                             Position captureAnchor;
                             if (GetAlteracTowerOrBunkerCaptureAnchor(bg, go, captureAnchor) &&
                                 bot->GetDistance2d(captureAnchor.GetPositionX(), captureAnchor.GetPositionY()) > 0.25f)
                                 return MoveTo(bot->GetMapId(), captureAnchor.GetPositionX(), captureAnchor.GetPositionY(),
-                                              captureAnchor.GetPositionZ());
+                                              captureAnchor.GetPositionZ(), false, false, false, exactAccessWaypoint);
 
                             return false;
                         }
