@@ -2188,6 +2188,13 @@ static bool AsyncAVAllianceHasFinalDrekWindow(std::array<AsyncAVNodeSnapshot, BG
            result.allianceSouth >= 12;
 }
 
+static uint8 AllianceAVDrekFinisherRoleFloor(uint32 towersDown)
+{
+    // Keep a larger execution group while the fourth tower is still burning. Once all marshals are gone, a smaller
+    // group can finish Drek while the recalled bots reinforce the north.
+    return towersDown >= 4 ? 7 : 6;
+}
+
 static bool AsyncAVAllianceHasCommittedFrostwolfFoothold(
     std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes, AsyncAVStrategyResult const& result,
     AllianceAVThreatLevel threat, bool hordeCaptainAlive)
@@ -2574,6 +2581,11 @@ static AllianceAVObjectiveAssignment AsyncAVBuildAllianceObjectiveAssignment(
     bool const northernBot = player.x > -180.0f && !snowfallForward;
     bool const isDefender = player.role < defenderLimit && !southernBot;
     bool const reserveRole = player.role < std::min<uint8>(9, defenderLimit + 2);
+
+    bool const committedDrekFinisher = result.allianceFullRecall && result.allianceFinalDrekWindow &&
+        player.x <= -1000.0f && player.role >= AllianceAVDrekFinisherRoleFloor(result.hordeTowersDown);
+    if (committedDrekFinisher)
+        return AV_ASSIGN_DREK_PUSH;
 
     if (result.allianceFullRecall && player.role < 9)
         return AV_ASSIGN_NORTH_DEFENSE;
@@ -3355,6 +3367,14 @@ static bool AllianceHasFinalDrekWindow(BattlegroundAV* av, AllianceAVRushInfo co
     return towersDown >= 3 && AllianceHasForwardDrekRespawn(av) && rushInfo.allianceSouth >= 12;
 }
 
+static bool AllianceAVIsCommittedDrekFinisher(Player* bot, BattlegroundAV* av,
+                                               AllianceAVRushInfo const& rushInfo, uint32 towersDown, uint8 role)
+{
+    return bot && bot->GetTeamId() == TEAM_ALLIANCE && bot->GetPositionX() <= -1000.0f &&
+           role >= AllianceAVDrekFinisherRoleFloor(towersDown) &&
+           AllianceHasFinalDrekWindow(av, rushInfo, towersDown);
+}
+
 static AllianceAVThreatLevel GetAllianceAVThreatLevel(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo)
 {
     if (!av)
@@ -3910,7 +3930,7 @@ static bool AllianceAVShouldResetStalledObjective(Player* bot, Battleground* bg,
 static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg, BattlegroundAV* av,
                                                   PositionInfo const& objectivePos, uint8 role, bool isDefender,
                                                   AllianceAVRushInfo const& rushInfo, AllianceAVThreatLevel threat,
-                                                  AllianceAVBattlefieldMode mode)
+                                                  AllianceAVBattlefieldMode mode, bool committedDrekFinisher)
 {
     if (!bot || !bg || !av || !objectivePos.valueSet || bot->GetTeamId() != TEAM_ALLIANCE ||
         PlayerHasFlag::IsCapturingFlag(bot) || AllianceAVIsCastingAnySpell(bot))
@@ -3923,11 +3943,13 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
     if (contestedAllianceDefenseObjective)
         return false;
 
-    if ((isDefender || (fullRecall && role < 9)) && rushInfo.IsActive() && objectivePos.x < -180.0f &&
+    if (!committedDrekFinisher &&
+        (isDefender || (fullRecall && role < 9)) && rushInfo.IsActive() && objectivePos.x < -180.0f &&
         !AllianceAVPositionIsSnowfallRun(bg, objectivePos))
         return true;
 
-    if (fullRecall && role < 9 && objectivePos.x < 250.0f && !contestedAllianceDefenseObjective)
+    if (!committedDrekFinisher && fullRecall && role < 9 && objectivePos.x < 250.0f &&
+        !contestedAllianceDefenseObjective)
         return true;
 
     if (!AllianceHordeCaptainAlive(av) && AllianceAVPositionIsHordeCaptainRun(objectivePos) &&
@@ -5514,7 +5536,7 @@ static Creature* GetAllianceHordeBoss(Player* bot, Battleground* bg)
 static Creature* SelectAllianceDrekPushObjective(Player* bot, Battleground* bg, BattlegroundAV* av,
                                                   AllianceAVThreatLevel threat, AllianceAVBattlefieldMode mode,
                                                   AllianceAVRushInfo const& rushInfo, uint32 towersDown,
-                                                  uint32 defensivePressure)
+                                                  uint32 defensivePressure, bool committedFinisher = false)
 {
     if (!bot || !bg || !av)
         return nullptr;
@@ -5524,20 +5546,20 @@ static Creature* SelectAllianceDrekPushObjective(Player* bot, Battleground* bg, 
     bool const finalPushWindow = AllianceHasFinalDrekWindow(av, rushInfo, towersDown);
     bool const northSafeForBoss = threat < AV_THREAT_HIGH && (defensivePressure == 0 || towersDown >= 4);
 
-    if (AllianceAVShouldFullRecallNorth(av, threat))
+    if (AllianceAVShouldFullRecallNorth(av, threat) && !committedFinisher)
         return nullptr;
 
-    if (!captainGateOpen || (!northSafeForBoss && !finalPushWindow))
+    if (!captainGateOpen || (!northSafeForBoss && !finalPushWindow && !committedFinisher))
         return nullptr;
 
-    if (mode != AV_MODE_DREK_PUSH && !finalPushWindow)
+    if (mode != AV_MODE_DREK_PUSH && !finalPushWindow && !committedFinisher)
         return nullptr;
 
     Creature* boss = GetAllianceHordeBoss(bot, bg);
     if (!boss || !boss->IsAlive())
         return nullptr;
 
-    if (finalPushWindow || towersDown >= 4)
+    if (committedFinisher || finalPushWindow || towersDown >= 4)
         return boss;
 
     if (mode == AV_MODE_DREK_PUSH && hasForwardRespawn && towersDown >= 3)
@@ -6905,6 +6927,9 @@ bool BGTactics::selectObjective(bool reset)
 
             float botX = bot->GetPositionX();
             PositionInfo const botPos(botX, bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+            bool const allianceCommittedDrekFinisher = team == TEAM_ALLIANCE && allianceNorthEmergency &&
+                allianceFinalDrekPush && AllianceAVIsCommittedDrekFinisher(
+                    bot, av, allianceRushInfo, allianceHordeTowersDown, role);
             bool const allianceSnowfallForward = team == TEAM_ALLIANCE &&
                 (AllianceAVPositionIsSnowfallRespawn(botPos) || AllianceAVPositionIsSnowfallRun(bg, botPos));
             bool const allianceSnowfallIcebloodForward = allianceSnowfallForward && !allianceNorthEmergency &&
@@ -7065,7 +7090,8 @@ bool BGTactics::selectObjective(bool reset)
                             cachedAllianceTactics.defensivePressure : GetAllianceDefensivePressure(av);
                         BgObjective = SelectAllianceDrekPushObjective(bot, bg, av, allianceThreat, allianceMode,
                                                                       allianceRushInfo, allianceHordeTowersDown,
-                                                                      defensivePressure);
+                                                                      defensivePressure,
+                                                                      allianceCommittedDrekFinisher);
                         if (BgObjective)
                             objectiveReason = "async assignment drek";
                         else if (SetAllianceDrekPushRallyPosition(bot, posMap, pos, objectiveReason))
@@ -7104,13 +7130,15 @@ bool BGTactics::selectObjective(bool reset)
                 cachedAllianceAssignment == AV_ASSIGN_BUNKER_RECAP)
                 selectCachedAllianceAssignment();
 
-            if (!BgObjective && allianceFinalDrekPush && !allianceNorthEmergency && !isDefender)
+            if (!BgObjective && allianceFinalDrekPush &&
+                (!allianceNorthEmergency || allianceCommittedDrekFinisher) && !isDefender)
             {
                 uint32 const defensivePressure = hasCachedAllianceTactics ?
                     cachedAllianceTactics.defensivePressure : GetAllianceDefensivePressure(av);
                 BgObjective = SelectAllianceDrekPushObjective(bot, bg, av, allianceThreat, allianceMode,
                                                               allianceRushInfo, allianceHordeTowersDown,
-                                                              defensivePressure);
+                                                              defensivePressure,
+                                                              allianceCommittedDrekFinisher);
                 if (BgObjective)
                     objectiveReason = "alliance committed drek";
                 else if (SetAllianceDrekPushRallyPosition(bot, posMap, pos, objectiveReason))
@@ -8700,6 +8728,8 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             }
             bool const fullRecall = hasCachedAllianceTactics ? cachedAllianceTactics.fullRecall :
                 AllianceAVShouldFullRecallNorth(av, threat);
+            bool const committedDrekFinisher = fullRecall && finalDrekPush &&
+                AllianceAVIsCommittedDrekFinisher(bot, av, effectiveRushInfo, towersDown, role);
             bool isDefender = role < defenderLimit;
             if (isDefender)
             {
@@ -8716,7 +8746,8 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                     isDefender = false;
             }
 
-            if (AllianceAVShouldResetCurrentObjective(bot, bg, av, pos, role, isDefender, effectiveRushInfo, threat, mode))
+            if (AllianceAVShouldResetCurrentObjective(bot, bg, av, pos, role, isDefender, effectiveRushInfo, threat,
+                                                       mode, committedDrekFinisher))
             {
                 LogAllianceAVMoveDebug(bot, bg, pos, "reset_current_objective", role, defenderLimit, isDefender,
                                        AI_VALUE(Unit*, "enemy player target"));
@@ -8724,7 +8755,8 @@ bool BGTactics::moveToObjective(bool ignoreDist)
             }
 
             bool const canResetForMapState = !PlayerHasFlag::IsCapturingFlag(bot) && !AllianceAVIsCastingAnySpell(bot);
-            if (canResetForMapState && (isDefender || (fullRecall && role < 9)) && effectiveRushInfo.IsActive() &&
+            if (!committedDrekFinisher && canResetForMapState &&
+                (isDefender || (fullRecall && role < 9)) && effectiveRushInfo.IsActive() &&
                 pos.x < -180.0f && !AllianceAVPositionIsSnowfallRun(bg, pos))
             {
                 LogAllianceAVMoveDebug(bot, bg, pos, "reset_map_state_rush", role, defenderLimit, isDefender,
@@ -8732,17 +8764,19 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 return resetObjective();
             }
 
-            if (GameObject* emergency = SelectAllianceAVEmergencyDefenseObjective(bot, bg, av, role, isDefender,
-                                                                                  strategy, defenderLimit, effectiveRushInfo,
-                                                                                  threat))
+            if (!committedDrekFinisher)
             {
-                float const dx = emergency->GetPositionX() - pos.x;
-                float const dy = emergency->GetPositionY() - pos.y;
-                if (AllianceAVPositionIsAntiRushRally(pos) || (dx * dx + dy * dy) > 1600.0f)
+                if (GameObject* emergency = SelectAllianceAVEmergencyDefenseObjective(
+                        bot, bg, av, role, isDefender, strategy, defenderLimit, effectiveRushInfo, threat))
                 {
-                    LogAllianceAVMoveDebug(bot, bg, pos, "reset_emergency_defense", role, defenderLimit, isDefender,
-                                           AI_VALUE(Unit*, "enemy player target"));
-                    return resetObjective();
+                    float const dx = emergency->GetPositionX() - pos.x;
+                    float const dy = emergency->GetPositionY() - pos.y;
+                    if (AllianceAVPositionIsAntiRushRally(pos) || (dx * dx + dy * dy) > 1600.0f)
+                    {
+                        LogAllianceAVMoveDebug(bot, bg, pos, "reset_emergency_defense", role, defenderLimit,
+                                               isDefender, AI_VALUE(Unit*, "enemy player target"));
+                        return resetObjective();
+                    }
                 }
             }
 
