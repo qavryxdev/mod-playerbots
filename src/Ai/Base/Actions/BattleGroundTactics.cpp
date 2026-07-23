@@ -8730,6 +8730,7 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 AllianceAVShouldFullRecallNorth(av, threat);
             bool const committedDrekFinisher = fullRecall && finalDrekPush &&
                 AllianceAVIsCommittedDrekFinisher(bot, av, effectiveRushInfo, towersDown, role);
+            bool const assignedBunkerRecapper = AllianceAVIsAssignedBunkerRecapObjective(bg, bot, pos);
             bool isDefender = role < defenderLimit;
             if (isDefender)
             {
@@ -8764,7 +8765,7 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 return resetObjective();
             }
 
-            if (!committedDrekFinisher)
+            if (!committedDrekFinisher && !assignedBunkerRecapper)
             {
                 if (GameObject* emergency = SelectAllianceAVEmergencyDefenseObjective(
                         bot, bg, av, role, isDefender, strategy, defenderLimit, effectiveRushInfo, threat))
