@@ -10,6 +10,7 @@
 #include "Player.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 
 bool CastStealthAction::isUseful()
 {
@@ -50,7 +51,10 @@ bool CheckStealthAction::Execute(Event /*event*/)
 bool CastVanishAction::isUseful()
 {
     // do not use with WSG flag or EYE flag
-    return !botAI->HasAura(23333, bot) && !botAI->HasAura(23335, bot) && !botAI->HasAura(34976, bot);
+    if (botAI->HasAura(23333, bot) || botAI->HasAura(23335, bot) || botAI->HasAura(34976, bot))
+        return false;
+
+    return !ai::pvp::IsPvpContext(bot) || ai::pvp::ShouldUseDefensiveCooldown(botAI, false);
 }
 
 bool CastEnvenomAction::isUseful()

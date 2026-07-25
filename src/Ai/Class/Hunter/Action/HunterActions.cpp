@@ -9,9 +9,15 @@
 #include "GenericSpellActions.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "SharedDefines.h"
 
 #include <string>
+
+bool CastFeignDeathAction::isUseful()
+{
+    return !ai::pvp::IsPvpContext(bot) || ai::pvp::ShouldUseDefensiveCooldown(botAI, false);
+}
 
 Unit* CastTranquilizingShotAction::GetTarget()
 {
@@ -23,8 +29,30 @@ Unit* CastTranquilizingShotAction::GetTarget()
 
 bool CastViperStingAction::isUseful()
 {
-    return CastAuraSpellAction::isUseful() && AI_VALUE2(uint8, "mana", "self target") < 50 &&
-           AI_VALUE2(uint8, "mana", "current target") >= 30;
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseHunterSting(botAI, target, "viper sting") &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastSerpentStingAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseHunterSting(botAI, target, "serpent sting") &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastScorpidStingAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseHunterSting(botAI, target, "scorpid sting") &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastSerpentStingOnAttackerAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseHunterSting(botAI, target, "serpent sting") &&
+           CastAuraSpellAction::isUseful();
 }
 
 bool CastAspectOfTheHawkAction::isUseful()

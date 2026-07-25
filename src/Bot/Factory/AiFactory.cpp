@@ -475,6 +475,9 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         if (bgType == BATTLEGROUND_IC)
             engine->addStrategy("isle", false);
 
+        if (player->getClass() == CLASS_DRUID || player->getClass() == CLASS_ROGUE)
+            engine->addStrategy("cc", false);
+
         if (player->InArena())
         {
             engine->addStrategy("arena", false);

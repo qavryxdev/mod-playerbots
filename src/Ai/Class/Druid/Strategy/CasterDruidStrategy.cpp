@@ -148,6 +148,30 @@ void CasterDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(
         new TriggerNode(
+            "pvp melee attacker close",
+            {
+                NextAction("typhoon", ACTION_EMERGENCY + 5)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp insect swarm",
+            {
+                NextAction("insect swarm", ACTION_HIGH + 4)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp moonfire",
+            {
+                NextAction("moonfire", ACTION_HIGH + 3)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
             "eclipse (lunar) cooldown",
             {
                 NextAction("starfire", ACTION_DEFAULT + 0.2f)

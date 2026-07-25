@@ -70,7 +70,7 @@ constexpr uint32 SPELL_DK_FROST_PRESENCE = 48263;
 
 namespace
 {
-    bool IsBotCcBreakSpell(uint32 spellId)
+    bool IsBotUniversalCcBreakSpell(uint32 spellId)
     {
         switch (spellId)
         {
@@ -78,6 +78,26 @@ namespace
             case 59752:  // Every Man for Himself
             case 65547:  // PvP Trinket variant
             case 7744:   // Will of the Forsaken
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool IsBotCcBreakSpell(uint32 spellId)
+    {
+        if (IsBotUniversalCcBreakSpell(spellId))
+            return true;
+
+        switch (spellId)
+        {
+            case 18499:  // Berserker Rage
+            case 1953:   // Blink
+            case 42939:  // Blink rank 2
+            case 34471:  // The Beast Within
+            case 47585:  // Dispersion
+            case 48792:  // Icebound Fortitude
+            case 49039:  // Lichborne
                 return true;
             default:
                 return false;
@@ -110,8 +130,16 @@ namespace
 
     bool IsBotPreventedFromCasting(Player* bot, uint32 spellId = 0)
     {
-        return bot && !IsBotAllowedToCastWhileControlled(spellId) &&
-               (bot->HasUnitState(UNIT_STATE_LOST_CONTROL) || bot->IsPolymorphed() || bot->HasConfuseAura());
+        if (!bot)
+            return false;
+
+        if (bot->IsPolymorphed())
+            return !IsBotUniversalCcBreakSpell(spellId) && !IsDruidShapeshiftSpell(spellId);
+
+        if (bot->HasConfuseAura())
+            return !IsBotUniversalCcBreakSpell(spellId);
+
+        return bot->HasUnitState(UNIT_STATE_LOST_CONTROL) && !IsBotAllowedToCastWhileControlled(spellId);
     }
 
     Spell* GetCurrentInterruptCandidateSpell(Unit* target)
@@ -202,6 +230,24 @@ namespace
 
         Player* player = target->ToPlayer();
         return player && botAI->IsHeal(player);
+    }
+
+    bool IsUnstableAffliction(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return false;
+
+        switch (spellInfo->Id)
+        {
+            case 30108:
+            case 30404:
+            case 30405:
+            case 47841:
+            case 47843:
+                return true;
+            default:
+                return false;
+        }
     }
 
     bool IsWorthInterruptingPvpSpell(PlayerbotAI* botAI, Unit* target, SpellInfo const* spellInfo)
@@ -5629,6 +5675,25 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
     Unit::VisibleAuraMap const* visibleAuras = target->GetVisibleAuras();
     if (!visibleAuras)
         return false;
+
+    if (pvpContext && isFriend && dispelType == DISPEL_MAGIC)
+    {
+        bool hasUnstableAffliction = false;
+        bool hasHardControl = false;
+        for (auto const& [_, aurApp] : *visibleAuras)
+        {
+            Aura const* aura = aurApp ? aurApp->GetBase() : nullptr;
+            SpellInfo const* auraInfo = aura ? aura->GetSpellInfo() : nullptr;
+            if (!aura || aura->IsRemoved() || !auraInfo || auraInfo->IsPositive())
+                continue;
+
+            hasUnstableAffliction = hasUnstableAffliction || IsUnstableAffliction(auraInfo);
+            hasHardControl = hasHardControl || HasPvPControlEffect(auraInfo);
+        }
+
+        if (hasUnstableAffliction && !hasHardControl && target->GetHealthPct() >= 20.0f)
+            return false;
+    }
 
     for (Unit::VisibleAuraMap::const_iterator itr = visibleAuras->begin(); itr != visibleAuras->end(); ++itr)
     {

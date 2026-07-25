@@ -97,14 +97,19 @@ void GenericWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
-    triggers.push_back(
-        new TriggerNode(
-            "being attacked",
-            {
-                NextAction("death coil", ACTION_EMERGENCY + 4)
-            }
-        )
-    );
+    triggers.push_back(new TriggerNode("pvp high pressure",
+        { NextAction("death coil", ACTION_EMERGENCY + 5),
+          NextAction("shadowfury", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("pvp caster target",
+        { NextAction("curse of tongues", ACTION_HIGH + 7),
+          NextAction("curse of agony", ACTION_HIGH + 6),
+          NextAction("curse of exhaustion", ACTION_HIGH + 5),
+          NextAction("curse of weakness", ACTION_HIGH + 4) }));
+    triggers.push_back(new TriggerNode("pvp physical target",
+        { NextAction("curse of agony", ACTION_HIGH + 7),
+          NextAction("curse of exhaustion", ACTION_HIGH + 6),
+          NextAction("curse of tongues", ACTION_HIGH + 5),
+          NextAction("curse of weakness", ACTION_HIGH + 4) }));
     triggers.push_back(
         new TriggerNode(
             "critical health",

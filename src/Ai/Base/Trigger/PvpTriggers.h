@@ -148,4 +148,74 @@ public:
     bool IsActive() override;
 };
 
+class PvpHighPressureTrigger : public Trigger
+{
+public:
+    PvpHighPressureTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp high pressure", 1) {}
+    bool IsActive() override;
+};
+
+class PvpCriticalPressureTrigger : public Trigger
+{
+public:
+    PvpCriticalPressureTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp critical pressure", 1) {}
+    bool IsActive() override;
+};
+
+class PvpBurstWindowTrigger : public Trigger
+{
+public:
+    PvpBurstWindowTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp burst window", 1) {}
+    bool IsActive() override;
+};
+
+class PvpControlWindowTrigger : public Trigger
+{
+public:
+    PvpControlWindowTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp control window", 1) {}
+    bool IsActive() override;
+};
+
+class PvpPhysicalTargetTrigger : public Trigger
+{
+public:
+    PvpPhysicalTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp physical target", 1) {}
+    bool IsActive() override;
+};
+
+class PvpCasterTargetTrigger : public Trigger
+{
+public:
+    PvpCasterTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp caster target", 1) {}
+    bool IsActive() override;
+};
+
+class PvpIncomingHostileCastTrigger : public Trigger
+{
+public:
+    PvpIncomingHostileCastTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp incoming hostile cast", 1) {}
+    bool IsActive() override;
+};
+
+class PvpMeleeAttackerCloseTrigger : public Trigger
+{
+public:
+    PvpMeleeAttackerCloseTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp melee attacker close", 1) {}
+    bool IsActive() override;
+};
+
+class PvpMovementControlledTrigger : public Trigger
+{
+public:
+    PvpMovementControlledTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp movement controlled", 1) {}
+    bool IsActive() override;
+};
+
+class PvpTargetMajorDefenseTrigger : public Trigger
+{
+public:
+    PvpTargetMajorDefenseTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp target major defense", 1) {}
+    bool IsActive() override;
+};
+
 #endif

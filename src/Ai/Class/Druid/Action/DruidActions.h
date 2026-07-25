@@ -173,12 +173,16 @@ class CastMoonfireAction : public CastDebuffSpellAction
 {
 public:
     CastMoonfireAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "moonfire", true) {}
+
+    bool isUseful() override;
 };
 
 class CastInsectSwarmAction : public CastDebuffSpellAction
 {
 public:
     CastInsectSwarmAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "insect swarm", true) {}
+
+    bool isUseful() override;
 };
 
 class CastStarfireAction : public CastSpellAction
@@ -213,6 +217,28 @@ public:
     CastHibernateCcAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "hibernate on cc") {}
     Value<Unit*>* GetTargetValue() override;
     bool Execute(Event event) override;
+};
+
+class CastCycloneAction : public CastCrowdControlSpellAction
+{
+public:
+    CastCycloneAction(PlayerbotAI* botAI) : CastCrowdControlSpellAction(botAI, "cyclone") {}
+};
+
+class CastTyphoonAction : public CastSpellAction
+{
+public:
+    CastTyphoonAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "typhoon") {}
+
+    Unit* GetTarget() override;
+    bool isUseful() override;
+    bool Execute(Event event) override;
+};
+
+class CastMaimAction : public CastMeleeSpellAction
+{
+public:
+    CastMaimAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "maim") {}
 };
 
 class CastNaturesGraspAction : public CastBuffSpellAction

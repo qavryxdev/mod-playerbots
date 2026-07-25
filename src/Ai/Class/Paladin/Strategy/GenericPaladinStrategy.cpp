@@ -33,6 +33,11 @@ void GenericPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("high mana", { NextAction("divine plea", ACTION_HIGH) }));
     triggers.push_back(new TriggerNode("hand of freedom on party",
         { NextAction("hand of freedom on party", ACTION_HIGH + 4) }));
+    triggers.push_back(new TriggerNode("pvp high pressure",
+        { NextAction("hammer of justice", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("pvp critical pressure",
+        { NextAction("divine shield", ACTION_EMERGENCY + 6),
+          NextAction("lay on hands", ACTION_EMERGENCY + 5) }));
 }
 
 void PaladinCureStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

@@ -14,6 +14,7 @@
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "SharedDefines.h"
 #include "Unit.h"
@@ -29,6 +30,55 @@ bool CastDrainSoulAction::isUseful() { return AI_VALUE2(uint32, "item count", "s
 
 // Checks if the bot's health is above a certain threshold, and if so, allows casting Life Tap
 bool CastLifeTapAction::isUseful() { return AI_VALUE2(uint8, "health", "self target") > sPlayerbotAIConfig.lowHealth; }
+
+bool CastCurseOfAgonyAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseWarlockCurse(botAI, target, "curse of agony") &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastCurseOfAgonyOnAttackerAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseWarlockCurse(botAI, target, "curse of agony") &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastCurseOfTheElementsAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseWarlockCurse(botAI, target, "curse of the elements") &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastCurseOfDoomAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseWarlockCurse(botAI, target, "curse of doom") &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastCurseOfExhaustionAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseWarlockCurse(botAI, target, "curse of exhaustion") &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastCurseOfTonguesAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseWarlockCurse(botAI, target, "curse of tongues") &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastCurseOfWeaknessAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return ai::pvp::ShouldUseWarlockCurse(botAI, target, "curse of weakness") &&
+           CastAuraSpellAction::isUseful();
+}
 
 // Checks if the target marked with the moon icon can be banished
 bool CastBanishOnCcAction::isPossible()
@@ -132,6 +182,9 @@ bool CastImmolationAuraAction::isUseful()
 // Checks if the "warlock tank" strategy is active, and if so, prevents the use of Soulshatter
 bool CastSoulshatterAction::isUseful()
 {
+    if (ai::pvp::IsPvpContext(bot))
+        return false;
+
     if (botAI->HasStrategy("tank", BOT_STATE_COMBAT))
         return false;
     return true;

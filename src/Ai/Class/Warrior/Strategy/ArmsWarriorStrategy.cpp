@@ -289,4 +289,14 @@ void ArmsWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    triggers.push_back(new TriggerNode("pummel",
+        { NextAction("pummel", ACTION_INTERRUPT + 3) }));
+    triggers.push_back(new TriggerNode("pummel on enemy healer",
+        { NextAction("pummel on enemy healer", ACTION_INTERRUPT + 2) }));
+    triggers.push_back(new TriggerNode("spell reflection",
+        { NextAction("spell reflection", ACTION_INTERRUPT + 4) }));
+    triggers.push_back(new TriggerNode("pvp physical target",
+        { NextAction("disarm", ACTION_HIGH + 7) }));
+    triggers.push_back(new TriggerNode("pvp high pressure",
+        { NextAction("retaliation", ACTION_EMERGENCY + 3) }));
 }

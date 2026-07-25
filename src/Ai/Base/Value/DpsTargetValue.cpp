@@ -270,6 +270,8 @@ public:
         if (target == currentTarget && IsAlteracTowerBowman(target))
             score += 2500;
 
+        score += ai::pvp::ScoreClassMatchup(botAI, target);
+
         if (bot->GetVictim() == target)
             score += 80;
 
@@ -283,6 +285,11 @@ public:
             score += 220;
         else if (friendlyPressure == 1)
             score += 90;
+
+        uint32 const usefulAttackerCap =
+            isHighPriority || targetOnObjective ? 6u : (isEnemyHealer ? 4u : (healthPct < 25.0f ? 2u : 3u));
+        if (friendlyPressure > usefulAttackerCap && target != currentTarget && !isCastingHeal)
+            score -= static_cast<int32>((friendlyPressure - usefulAttackerCap) * 240);
 
         if (distance <= attackRange)
             score += 140;

@@ -327,11 +327,7 @@ class CastCurseOfAgonyAction : public CastDebuffSpellAction
 {
 public:
     CastCurseOfAgonyAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "curse of agony", true) {}
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 class CastCurseOfAgonyOnAttackerAction : public CastDebuffSpellOnAttackerAction
@@ -341,66 +337,42 @@ public:
         : CastDebuffSpellOnAttackerAction(botAI, "curse of agony", true)
     {
     }
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 class CastCurseOfTheElementsAction : public CastDebuffSpellAction
 {
 public:
     CastCurseOfTheElementsAction(PlayerbotAI* ai) : CastDebuffSpellAction(ai, "curse of the elements", true) {}
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 class CastCurseOfDoomAction : public CastDebuffSpellAction
 {
 public:
     CastCurseOfDoomAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "curse of doom", true, 0) {}
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 class CastCurseOfExhaustionAction : public CastDebuffSpellAction
 {
 public:
     CastCurseOfExhaustionAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "curse of exhaustion") {}
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 class CastCurseOfTonguesAction : public CastDebuffSpellAction
 {
 public:
     CastCurseOfTonguesAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "curse of tongues") {}
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 class CastCurseOfWeaknessAction : public CastDebuffSpellAction
 {
 public:
     CastCurseOfWeaknessAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "curse of weakness") {}
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 // Damage Spells

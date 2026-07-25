@@ -152,6 +152,9 @@ public:
         creators["serpent sting"] = &HunterAiObjectContextInternal::serpent_sting;
         creators["serpent sting on attacker"] = &HunterAiObjectContextInternal::serpent_sting_on_attacker;
         creators["wyvern sting"] = &HunterAiObjectContextInternal::wyvern_sting;
+        creators["scatter shot"] = &HunterAiObjectContextInternal::scatter_shot;
+        creators["master's call"] = &HunterAiObjectContextInternal::masters_call;
+        creators["frost trap"] = &HunterAiObjectContextInternal::frost_trap;
         creators["viper sting"] = &HunterAiObjectContextInternal::viper_sting;
         creators["scorpid sting"] = &HunterAiObjectContextInternal::scorpid_sting;
         creators["hunter's mark"] = &HunterAiObjectContextInternal::hunters_mark;
@@ -217,6 +220,9 @@ private:
     static Action* serpent_sting(PlayerbotAI* botAI) { return new CastSerpentStingAction(botAI); }
     static Action* serpent_sting_on_attacker(PlayerbotAI* botAI) { return new CastSerpentStingOnAttackerAction(botAI); }
     static Action* wyvern_sting(PlayerbotAI* botAI) { return new CastWyvernStingAction(botAI); }
+    static Action* scatter_shot(PlayerbotAI* botAI) { return new CastScatterShotAction(botAI); }
+    static Action* masters_call(PlayerbotAI* botAI) { return new CastMastersCallAction(botAI); }
+    static Action* frost_trap(PlayerbotAI* botAI) { return new CastFrostTrapAction(botAI); }
     static Action* viper_sting(PlayerbotAI* botAI) { return new CastViperStingAction(botAI); }
     static Action* scorpid_sting(PlayerbotAI* botAI) { return new CastScorpidStingAction(botAI); }
     static Action* hunters_mark(PlayerbotAI* botAI) { return new CastHuntersMarkAction(botAI); }

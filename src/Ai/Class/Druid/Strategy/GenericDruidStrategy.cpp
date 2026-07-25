@@ -114,6 +114,11 @@ void GenericDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("being attacked",
                                        { NextAction("nature's grasp", ACTION_HIGH + 1) }));
     triggers.push_back(new TriggerNode("new pet", { NextAction("set pet stance", 60.0f) }));
+    triggers.push_back(new TriggerNode("pvp high pressure",
+        { NextAction("barkskin", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("pvp movement controlled",
+        { NextAction("travel form", ACTION_EMERGENCY + 6),
+          NextAction("cat form", ACTION_EMERGENCY + 5) }));
 }
 
 void DruidCureStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
@@ -136,6 +141,8 @@ void DruidBoostStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void DruidCcStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode(
+        "cyclone", { NextAction("cyclone", ACTION_INTERRUPT + 4) }));
     triggers.push_back(new TriggerNode(
         "entangling roots", { NextAction("entangling roots on cc", ACTION_HIGH + 2) }));
     triggers.push_back(new TriggerNode(

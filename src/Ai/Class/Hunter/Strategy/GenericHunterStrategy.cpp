@@ -82,6 +82,20 @@ void GenericHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode("enemy too close for auto shot", { NextAction("disengage", 35.0f),
                                                                           NextAction("flee", 34.0f) }));
+    triggers.push_back(new TriggerNode("pvp movement controlled",
+        { NextAction("master's call", ACTION_EMERGENCY + 6),
+          NextAction("disengage", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("pvp high pressure",
+        { NextAction("deterrence", ACTION_EMERGENCY + 5),
+          NextAction("frost trap", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("pvp caster target",
+        { NextAction("viper sting", ACTION_HIGH + 6),
+          NextAction("serpent sting", ACTION_HIGH + 5),
+          NextAction("scorpid sting", ACTION_HIGH + 4) }));
+    triggers.push_back(new TriggerNode("pvp physical target",
+        { NextAction("viper sting", ACTION_HIGH + 6),
+          NextAction("serpent sting", ACTION_HIGH + 5),
+          NextAction("scorpid sting", ACTION_HIGH + 4) }));
 }
 
 // ===== AoE Strategy, 2/3+ enemies =====
@@ -98,6 +112,10 @@ void HunterCcStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("scare beast", { NextAction("scare beast on cc", 23.0f) }));
     triggers.push_back(new TriggerNode("freezing trap", { NextAction("freezing trap on cc", 23.0f) }));
+    triggers.push_back(new TriggerNode("pvp control window",
+        { NextAction("scatter shot", ACTION_INTERRUPT + 3),
+          NextAction("wyvern sting", ACTION_INTERRUPT + 2),
+          NextAction("freezing trap", ACTION_INTERRUPT + 1) }));
 }
 
 void HunterTrapWeaveStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

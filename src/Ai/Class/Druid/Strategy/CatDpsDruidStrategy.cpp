@@ -250,6 +250,8 @@ void CatDpsDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    triggers.push_back(new TriggerNode("pvp control window",
+        { NextAction("maim", ACTION_INTERRUPT + 2) }));
     triggers.push_back(
         new TriggerNode(
             "mangle (cat)",

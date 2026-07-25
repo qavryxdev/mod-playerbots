@@ -176,4 +176,10 @@ void DpsPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    triggers.push_back(new TriggerNode("repentance interrupt",
+        { NextAction("repentance", ACTION_INTERRUPT + 2) }));
+    triggers.push_back(new TriggerNode("repentance on enemy healer",
+        { NextAction("repentance on enemy healer", ACTION_INTERRUPT + 1) }));
+    triggers.push_back(new TriggerNode("pvp physical target",
+        { NextAction("judgement of justice", ACTION_HIGH + 5) }));
 }

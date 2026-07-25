@@ -85,6 +85,24 @@ public:
     MoonfireTrigger(PlayerbotAI* botAI) : DebuffTrigger(botAI, "moonfire", 1, true) {}
 };
 
+class PvpInsectSwarmTrigger : public BuffTrigger
+{
+public:
+    PvpInsectSwarmTrigger(PlayerbotAI* botAI) : BuffTrigger(botAI, "insect swarm", 1, true) {}
+
+    std::string const GetTargetName() override { return "current target"; }
+    bool IsActive() override;
+};
+
+class PvpMoonfireTrigger : public BuffTrigger
+{
+public:
+    PvpMoonfireTrigger(PlayerbotAI* botAI) : BuffTrigger(botAI, "moonfire", 1, true) {}
+
+    std::string const GetTargetName() override { return "current target"; }
+    bool IsActive() override;
+};
+
 class FaerieFireTrigger : public DebuffTrigger
 {
 public:
@@ -145,6 +163,12 @@ class HibernateTrigger : public HasCcTargetTrigger
 {
 public:
     HibernateTrigger(PlayerbotAI* botAI) : HasCcTargetTrigger(botAI, "hibernate") {}
+};
+
+class CycloneTrigger : public HasCcTargetTrigger
+{
+public:
+    CycloneTrigger(PlayerbotAI* botAI) : HasCcTargetTrigger(botAI, "cyclone") {}
 };
 
 class CurePoisonTrigger : public NeedCureTrigger

@@ -6,6 +6,20 @@
 #include "DruidTriggers.h"
 #include "Player.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
+
+namespace
+{
+    bool IsPvpDruidDotTarget(PlayerbotAI* botAI, Player* bot, Unit* target)
+    {
+        Player* enemy = target ? target->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+        return bot && target && target->IsAlive() && target->IsInWorld() &&
+               target->GetMapId() == bot->GetMapId() && ai::pvp::IsPvpContext(bot) &&
+               enemy && botAI->IsOpposing(enemy) &&
+               ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target) &&
+               ai::pvp::CanDamageTarget(botAI, target, false);
+    }
+}
 
 bool MarkOfTheWildOnPartyTrigger::IsActive()
 {
@@ -28,6 +42,16 @@ bool EntanglingRootsKiteTrigger::IsActive()
 }
 
 bool ThornsTrigger::IsActive() { return BuffTrigger::IsActive() && !botAI->HasAura("thorns", GetTarget()); }
+
+bool PvpInsectSwarmTrigger::IsActive()
+{
+    return IsPvpDruidDotTarget(botAI, bot, GetTarget()) && BuffTrigger::IsActive();
+}
+
+bool PvpMoonfireTrigger::IsActive()
+{
+    return IsPvpDruidDotTarget(botAI, bot, GetTarget()) && BuffTrigger::IsActive();
+}
 
 bool BearFormTrigger::IsActive() { return !botAI->HasAnyAuraOf(bot, "bear form", "dire bear form", nullptr); }
 

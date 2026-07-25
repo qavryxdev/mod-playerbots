@@ -7,6 +7,7 @@
 
 #include "Event.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "AoeValues.h"
 #include "TargetValue.h"
@@ -24,6 +25,14 @@ namespace
 
         target->RemoveOwnedAura(existingThorns, AURA_REMOVE_BY_CANCEL);
         return true;
+    }
+
+    bool IsPvpDruidDotTarget(PlayerbotAI* botAI, Player* bot, Unit* target)
+    {
+        Player* enemy = target ? target->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+        return bot && target && target->IsAlive() && target->IsInWorld() &&
+               target->GetMapId() == bot->GetMapId() && ai::pvp::IsPvpContext(bot) &&
+               enemy && botAI->IsOpposing(enemy);
     }
 }
 
@@ -64,16 +73,86 @@ bool CastThornsOnMainTankAction::Execute(Event event)
     return PrepareThornsTarget(botAI, GetTarget()) && BuffOnMainTankAction::Execute(event);
 }
 
+bool CastMoonfireAction::isUseful()
+{
+    Unit* target = GetTarget();
+    if (!IsPvpDruidDotTarget(botAI, bot, target))
+        return CastDebuffSpellAction::isUseful();
+
+    return ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target) &&
+           ai::pvp::CanDamageTarget(botAI, target, false) &&
+           CastAuraSpellAction::isUseful();
+}
+
+bool CastInsectSwarmAction::isUseful()
+{
+    Unit* target = GetTarget();
+    if (!IsPvpDruidDotTarget(botAI, bot, target))
+        return CastDebuffSpellAction::isUseful();
+
+    return ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target) &&
+           ai::pvp::CanDamageTarget(botAI, target, false) &&
+           CastAuraSpellAction::isUseful();
+}
+
+Unit* CastTyphoonAction::GetTarget()
+{
+    if (ai::pvp::IsPvpContext(bot))
+        return ai::pvp::GetClosestPvpMeleeAttacker(botAI, 10.0f);
+
+    return Action::GetTarget();
+}
+
+bool CastTyphoonAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return target && (!ai::pvp::IsPvpContext(bot) ||
+                      ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target)) &&
+           CastSpellAction::isUseful();
+}
+
+bool CastTyphoonAction::Execute(Event event)
+{
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+
+    if (ai::pvp::IsPvpContext(bot))
+        bot->SetFacingToObject(target);
+
+    return CastSpellAction::Execute(event);
+}
+
 Value<Unit*>* CastEntanglingRootsCcAction::GetTargetValue()
 {
     return context->GetValue<Unit*>("cc target", "entangling roots");
 }
 
-bool CastEntanglingRootsCcAction::Execute(Event /*event*/) { return botAI->CastSpell("entangling roots", GetTarget()); }
+bool CastEntanglingRootsCcAction::Execute(Event /*event*/)
+{
+    Unit* target = GetTarget();
+    if (!ai::pvp::TryReserveCrowdControl(botAI, target, "entangling roots"))
+        return false;
+
+    bool const cast = botAI->CastSpell("entangling roots", target);
+    if (!cast)
+        ai::pvp::ReleaseCrowdControl(botAI, target);
+    return cast;
+}
 
 Value<Unit*>* CastHibernateCcAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", "hibernate"); }
 
-bool CastHibernateCcAction::Execute(Event /*event*/) { return botAI->CastSpell("hibernate", GetTarget()); }
+bool CastHibernateCcAction::Execute(Event /*event*/)
+{
+    Unit* target = GetTarget();
+    if (!ai::pvp::TryReserveCrowdControl(botAI, target, "hibernate"))
+        return false;
+
+    bool const cast = botAI->CastSpell("hibernate", target);
+    if (!cast)
+        ai::pvp::ReleaseCrowdControl(botAI, target);
+    return cast;
+}
 bool CastStarfallAction::isUseful()
 {
     if (!CastSpellAction::isUseful())

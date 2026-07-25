@@ -576,6 +576,13 @@ public:
         CastTotemAction(botAI, "nature resistance totem", "nature resistance") {}
 };
 
+class CastGroundingTotemAction : public CastTotemAction
+{
+public:
+    CastGroundingTotemAction(PlayerbotAI* botAI) :
+        CastTotemAction(botAI, "grounding totem", "") {}
+};
+
 // Set Strategy Assigned Totems
 
 class SetTotemAction : public Action

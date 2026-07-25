@@ -194,6 +194,7 @@ public:
         creators["deathchill"] = &DeathKnightAiObjectContextInternal::deathchill;
         creators["icebound fortitude"] = &DeathKnightAiObjectContextInternal::icebound_fortitude;
         creators["mind freeze"] = &DeathKnightAiObjectContextInternal::mind_freeze;
+        creators["mind freeze on enemy healer"] = &DeathKnightAiObjectContextInternal::mind_freeze_on_enemy_healer;
         creators["empower rune weapon"] = &DeathKnightAiObjectContextInternal::empower_rune_weapon;
         creators["hungering cold"] = &DeathKnightAiObjectContextInternal::hungering_cold;
         creators["unbreakable armor"] = &DeathKnightAiObjectContextInternal::unbreakable_armor;
@@ -203,6 +204,7 @@ public:
         creators["blood tap"] = &DeathKnightAiObjectContextInternal::blood_tap;
         creators["pestilence"] = &DeathKnightAiObjectContextInternal::pestilence;
         creators["strangulate"] = &DeathKnightAiObjectContextInternal::strangulate;
+        creators["strangulate on enemy healer"] = &DeathKnightAiObjectContextInternal::strangulate_on_enemy_healer;
         creators["blood boil"] = &DeathKnightAiObjectContextInternal::blood_boil;
         creators["heart strike"] = &DeathKnightAiObjectContextInternal::heart_strike;
         creators["mark of_blood"] = &DeathKnightAiObjectContextInternal::mark_of_blood;
@@ -273,6 +275,10 @@ private:
     static Action* mind_freeze_on_enemy_healer(PlayerbotAI* botAI)
     {
         return new CastMindFreezeOnEnemyHealerAction(botAI);
+    }
+    static Action* strangulate_on_enemy_healer(PlayerbotAI* botAI)
+    {
+        return new CastStrangulateOnEnemyHealerAction(botAI);
     }
 };
 

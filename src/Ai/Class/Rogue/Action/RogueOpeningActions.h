@@ -17,6 +17,7 @@ public:
     CastSapAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "sap") {}
 
     Value<Unit*>* GetTargetValue() override;
+    bool Execute(Event event) override;
     bool isUseful() override { return true; }
 };
 

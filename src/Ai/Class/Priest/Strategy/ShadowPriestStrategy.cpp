@@ -75,6 +75,10 @@ void ShadowPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    triggers.push_back(new TriggerNode("pvp critical pressure",
+        { NextAction("dispersion", ACTION_EMERGENCY + 7) }));
+    triggers.push_back(new TriggerNode("pvp burst window",
+        { NextAction("silence on enemy healer", ACTION_INTERRUPT + 3) }));
 }
 
 void ShadowPriestAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

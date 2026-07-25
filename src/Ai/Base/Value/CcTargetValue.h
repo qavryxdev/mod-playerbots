@@ -23,12 +23,13 @@ public:
 namespace ai::cc
 {
     bool HasActiveCrowdControl(Unit* target);
+    uint32 GetCrowdControlRemainingMs(Unit* target);
+    bool CanApplyCrowdControl(PlayerbotAI* botAI, Unit* target, std::string const& spell);
     Unit* GetActivePolymorphTarget(PlayerbotAI* botAI);
     Unit* GetActiveFearTarget(PlayerbotAI* botAI);
     bool IsGoodPolymorphTarget(PlayerbotAI* botAI, Unit* target);
     bool IsDiminishingBlocked(PlayerbotAI* botAI, Unit* target, std::string const& spell);
     int32 GetDiminishingPenalty(PlayerbotAI* botAI, Unit* target, std::string const& spell);
-    void RecordCrowdControl(PlayerbotAI* botAI, Unit* target, std::string const& spell);
 }
 
 #endif

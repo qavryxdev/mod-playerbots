@@ -418,7 +418,7 @@ bool InterruptSpellTrigger::IsActive()
 {
     Unit* target = GetTarget();
     return SpellTrigger::IsActive() && botAI->IsInterruptableSpellCasting(target, getName()) &&
-           ai::pvp::TryReserveInterrupt(botAI, target, getName());
+           ai::pvp::CanAttemptInterrupt(botAI, target, getName());
 }
 
 bool DeflectSpellTrigger::IsActive()

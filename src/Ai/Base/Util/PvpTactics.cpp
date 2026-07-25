@@ -26,6 +26,7 @@
 #include "Unit.h"
 
 #include <algorithm>
+#include <cctype>
 #include <iterator>
 #include <mutex>
 #include <unordered_map>
@@ -34,6 +35,8 @@
 namespace
 {
     constexpr uint32 InterruptReservationPruneMs = 3000;
+    constexpr uint32 CrowdControlReservationPruneMs = 4000;
+    constexpr uint32 CombatPlanLifetimeMs = 2600;
     constexpr uint32 CaptureBannerSpellId = 21651;
 
     struct InterruptReservationKey
@@ -63,6 +66,55 @@ namespace
 
     std::mutex interruptReservationsMutex;
     std::unordered_map<InterruptReservationKey, InterruptReservation, InterruptReservationKeyHash> interruptReservations;
+
+    struct CrowdControlReservation
+    {
+        ObjectGuid bot;
+        std::string spell;
+        uint32 untilMs = 0;
+    };
+
+    struct CombatPlanState
+    {
+        ObjectGuid target;
+        ai::pvp::CombatPhase phase = ai::pvp::CombatPhase::None;
+        uint32 untilMs = 0;
+    };
+
+    struct HealthSample
+    {
+        float healthPct = 100.0f;
+        float recentLossPerSecond = 0.0f;
+        uint32 sampledMs = 0;
+    };
+
+    struct DefenseObservation
+    {
+        uint32 activeMask = 0;
+        uint32 lastSeenMs = 0;
+        uint32 unavailableUntilMs = 0;
+    };
+
+    struct ObservedDefenseState
+    {
+        bool active = false;
+        bool recentlySpent = false;
+    };
+
+    struct OwnedDebuffFamily
+    {
+        std::string spell;
+        int32 remainingMs = 0;
+    };
+
+    std::mutex crowdControlReservationsMutex;
+    std::unordered_map<ObjectGuid, CrowdControlReservation> crowdControlReservations;
+    std::mutex combatPlansMutex;
+    std::unordered_map<ObjectGuid, CombatPlanState> combatPlans;
+    std::mutex healthSamplesMutex;
+    std::unordered_map<ObjectGuid, HealthSample> healthSamples;
+    std::mutex defenseObservationsMutex;
+    std::unordered_map<ObjectGuid, DefenseObservation> defenseObservations;
 
     SpellInfo const* GetCurrentCastingSpell(Unit* target)
     {
@@ -99,6 +151,185 @@ namespace
         return owner && botAI->IsOpposing(owner);
     }
 
+    Player* GetControllingPlayer(Unit* target)
+    {
+        if (!target)
+            return nullptr;
+
+        if (Player* player = target->ToPlayer())
+            return player;
+
+        return target->GetCharmerOrOwnerPlayerOrPlayerItself();
+    }
+
+    std::string NormalizeSpellName(std::string name)
+    {
+        std::transform(name.begin(), name.end(), name.begin(),
+            [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+        return name;
+    }
+
+    OwnedDebuffFamily GetOwnedDebuffFamily(Player* bot, Unit* target, SpellSpecificType family)
+    {
+        OwnedDebuffFamily result;
+        if (!bot || !target)
+            return result;
+
+        Unit::AuraApplicationMap const& auras = target->GetAppliedAuras();
+        for (auto const& [_, aurApp] : auras)
+        {
+            Aura const* aura = aurApp ? aurApp->GetBase() : nullptr;
+            SpellInfo const* spellInfo = aura ? aura->GetSpellInfo() : nullptr;
+            if (!aura || aura->IsRemoved() || !spellInfo || aura->GetCasterGUID() != bot->GetGUID() ||
+                spellInfo->GetSpellSpecific() != family)
+                continue;
+
+            result.spell = NormalizeSpellName(spellInfo->SpellName[0]);
+            result.remainingMs = aura->GetDuration();
+            return result;
+        }
+
+        return result;
+    }
+
+    bool KnowsNamedSpell(PlayerbotAI* botAI, std::string const& spell)
+    {
+        return botAI && botAI->GetAiObjectContext()->GetValue<uint32>("spell id", spell)->Get();
+    }
+
+    float GetManaPct(Unit* target)
+    {
+        if (!target)
+            return 0.0f;
+
+        uint32 const maximum = target->GetMaxPower(POWER_MANA);
+        return maximum ? 100.0f * static_cast<float>(target->GetPower(POWER_MANA)) /
+                             static_cast<float>(maximum) : 0.0f;
+    }
+
+    bool IsFeralDruidForm(Player* player)
+    {
+        if (!player || player->getClass() != CLASS_DRUID)
+            return false;
+
+        ShapeshiftForm const form = player->GetShapeshiftForm();
+        return form == FORM_CAT || form == FORM_BEAR || form == FORM_DIREBEAR;
+    }
+
+    uint32 GetMajorDefenseMask(Unit* target)
+    {
+        if (!target)
+            return 0;
+
+        uint32 mask = 0;
+        if (target->HasAura(642) || target->HasAura(1020))       // Divine Shield
+            mask |= 1u << 0;
+        if (target->HasAura(1022) || target->HasAura(5599) || target->HasAura(10278)) // Hand of Protection
+            mask |= 1u << 1;
+        if (target->HasAura(45438))                              // Ice Block
+            mask |= 1u << 2;
+        if (target->HasAura(31224))                              // Cloak of Shadows
+            mask |= 1u << 3;
+        if (target->HasAura(5277) || target->HasAura(26669))    // Evasion
+            mask |= 1u << 4;
+        if (target->HasAura(47585))                              // Dispersion
+            mask |= 1u << 5;
+        if (target->HasAura(33206) || target->HasAura(47788))   // Pain Suppression / Guardian Spirit
+            mask |= 1u << 6;
+        if (target->HasAura(22812) || target->HasAura(61336))   // Barkskin / Survival Instincts
+            mask |= 1u << 7;
+        if (target->HasAura(871))                                // Shield Wall
+            mask |= 1u << 8;
+        if (target->HasAura(19263))                              // Deterrence
+            mask |= 1u << 9;
+        if (target->HasAura(48707) || target->HasAura(48792))   // Anti-Magic Shell / Icebound Fortitude
+            mask |= 1u << 10;
+        if (target->HasAura(30823))                              // Shamanistic Rage
+            mask |= 1u << 11;
+
+        return mask;
+    }
+
+    uint32 GetObservedDefenseCooldownMs(uint32 mask)
+    {
+        if (mask & ((1u << 0) | (1u << 2) | (1u << 8)))
+            return 120 * IN_MILLISECONDS;
+        if (mask & ((1u << 3) | (1u << 5) | (1u << 9)))
+            return 75 * IN_MILLISECONDS;
+        return 45 * IN_MILLISECONDS;
+    }
+
+    ObservedDefenseState ObserveMajorDefense(Unit* target)
+    {
+        ObservedDefenseState result;
+        if (!target || !target->GetGUID())
+            return result;
+
+        uint32 const now = getMSTime();
+        uint32 const currentMask = GetMajorDefenseMask(target);
+        std::lock_guard<std::mutex> guard(defenseObservationsMutex);
+        auto itr = defenseObservations.find(target->GetGUID());
+
+        if (currentMask)
+        {
+            if (itr == defenseObservations.end())
+                itr = defenseObservations.emplace(target->GetGUID(), DefenseObservation{}).first;
+
+            DefenseObservation& observation = itr->second;
+            observation.activeMask = currentMask;
+            observation.lastSeenMs = now;
+            result.active = true;
+            return result;
+        }
+
+        if (itr == defenseObservations.end())
+            return result;
+
+        DefenseObservation& observation = itr->second;
+        if (observation.activeMask)
+        {
+            if (observation.lastSeenMs && getMSTimeDiff(observation.lastSeenMs, now) <= 15000)
+                observation.unavailableUntilMs = now + GetObservedDefenseCooldownMs(observation.activeMask);
+
+            observation.activeMask = 0;
+        }
+
+        result.recentlySpent = observation.unavailableUntilMs &&
+            static_cast<int32>(observation.unavailableUntilMs - now) > 0;
+        if (!result.recentlySpent)
+            defenseObservations.erase(itr);
+
+        return result;
+    }
+
+    bool IsPhysicalDamageClass(uint8 playerClass)
+    {
+        return playerClass == CLASS_WARRIOR || playerClass == CLASS_ROGUE || playerClass == CLASS_HUNTER ||
+               playerClass == CLASS_DEATH_KNIGHT || playerClass == CLASS_PALADIN;
+    }
+
+    bool IsMagicDamageClass(uint8 playerClass)
+    {
+        return playerClass == CLASS_MAGE || playerClass == CLASS_WARLOCK || playerClass == CLASS_PRIEST ||
+               playerClass == CLASS_SHAMAN || playerClass == CLASS_DRUID;
+    }
+
+    uint32 CountFriendlyPlayerAttackers(PlayerbotAI* botAI, Unit* target)
+    {
+        if (!botAI || !target)
+            return 0;
+
+        uint32 count = 0;
+        for (Unit* attacker : target->getAttackers())
+        {
+            Player* player = GetControllingPlayer(attacker);
+            if (player && !botAI->IsOpposing(player))
+                ++count;
+        }
+
+        return count;
+    }
+
     bool IsImportantDispelAura(SpellInfo const* spellInfo, uint32 dispelType)
     {
         if (!spellInfo || !spellInfo->IsPositive() || spellInfo->Dispel != dispelType)
@@ -115,6 +346,14 @@ namespace
             case 6940:   // Blessing/Hand of Sacrifice
             case 2825:   // Bloodlust
             case 32182:  // Heroism
+            case 31884:  // Avenging Wrath
+            case 12042:  // Arcane Power
+            case 12472:  // Icy Veins
+            case 10060:  // Power Infusion
+            case 17116:  // Nature's Swiftness
+            case 16188:
+            case 16166:  // Elemental Mastery
+            case 49016:  // Hysteria
             case 17:     // Power Word: Shield ranks
             case 592:
             case 600:
@@ -192,6 +431,17 @@ namespace
         {
             if (itr->second.untilMs + InterruptReservationPruneMs < now)
                 itr = interruptReservations.erase(itr);
+            else
+                ++itr;
+        }
+    }
+
+    void PruneCrowdControlReservations(uint32 now)
+    {
+        for (auto itr = crowdControlReservations.begin(); itr != crowdControlReservations.end();)
+        {
+            if (itr->second.untilMs + CrowdControlReservationPruneMs < now)
+                itr = crowdControlReservations.erase(itr);
             else
                 ++itr;
         }
@@ -805,14 +1055,12 @@ namespace ai::pvp
         if (!IsPvpContext(bot) || !target || !IsBreakableCrowdControlled(target))
             return true;
 
-        if (target->GetVictim() == bot || IsAttackingFriendlyHealer(botAI, target))
-            return true;
-
         if (areaDamage)
             return false;
 
         Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
-        return currentTarget == target && target->GetHealthPct() < 20.0f;
+        return currentTarget == target && target->GetHealthPct() < 12.0f &&
+               GetCombatPhase(botAI, target) == CombatPhase::Burst;
     }
 
     bool SpellCanBreakCrowdControl(SpellInfo const* spellInfo)
@@ -904,11 +1152,13 @@ namespace ai::pvp
                spell == "repentance" || spell == "arcane torrent";
     }
 
-    bool TryReserveInterrupt(PlayerbotAI* botAI, Unit* target, std::string const& spell, uint32 holdMs)
+    bool CanAttemptInterrupt(PlayerbotAI* botAI, Unit* target, std::string const& spell)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
         SpellInfo const* castingSpell = GetCurrentCastingSpell(target);
-        if (!bot || !target || !IsInterruptSpell(spell) || !castingSpell)
+        if (!bot || !target)
+            return false;
+        if (!IsInterruptSpell(spell) || !castingSpell)
             return true;
 
         if (!botAI->IsInterruptableSpellCasting(target, spell))
@@ -920,11 +1170,82 @@ namespace ai::pvp
         PruneInterruptReservations(now);
 
         auto itr = interruptReservations.find(key);
+        return itr == interruptReservations.end() || itr->second.untilMs < now || itr->second.bot == bot->GetGUID();
+    }
+
+    bool TryReserveInterrupt(PlayerbotAI* botAI, Unit* target, std::string const& spell, uint32 holdMs)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        SpellInfo const* castingSpell = GetCurrentCastingSpell(target);
+        if (!bot || !target)
+            return false;
+        if (!IsInterruptSpell(spell) || !castingSpell)
+            return true;
+        if (!botAI->IsInterruptableSpellCasting(target, spell))
+            return false;
+
+        uint32 const now = getMSTime();
+        InterruptReservationKey key{ target->GetGUID(), castingSpell->Id };
+        std::lock_guard<std::mutex> guard(interruptReservationsMutex);
+        PruneInterruptReservations(now);
+        auto itr = interruptReservations.find(key);
         if (itr != interruptReservations.end() && itr->second.untilMs >= now && itr->second.bot != bot->GetGUID())
             return false;
 
         interruptReservations[key] = { bot->GetGUID(), now + holdMs };
         return true;
+    }
+
+    void ReleaseInterrupt(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !target)
+            return;
+
+        std::lock_guard<std::mutex> guard(interruptReservationsMutex);
+        for (auto itr = interruptReservations.begin(); itr != interruptReservations.end();)
+        {
+            if (itr->first.target == target->GetGUID() && itr->second.bot == bot->GetGUID())
+                itr = interruptReservations.erase(itr);
+            else
+                ++itr;
+        }
+    }
+
+    bool TryReserveCrowdControl(PlayerbotAI* botAI, Unit* target, std::string const& spell, uint32 holdMs)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !target)
+            return false;
+
+        if (!IsPvpContext(bot))
+            return true;
+
+        if (!CanEngageDuringBattlegroundCapture(botAI, target))
+            return false;
+
+        uint32 const now = getMSTime();
+        std::lock_guard<std::mutex> guard(crowdControlReservationsMutex);
+        PruneCrowdControlReservations(now);
+        auto itr = crowdControlReservations.find(target->GetGUID());
+        if (itr != crowdControlReservations.end() && itr->second.untilMs >= now &&
+            itr->second.bot != bot->GetGUID())
+            return false;
+
+        crowdControlReservations[target->GetGUID()] = { bot->GetGUID(), spell, now + holdMs };
+        return true;
+    }
+
+    void ReleaseCrowdControl(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !target || !IsPvpContext(bot))
+            return;
+
+        std::lock_guard<std::mutex> guard(crowdControlReservationsMutex);
+        auto itr = crowdControlReservations.find(target->GetGUID());
+        if (itr != crowdControlReservations.end() && itr->second.bot == bot->GetGUID())
+            crowdControlReservations.erase(itr);
     }
 
     int32 ScoreOffensiveDispelTarget(PlayerbotAI* botAI, Unit* target, uint32 dispelType, bool threatTarget)
@@ -964,6 +1285,204 @@ namespace ai::pvp
         return score;
     }
 
+    int32 ScoreClassMatchup(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        Player* playerTarget = GetControllingPlayer(target);
+        if (!bot || !playerTarget || !IsPvpContext(bot) || !botAI->IsOpposing(playerTarget))
+            return 0;
+
+        ObservedDefenseState const defense = ObserveMajorDefense(target);
+        if (defense.active)
+            return -900;
+
+        int32 score = defense.recentlySpent ? 90 : 0;
+        uint8 const botClass = bot->getClass();
+        uint8 const targetClass = playerTarget->getClass();
+
+        if (botAI->IsHeal(playerTarget))
+            score += 70;
+
+        if (IsPhysicalDamageClass(botClass))
+        {
+            if (targetClass == CLASS_MAGE || targetClass == CLASS_PRIEST || targetClass == CLASS_WARLOCK)
+                score += 75;
+            if (target->HasAura(5277) || target->HasAura(26669) || target->HasAura(19263) ||
+                target->HasAura(1022) || target->HasAura(5599) || target->HasAura(10278))
+                score -= 500;
+        }
+
+        if (IsMagicDamageClass(botClass))
+        {
+            if (targetClass == CLASS_WARRIOR || targetClass == CLASS_PALADIN)
+                score += 45;
+            if (target->HasAura(31224) || target->HasAura(48707))
+                score -= 500;
+        }
+
+        if (targetClass == CLASS_HUNTER && IsPhysicalDamageClass(botClass) &&
+            ServerFacade::instance().GetDistance2d(bot, target) <= 7.0f)
+            score += 110;
+
+        if ((targetClass == CLASS_WARRIOR || targetClass == CLASS_DEATH_KNIGHT) &&
+            (botClass == CLASS_MAGE || botClass == CLASS_HUNTER || botClass == CLASS_DRUID))
+            score += 70;
+
+        if (targetClass == CLASS_DRUID && botClass == CLASS_WARLOCK && target->HasAura(33891))
+            score += 280;
+
+        if (targetClass == CLASS_ROGUE &&
+            (target->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE) || target->HasAura(770) || target->HasAura(16857)))
+            score += 80;
+
+        return score;
+    }
+
+    uint32 GetIncomingPressure(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !IsPvpContext(bot) || !bot->IsAlive())
+            return 0;
+
+        GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        uint32 pressure = std::min<uint32>(attackers.size(), 4) * 20;
+        float const healthPct = bot->GetHealthPct();
+
+        if (healthPct < 70.0f)
+            pressure += 10;
+        if (healthPct < 45.0f)
+            pressure += 20;
+        if (healthPct < 25.0f)
+            pressure += 25;
+        if (botAI->IsHeal(bot) && !attackers.empty())
+            pressure += 10;
+
+        for (ObjectGuid const& guid : attackers)
+        {
+            Unit* attacker = botAI->GetUnit(guid);
+            if (attacker && attacker->GetTarget() == bot->GetGUID() && attacker->IsNonMeleeSpellCast(true))
+                pressure += 8;
+        }
+
+        uint32 const now = getMSTime();
+        {
+            std::lock_guard<std::mutex> guard(healthSamplesMutex);
+            HealthSample& sample = healthSamples[bot->GetGUID()];
+            if (!sample.sampledMs)
+            {
+                sample.healthPct = healthPct;
+                sample.sampledMs = now;
+            }
+            else
+            {
+                uint32 const elapsed = getMSTimeDiff(sample.sampledMs, now);
+                if (elapsed >= 250)
+                {
+                    float const loss = std::max(0.0f, sample.healthPct - healthPct);
+                    sample.recentLossPerSecond = loss * 1000.0f / static_cast<float>(elapsed);
+                    sample.healthPct = healthPct;
+                    sample.sampledMs = now;
+                }
+            }
+
+            if (sample.recentLossPerSecond >= 15.0f)
+                pressure += 30;
+            else if (sample.recentLossPerSecond >= 7.0f)
+                pressure += 15;
+        }
+
+        return std::min<uint32>(pressure, 150);
+    }
+
+    Unit* GetClosestPvpMeleeAttacker(PlayerbotAI* botAI, float maxDistance)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !IsPvpContext(bot))
+            return nullptr;
+
+        Unit* closest = nullptr;
+        float closestDistance = maxDistance;
+        GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        for (ObjectGuid const& guid : attackers)
+        {
+            Unit* attacker = botAI->GetUnit(guid);
+            Player* player = GetControllingPlayer(attacker);
+            if (!attacker || !player || !botAI->IsOpposing(player) || !attacker->IsAlive() ||
+                !attacker->IsInWorld() || attacker->GetMapId() != bot->GetMapId() ||
+                !bot->IsWithinLOSInMap(attacker) || !CanDamageTarget(botAI, attacker, false))
+                continue;
+
+            bool const meleeThreat = attacker->ToPlayer() ? PlayerbotAI::IsMelee(player, true) : true;
+            if (!meleeThreat)
+                continue;
+
+            float const distance = bot->GetExactDist2d(attacker);
+            if (distance <= closestDistance)
+            {
+                closest = attacker;
+                closestDistance = distance;
+            }
+        }
+
+        return closest;
+    }
+
+    CombatPhase GetCombatPhase(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !target || !IsPvpContext(bot) || !IsEnemyPlayerOrOwnedUnit(botAI, target) ||
+            !IsObjectiveRelevantEnemy(botAI, target, false, 70.0f, 50.0f))
+            return CombatPhase::None;
+
+        uint32 const pressure = GetIncomingPressure(botAI);
+        bool const defended = IsMajorDefenseActive(target);
+        uint32 const friendlyAttackers = CountFriendlyPlayerAttackers(botAI, target);
+
+        CombatPhase desired = CombatPhase::Sustain;
+        if (pressure >= 90)
+            desired = CombatPhase::Reset;
+        else if (defended)
+            desired = CombatPhase::Sustain;
+        else if (IsCastingHelpfulSpell(target) && GetControllingPlayer(target) &&
+                 botAI->IsHeal(GetControllingPlayer(target)))
+            desired = CombatPhase::Control;
+        else if (target->GetHealthPct() < 45.0f ||
+                 (GetControllingPlayer(target) && botAI->IsHeal(GetControllingPlayer(target)) &&
+                  friendlyAttackers >= 2))
+            desired = CombatPhase::Burst;
+        else if (target->GetHealthPct() > 70.0f && friendlyAttackers < 2)
+            desired = CombatPhase::Setup;
+
+        uint32 const now = getMSTime();
+        std::lock_guard<std::mutex> guard(combatPlansMutex);
+        CombatPlanState& plan = combatPlans[bot->GetGUID()];
+        bool const sameTarget = plan.target == target->GetGUID();
+        bool const active = sameTarget && plan.untilMs >= now;
+
+        if (active && desired != CombatPhase::Reset && !defended)
+        {
+            if (plan.phase == CombatPhase::Setup && desired == CombatPhase::Burst)
+                plan.phase = CombatPhase::Burst;
+            return plan.phase;
+        }
+
+        plan.target = target->GetGUID();
+        plan.phase = desired;
+        plan.untilMs = now + CombatPlanLifetimeMs;
+        return desired;
+    }
+
+    bool IsMajorDefenseActive(Unit* target)
+    {
+        return ObserveMajorDefense(target).active;
+    }
+
+    bool ShouldUseDefensiveCooldown(PlayerbotAI* botAI, bool critical)
+    {
+        uint32 const pressure = GetIncomingPressure(botAI);
+        return pressure >= (critical ? 85u : 60u);
+    }
+
     bool ShouldUseBurstCooldown(PlayerbotAI* botAI, Unit* target)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
@@ -973,22 +1492,113 @@ namespace ai::pvp
         if (!IsObjectiveRelevantEnemy(botAI, target, false, 70.0f, 50.0f))
             return false;
 
-        if (target->GetHealthPct() < 35.0f)
+        return !IsMajorDefenseActive(target) && GetCombatPhase(botAI, target) == CombatPhase::Burst;
+    }
+
+    bool ShouldUseHunterSting(PlayerbotAI* botAI, Unit* target, std::string const& sting)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !target)
+            return false;
+
+        if (!IsPvpContext(bot))
             return true;
 
         Player* playerTarget = target->ToPlayer();
-        if (playerTarget && botAI->IsHeal(playerTarget) && (IsCastingHelpfulSpell(target) || target->GetHealthPct() < 60.0f))
+        float const manaPct = GetManaPct(target);
+        bool const enemyHunter = playerTarget && playerTarget->getClass() == CLASS_HUNTER;
+        bool const feralDruid = IsFeralDruidForm(playerTarget);
+        bool const manaPriority = playerTarget && !feralDruid &&
+            (enemyHunter || botAI->IsHeal(playerTarget) || PlayerbotAI::IsCaster(playerTarget, true));
+        uint32 const pressure = GetIncomingPressure(botAI);
+        bool const defensivePhysical =
+            playerTarget && !enemyHunter && PlayerbotAI::IsMelee(playerTarget, true) &&
+            IsSelfDefenseTarget(bot, target) && pressure >= 70;
+
+        std::string desired;
+        if (enemyHunter && manaPct >= 12.0f && KnowsNamedSpell(botAI, "viper sting"))
+            desired = "viper sting";
+        else if (target->GetHealthPct() < 30.0f && KnowsNamedSpell(botAI, "serpent sting"))
+            desired = "serpent sting";
+        else if (manaPriority && manaPct >= 20.0f && KnowsNamedSpell(botAI, "viper sting"))
+            desired = "viper sting";
+        else if (defensivePhysical && KnowsNamedSpell(botAI, "scorpid sting"))
+            desired = "scorpid sting";
+        else if (KnowsNamedSpell(botAI, "serpent sting"))
+            desired = "serpent sting";
+        else if (manaPct > 0.0f && KnowsNamedSpell(botAI, "viper sting"))
+            desired = "viper sting";
+        else if (KnowsNamedSpell(botAI, "scorpid sting"))
+            desired = "scorpid sting";
+
+        if (desired.empty() || sting != desired)
+            return false;
+
+        OwnedDebuffFamily const active = GetOwnedDebuffFamily(bot, target, SPELL_SPECIFIC_STING);
+        if (active.spell.empty() || active.spell == desired)
             return true;
 
-        uint32 attackers = 0;
-        Unit::AttackerSet const& attackerSet = target->getAttackers();
-        for (Unit* attacker : attackerSet)
-        {
-            Player* player = attacker ? attacker->ToPlayer() : nullptr;
-            if (player && !botAI->IsOpposing(player) && ++attackers >= 2)
-                return true;
-        }
+        if (active.spell == "wyvern sting")
+            return false;
 
-        return false;
+        bool const nearExpiration = active.remainingMs >= 0 && active.remainingMs <= 2500;
+        bool const clearlyWrongProfile =
+            desired == "viper sting" || active.spell == "viper sting" ||
+            (enemyHunter && active.spell == "scorpid sting");
+        bool const emergencyDefense = desired == "scorpid sting" && pressure >= 90;
+        return nearExpiration || clearlyWrongProfile || emergencyDefense;
+    }
+
+    bool ShouldUseWarlockCurse(PlayerbotAI* botAI, Unit* target, std::string const& curse)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !target)
+            return false;
+
+        if (!IsPvpContext(bot))
+            return true;
+
+        if (botAI->HasAura("banish", target, false, true))
+            return false;
+
+        Player* playerTarget = target->ToPlayer();
+        bool const enemyHunter = playerTarget && playerTarget->getClass() == CLASS_HUNTER;
+        bool const feralDruid = IsFeralDruidForm(playerTarget);
+        bool const manaCaster = playerTarget && !enemyHunter && !feralDruid &&
+            (botAI->IsHeal(playerTarget) || PlayerbotAI::IsCaster(playerTarget, true));
+        uint32 const pressure = GetIncomingPressure(botAI);
+        bool const needsKiting =
+            playerTarget && !enemyHunter && !feralDruid && PlayerbotAI::IsMelee(playerTarget, true) &&
+            IsSelfDefenseTarget(bot, target) && pressure >= 65;
+
+        std::string desired;
+        if ((enemyHunter || feralDruid) && KnowsNamedSpell(botAI, "curse of agony"))
+            desired = "curse of agony";
+        else if (manaCaster && KnowsNamedSpell(botAI, "curse of tongues"))
+            desired = "curse of tongues";
+        else if (needsKiting && KnowsNamedSpell(botAI, "curse of exhaustion"))
+            desired = "curse of exhaustion";
+        else if (KnowsNamedSpell(botAI, "curse of agony"))
+            desired = "curse of agony";
+        else if (KnowsNamedSpell(botAI, "curse of weakness"))
+            desired = "curse of weakness";
+
+        if (desired.empty() || curse != desired)
+            return false;
+
+        OwnedDebuffFamily const active = GetOwnedDebuffFamily(bot, target, SPELL_SPECIFIC_CURSE);
+        if (active.spell.empty() || active.spell == desired)
+            return true;
+
+        bool const nearExpiration = active.remainingMs >= 0 && active.remainingMs <= 2500;
+        bool const agonyExhaustionTransition =
+            (active.spell == "curse of agony" && desired == "curse of exhaustion") ||
+            (active.spell == "curse of exhaustion" && desired == "curse of agony");
+        bool const emergencyKite = desired == "curse of exhaustion" && pressure >= 90;
+
+        if (agonyExhaustionTransition && !nearExpiration && !emergencyKite)
+            return false;
+
+        return true;
     }
 }

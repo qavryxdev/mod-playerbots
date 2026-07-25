@@ -19,6 +19,16 @@ class WorldLocation;
 
 namespace ai::pvp
 {
+    enum class CombatPhase : uint8
+    {
+        None,
+        Control,
+        Setup,
+        Burst,
+        Sustain,
+        Reset
+    };
+
     bool IsPvpContext(Player* bot);
     bool IsInAlteracValley(Player* bot);
     bool GetActiveAVObjective(PlayerbotAI* botAI, Player* bot, PositionInfo& objective);
@@ -41,10 +51,23 @@ namespace ai::pvp
     bool IsAoeSafe(PlayerbotAI* botAI, WorldLocation const& position, float radius);
 
     bool IsInterruptSpell(std::string const& spell);
+    bool CanAttemptInterrupt(PlayerbotAI* botAI, Unit* target, std::string const& spell);
     bool TryReserveInterrupt(PlayerbotAI* botAI, Unit* target, std::string const& spell, uint32 holdMs = 900);
+    void ReleaseInterrupt(PlayerbotAI* botAI, Unit* target);
+    bool TryReserveCrowdControl(PlayerbotAI* botAI, Unit* target, std::string const& spell,
+                                uint32 holdMs = 1500);
+    void ReleaseCrowdControl(PlayerbotAI* botAI, Unit* target);
 
     int32 ScoreOffensiveDispelTarget(PlayerbotAI* botAI, Unit* target, uint32 dispelType, bool threatTarget = false);
+    int32 ScoreClassMatchup(PlayerbotAI* botAI, Unit* target);
+    uint32 GetIncomingPressure(PlayerbotAI* botAI);
+    Unit* GetClosestPvpMeleeAttacker(PlayerbotAI* botAI, float maxDistance);
+    CombatPhase GetCombatPhase(PlayerbotAI* botAI, Unit* target);
+    bool IsMajorDefenseActive(Unit* target);
+    bool ShouldUseDefensiveCooldown(PlayerbotAI* botAI, bool critical = false);
     bool ShouldUseBurstCooldown(PlayerbotAI* botAI, Unit* target);
+    bool ShouldUseHunterSting(PlayerbotAI* botAI, Unit* target, std::string const& sting);
+    bool ShouldUseWarlockCurse(PlayerbotAI* botAI, Unit* target, std::string const& curse);
 }
 
 #endif

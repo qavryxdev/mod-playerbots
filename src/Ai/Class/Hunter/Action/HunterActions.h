@@ -122,19 +122,40 @@ public:
     bool Execute(Event event) override;
 };
 
-class CastFreezingTrap : public CastDebuffSpellAction
+class CastFreezingTrap : public CastCrowdControlSpellAction
 {
 public:
     CastFreezingTrap(PlayerbotAI* botAI) :
-        CastDebuffSpellAction(botAI, "freezing trap") {}
+        CastCrowdControlSpellAction(botAI, "freezing trap") {}
     Value<Unit*>* GetTargetValue() override;
 };
 
-class CastWyvernStingAction : public CastDebuffSpellAction
+class CastWyvernStingAction : public CastCrowdControlSpellAction
 {
 public:
     CastWyvernStingAction(PlayerbotAI* botAI) :
-        CastDebuffSpellAction(botAI, "wyvern sting", true) {}
+        CastCrowdControlSpellAction(botAI, "wyvern sting") {}
+};
+
+class CastScatterShotAction : public CastCrowdControlSpellAction
+{
+public:
+    CastScatterShotAction(PlayerbotAI* botAI) :
+        CastCrowdControlSpellAction(botAI, "scatter shot") {}
+};
+
+class CastMastersCallAction : public CastBuffSpellAction
+{
+public:
+    CastMastersCallAction(PlayerbotAI* botAI) :
+        CastBuffSpellAction(botAI, "master's call") {}
+};
+
+class CastFrostTrapAction : public CastBuffSpellAction
+{
+public:
+    CastFrostTrapAction(PlayerbotAI* botAI) :
+        CastBuffSpellAction(botAI, "frost trap") {}
 };
 
 class CastSilencingShotAction : public CastSpellAction
@@ -183,6 +204,7 @@ class CastFeignDeathAction : public CastBuffSpellAction
 public:
     CastFeignDeathAction(PlayerbotAI* botAI) :
         CastBuffSpellAction(botAI, "feign death") {}
+    bool isUseful() override;
 };
 
 // Pet Spells
@@ -320,11 +342,7 @@ class CastSerpentStingAction : public CastDebuffSpellAction
 public:
     CastSerpentStingAction(PlayerbotAI* botAI) :
         CastDebuffSpellAction(botAI, "serpent sting", true) {}
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 class CastScorpidStingAction : public CastDebuffSpellAction
@@ -332,11 +350,7 @@ class CastScorpidStingAction : public CastDebuffSpellAction
 public:
     CastScorpidStingAction(PlayerbotAI* botAI) :
         CastDebuffSpellAction(botAI, "scorpid sting", true) {}
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 class CastSerpentStingOnAttackerAction : public CastDebuffSpellOnAttackerAction
@@ -344,11 +358,7 @@ class CastSerpentStingOnAttackerAction : public CastDebuffSpellOnAttackerAction
 public:
     CastSerpentStingOnAttackerAction(PlayerbotAI* botAI)
         : CastDebuffSpellOnAttackerAction(botAI, "serpent sting", true) {}
-    bool isUseful() override
-    {
-        // Bypass TTL check
-        return CastAuraSpellAction::isUseful();
-    }
+    bool isUseful() override;
 };
 
 class CastImmolationTrapAction : public CastSpellAction

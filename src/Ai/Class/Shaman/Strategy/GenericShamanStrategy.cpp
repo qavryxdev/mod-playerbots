@@ -127,6 +127,13 @@ void GenericShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("wind shear on enemy healer", { NextAction("wind shear on enemy healer", 23.0f), }));
     triggers.push_back(new TriggerNode("purge", { NextAction("purge", ACTION_DISPEL), }));
     triggers.push_back(new TriggerNode("new pet", { NextAction("set pet stance", 65.0f), }));
+    triggers.push_back(new TriggerNode("pvp incoming hostile cast",
+        { NextAction("grounding totem", ACTION_INTERRUPT + 3), }));
+    triggers.push_back(new TriggerNode("pvp physical target",
+        { NextAction("earthbind totem", ACTION_HIGH + 6),
+          NextAction("frost shock", ACTION_HIGH + 5), }));
+    triggers.push_back(new TriggerNode("pvp high pressure",
+        { NextAction("stoneclaw totem", ACTION_EMERGENCY + 4), }));
 }
 
 void ShamanCureStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

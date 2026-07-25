@@ -91,6 +91,8 @@ public:
         creators["faerie fire"] = &DruidTriggerFactoryInternal::faerie_fire;
         creators["insect swarm"] = &DruidTriggerFactoryInternal::insect_swarm;
         creators["moonfire"] = &DruidTriggerFactoryInternal::moonfire;
+        creators["pvp insect swarm"] = &DruidTriggerFactoryInternal::pvp_insect_swarm;
+        creators["pvp moonfire"] = &DruidTriggerFactoryInternal::pvp_moonfire;
         creators["nature's grasp"] = &DruidTriggerFactoryInternal::natures_grasp;
         creators["tiger's fury"] = &DruidTriggerFactoryInternal::tigers_fury;
         creators["berserk"] = &DruidTriggerFactoryInternal::berserk;
@@ -103,6 +105,7 @@ public:
         creators["entangling roots"] = &DruidTriggerFactoryInternal::entangling_roots;
         creators["entangling roots kite"] = &DruidTriggerFactoryInternal::entangling_roots_kite;
         creators["hibernate"] = &DruidTriggerFactoryInternal::hibernate;
+        creators["cyclone"] = &DruidTriggerFactoryInternal::cyclone;
         creators["bear form"] = &DruidTriggerFactoryInternal::bear_form;
         creators["cat form"] = &DruidTriggerFactoryInternal::cat_form;
         creators["tree form"] = &DruidTriggerFactoryInternal::tree_form;
@@ -131,6 +134,8 @@ private:
     static Trigger* faerie_fire_feral(PlayerbotAI* botAI) { return new FaerieFireFeralTrigger(botAI); }
     static Trigger* insect_swarm(PlayerbotAI* botAI) { return new InsectSwarmTrigger(botAI); }
     static Trigger* moonfire(PlayerbotAI* botAI) { return new MoonfireTrigger(botAI); }
+    static Trigger* pvp_insect_swarm(PlayerbotAI* botAI) { return new PvpInsectSwarmTrigger(botAI); }
+    static Trigger* pvp_moonfire(PlayerbotAI* botAI) { return new PvpMoonfireTrigger(botAI); }
     static Trigger* faerie_fire(PlayerbotAI* botAI) { return new FaerieFireTrigger(botAI); }
     static Trigger* natures_grasp(PlayerbotAI* botAI) { return new NaturesGraspTrigger(botAI); }
     static Trigger* tigers_fury(PlayerbotAI* botAI) { return new TigersFuryTrigger(botAI); }
@@ -144,6 +149,7 @@ private:
     static Trigger* entangling_roots(PlayerbotAI* botAI) { return new EntanglingRootsTrigger(botAI); }
     static Trigger* entangling_roots_kite(PlayerbotAI* botAI) { return new EntanglingRootsKiteTrigger(botAI); }
     static Trigger* hibernate(PlayerbotAI* botAI) { return new HibernateTrigger(botAI); }
+    static Trigger* cyclone(PlayerbotAI* botAI) { return new CycloneTrigger(botAI); }
     static Trigger* bear_form(PlayerbotAI* botAI) { return new BearFormTrigger(botAI); }
     static Trigger* cat_form(PlayerbotAI* botAI) { return new CatFormTrigger(botAI); }
     static Trigger* tree_form(PlayerbotAI* botAI) { return new TreeFormTrigger(botAI); }
@@ -195,6 +201,9 @@ public:
         creators["entangling roots on cc"] = &DruidAiObjectContextInternal::entangling_roots_on_cc;
         creators["hibernate"] = &DruidAiObjectContextInternal::hibernate;
         creators["hibernate on cc"] = &DruidAiObjectContextInternal::hibernate_on_cc;
+        creators["cyclone"] = &DruidAiObjectContextInternal::cyclone;
+        creators["typhoon"] = &DruidAiObjectContextInternal::typhoon;
+        creators["maim"] = &DruidAiObjectContextInternal::maim;
         creators["wrath"] = &DruidAiObjectContextInternal::wrath;
         creators["starfall"] = &DruidAiObjectContextInternal::starfall;
         creators["insect swarm"] = &DruidAiObjectContextInternal::insect_swarm;
@@ -291,6 +300,9 @@ private:
     static Action* entangling_roots(PlayerbotAI* botAI) { return new CastEntanglingRootsAction(botAI); }
     static Action* hibernate_on_cc(PlayerbotAI* botAI) { return new CastHibernateCcAction(botAI); }
     static Action* entangling_roots_on_cc(PlayerbotAI* botAI) { return new CastEntanglingRootsCcAction(botAI); }
+    static Action* cyclone(PlayerbotAI* botAI) { return new CastCycloneAction(botAI); }
+    static Action* typhoon(PlayerbotAI* botAI) { return new CastTyphoonAction(botAI); }
+    static Action* maim(PlayerbotAI* botAI) { return new CastMaimAction(botAI); }
     static Action* wrath(PlayerbotAI* botAI) { return new CastWrathAction(botAI); }
     static Action* starfall(PlayerbotAI* botAI) { return new CastStarfallAction(botAI); }
     static Action* insect_swarm(PlayerbotAI* botAI) { return new CastInsectSwarmAction(botAI); }

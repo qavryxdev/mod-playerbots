@@ -31,7 +31,7 @@ private:
     static ActionNode* summon_water_elemental(PlayerbotAI*) { return new ActionNode("summon water elemental", {}, {}, {}); }
     static ActionNode* deep_freeze(PlayerbotAI*) { return new ActionNode("deep freeze", {}, {}, {}); }
     static ActionNode* icy_veins(PlayerbotAI*) { return new ActionNode("icy veins", {}, {}, {}); }
-    static ActionNode* frostbolt(PlayerbotAI*) { return new ActionNode("frostbolt", {}, {}, {}); }
+    static ActionNode* frostbolt(PlayerbotAI*) { return new ActionNode("frostbolt", {}, {}, { NextAction("ice lance") }); }
     static ActionNode* ice_lance(PlayerbotAI*) { return new ActionNode("ice lance", {}, {}, {}); }
     static ActionNode* fire_blast(PlayerbotAI*) { return new ActionNode("fire blast", {}, {}, {}); }
     static ActionNode* fireball(PlayerbotAI*) { return new ActionNode("fireball", {}, {}, {}); }
@@ -139,4 +139,9 @@ void FrostMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    triggers.push_back(new TriggerNode("pvp high pressure",
+        { NextAction("ice barrier", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("pvp burst window",
+        { NextAction("deep freeze", ACTION_HIGH + 8),
+          NextAction("icy veins", ACTION_HIGH + 7) }));
 }

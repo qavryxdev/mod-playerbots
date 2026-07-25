@@ -84,6 +84,16 @@ public:
         creators["not dps aoe target active"] = &TriggerContext::not_dps_aoe_target_active;
         creators["has nearest adds"] = &TriggerContext::has_nearest_adds;
         creators["enemy player near"] = &TriggerContext::enemy_player_near;
+        creators["pvp high pressure"] = &TriggerContext::pvp_high_pressure;
+        creators["pvp critical pressure"] = &TriggerContext::pvp_critical_pressure;
+        creators["pvp burst window"] = &TriggerContext::pvp_burst_window;
+        creators["pvp control window"] = &TriggerContext::pvp_control_window;
+        creators["pvp physical target"] = &TriggerContext::pvp_physical_target;
+        creators["pvp caster target"] = &TriggerContext::pvp_caster_target;
+        creators["pvp incoming hostile cast"] = &TriggerContext::pvp_incoming_hostile_cast;
+        creators["pvp melee attacker close"] = &TriggerContext::pvp_melee_attacker_close;
+        creators["pvp movement controlled"] = &TriggerContext::pvp_movement_controlled;
+        creators["pvp target major defense"] = &TriggerContext::pvp_target_major_defense;
 
         creators["tank assist"] = &TriggerContext::TankAssist;
         creators["lose aggro"] = &TriggerContext::LoseAggro;
@@ -333,6 +343,16 @@ private:
     static Trigger* not_dps_aoe_target_active(PlayerbotAI* botAI) { return new NotDpsAoeTargetActiveTrigger(botAI); }
     static Trigger* has_nearest_adds(PlayerbotAI* botAI) { return new HasNearestAddsTrigger(botAI); }
     static Trigger* enemy_player_near(PlayerbotAI* botAI) { return new EnemyPlayerNear(botAI); }
+    static Trigger* pvp_high_pressure(PlayerbotAI* botAI) { return new PvpHighPressureTrigger(botAI); }
+    static Trigger* pvp_critical_pressure(PlayerbotAI* botAI) { return new PvpCriticalPressureTrigger(botAI); }
+    static Trigger* pvp_burst_window(PlayerbotAI* botAI) { return new PvpBurstWindowTrigger(botAI); }
+    static Trigger* pvp_control_window(PlayerbotAI* botAI) { return new PvpControlWindowTrigger(botAI); }
+    static Trigger* pvp_physical_target(PlayerbotAI* botAI) { return new PvpPhysicalTargetTrigger(botAI); }
+    static Trigger* pvp_caster_target(PlayerbotAI* botAI) { return new PvpCasterTargetTrigger(botAI); }
+    static Trigger* pvp_incoming_hostile_cast(PlayerbotAI* botAI) { return new PvpIncomingHostileCastTrigger(botAI); }
+    static Trigger* pvp_melee_attacker_close(PlayerbotAI* botAI) { return new PvpMeleeAttackerCloseTrigger(botAI); }
+    static Trigger* pvp_movement_controlled(PlayerbotAI* botAI) { return new PvpMovementControlledTrigger(botAI); }
+    static Trigger* pvp_target_major_defense(PlayerbotAI* botAI) { return new PvpTargetMajorDefenseTrigger(botAI); }
     static Trigger* Random(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "random", 20); }
     static Trigger* seldom(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "seldom", 300); }
     static Trigger* often(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "often", 5); }

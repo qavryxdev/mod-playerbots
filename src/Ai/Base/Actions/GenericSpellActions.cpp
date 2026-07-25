@@ -76,7 +76,7 @@ namespace
 }
 
 CastSpellAction::CastSpellAction(PlayerbotAI* botAI, std::string const spell)
-    : Action(botAI, spell), range(botAI->GetRange("spell")), spell(spell)
+    : Action(botAI, spell), spell(spell), range(botAI->GetRange("spell"))
 {
 }
 
@@ -126,7 +126,16 @@ bool CastSpellAction::Execute(Event /*event*/)
         return botAI->CastSpell(castId, bot);
     }
 
-    return botAI->CastSpell(spell, GetTarget());
+    Unit* target = GetTarget();
+    bool const interrupt = ai::pvp::IsInterruptSpell(spell);
+    if (interrupt && !ai::pvp::TryReserveInterrupt(botAI, target, spell))
+        return false;
+
+    bool const cast = botAI->CastSpell(spell, target);
+    if (interrupt && !cast)
+        ai::pvp::ReleaseInterrupt(botAI, target);
+
+    return cast;
 }
 
 bool CastSpellAction::isUseful()
@@ -192,7 +201,7 @@ bool CastSpellAction::isPossible()
     }
 
     Unit* target = GetTarget();
-    if (ai::pvp::IsInterruptSpell(spell) && !ai::pvp::TryReserveInterrupt(botAI, target, spell))
+    if (ai::pvp::IsInterruptSpell(spell) && !ai::pvp::CanAttemptInterrupt(botAI, target, spell))
         return false;
 
     // Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL); //not used, line marked for removal.
@@ -242,7 +251,8 @@ bool CastAuraSpellAction::isUseful()
     Aura* aura = botAI->GetAura(spell, GetTarget(), isOwner, checkDuration);
     if (!aura)
         return true;
-    if (beforeDuration && aura->GetDuration() < beforeDuration)
+    int32 const duration = aura->GetDuration();
+    if (beforeDuration && duration >= 0 && static_cast<uint32>(duration) < beforeDuration)
         return true;
     return false;
 }
@@ -301,7 +311,7 @@ bool CastEnchantItemOffHandAction::isPossible()
 
 CastHealingSpellAction::CastHealingSpellAction(PlayerbotAI* botAI, std::string const spell, uint8 estAmount,
                                                HealingManaEfficiency manaEfficiency, bool isOwner)
-    : CastAuraSpellAction(botAI, spell, isOwner), estAmount(estAmount), manaEfficiency(manaEfficiency)
+    : CastAuraSpellAction(botAI, spell, isOwner), manaEfficiency(manaEfficiency), estAmount(estAmount)
 {
     range = botAI->GetRange("heal");
 }
@@ -420,9 +430,12 @@ Value<Unit*>* CastCrowdControlSpellAction::GetTargetValue() { return context->Ge
 bool CastCrowdControlSpellAction::Execute(Event /*event*/)
 {
     Unit* target = GetTarget();
+    if (!ai::pvp::TryReserveCrowdControl(botAI, target, getName()))
+        return false;
+
     bool const cast = botAI->CastSpell(getName(), target);
-    if (cast)
-        ai::cc::RecordCrowdControl(botAI, target, getName());
+    if (!cast)
+        ai::pvp::ReleaseCrowdControl(botAI, target);
 
     return cast;
 }
@@ -430,15 +443,15 @@ bool CastCrowdControlSpellAction::Execute(Event /*event*/)
 bool CastCrowdControlSpellAction::isPossible()
 {
     Unit* target = GetTarget();
-    return target && !ai::cc::HasActiveCrowdControl(target) &&
-           !ai::cc::IsDiminishingBlocked(botAI, target, getName()) &&
+    return target && ai::cc::CanApplyCrowdControl(botAI, target, getName()) &&
            botAI->CanCastSpell(getName(), target);
 }
 
 bool CastCrowdControlSpellAction::isUseful()
 {
     Unit* target = GetTarget();
-    return target && !botAI->HasAura(getName(), target) && !ai::cc::HasActiveCrowdControl(target);
+    return target && !botAI->HasAura(getName(), target) &&
+           ai::cc::CanApplyCrowdControl(botAI, target, getName());
 }
 
 std::string const CastProtectSpellAction::GetTargetName() { return "party member to protect"; }

@@ -23,42 +23,11 @@
 
 #include <algorithm>
 #include <limits>
-#include <mutex>
-#include <unordered_map>
 #include <unordered_set>
 
 namespace
 {
-    constexpr uint32 CcDiminishingResetMs = 18 * IN_MILLISECONDS;
-    constexpr size_t CcDiminishingMaxEntries = 4096;
-
-    struct CcDiminishingKey
-    {
-        ObjectGuid target;
-        DiminishingGroup group;
-
-        bool operator==(CcDiminishingKey const& other) const
-        {
-            return target == other.target && group == other.group;
-        }
-    };
-
-    struct CcDiminishingKeyHash
-    {
-        std::size_t operator()(CcDiminishingKey const& key) const
-        {
-            return std::hash<ObjectGuid>()(key.target) ^ (std::hash<uint32>()(key.group) << 1);
-        }
-    };
-
-    struct CcDiminishingState
-    {
-        uint8 hitCount = 0;
-        uint32 lastMs = 0;
-    };
-
-    std::mutex ccDiminishingMutex;
-    std::unordered_map<CcDiminishingKey, CcDiminishingState, CcDiminishingKeyHash> ccDiminishingCache;
+    constexpr uint32 CcChainWindowMs = 900;
 
     DiminishingGroup GetDiminishingGroup(PlayerbotAI* botAI, std::string const& spell)
     {
@@ -77,23 +46,33 @@ namespace
         return GetDiminishingReturnsGroupType(group) == DRTYPE_NONE ? DIMINISHING_NONE : group;
     }
 
-    bool IsDiminishingExpired(CcDiminishingState const& state, uint32 now)
+    bool IsCrowdControlAura(SpellInfo const* spellInfo)
     {
-        return !state.lastMs || getMSTimeDiff(state.lastMs, now) > CcDiminishingResetMs;
-    }
+        if (!spellInfo)
+            return false;
 
-    void PruneDiminishingCache(uint32 now)
-    {
-        if (ccDiminishingCache.size() <= CcDiminishingMaxEntries)
-            return;
-
-        for (auto itr = ccDiminishingCache.begin(); itr != ccDiminishingCache.end();)
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
         {
-            if (IsDiminishingExpired(itr->second, now))
-                itr = ccDiminishingCache.erase(itr);
-            else
-                ++itr;
+            if (effect.Effect != SPELL_EFFECT_APPLY_AURA)
+                continue;
+
+            switch (effect.ApplyAuraName)
+            {
+                case SPELL_AURA_MOD_CHARM:
+                case SPELL_AURA_MOD_CONFUSE:
+                case SPELL_AURA_MOD_FEAR:
+                case SPELL_AURA_MOD_PACIFY:
+                case SPELL_AURA_MOD_PACIFY_SILENCE:
+                case SPELL_AURA_MOD_POSSESS:
+                case SPELL_AURA_MOD_POSSESS_PET:
+                case SPELL_AURA_MOD_STUN:
+                    return true;
+                default:
+                    break;
+            }
         }
+
+        return false;
     }
 
     bool IsCastingHelpfulSpell(Unit* target)
@@ -244,6 +223,40 @@ namespace ai::cc
             target->HasAuraType(SPELL_AURA_MOD_POSSESS) ||
             target->HasAuraType(SPELL_AURA_MOD_POSSESS_PET) ||
             target->HasAuraType(SPELL_AURA_MOD_STUN));
+    }
+
+    uint32 GetCrowdControlRemainingMs(Unit* target)
+    {
+        if (!target)
+            return 0;
+
+        uint32 remainingMs = 0;
+        Unit::AuraApplicationMap const& auras = target->GetAppliedAuras();
+        for (auto const& [_, aurApp] : auras)
+        {
+            Aura const* aura = aurApp ? aurApp->GetBase() : nullptr;
+            if (!aura || aura->IsRemoved() || !IsCrowdControlAura(aura->GetSpellInfo()))
+                continue;
+
+            int32 const duration = aura->GetDuration();
+            if (duration < 0)
+                return std::numeric_limits<uint32>::max();
+
+            remainingMs = std::max<uint32>(remainingMs, static_cast<uint32>(duration));
+        }
+
+        return remainingMs;
+    }
+
+    bool CanApplyCrowdControl(PlayerbotAI* botAI, Unit* target, std::string const& spell)
+    {
+        if (!target || IsDiminishingBlocked(botAI, target, spell))
+            return false;
+
+        if (!HasActiveCrowdControl(target))
+            return true;
+
+        return GetCrowdControlRemainingMs(target) <= CcChainWindowMs;
     }
 
     bool HasPolymorphFromCaster(Unit* target, ObjectGuid const& casterGuid)
@@ -406,15 +419,7 @@ namespace ai::cc
         if (group == DIMINISHING_NONE)
             return false;
 
-        uint32 const now = getMSTime();
-        std::lock_guard<std::mutex> guard(ccDiminishingMutex);
-        PruneDiminishingCache(now);
-
-        auto itr = ccDiminishingCache.find({ target->GetGUID(), group });
-        if (itr == ccDiminishingCache.end() || IsDiminishingExpired(itr->second, now))
-            return false;
-
-        return itr->second.hitCount >= 3;
+        return target->GetDiminishing(group) >= DIMINISHING_LEVEL_IMMUNE;
     }
 
     int32 GetDiminishingPenalty(PlayerbotAI* botAI, Unit* target, std::string const& spell)
@@ -426,35 +431,17 @@ namespace ai::cc
         if (group == DIMINISHING_NONE)
             return 0;
 
-        uint32 const now = getMSTime();
-        std::lock_guard<std::mutex> guard(ccDiminishingMutex);
-
-        auto itr = ccDiminishingCache.find({ target->GetGUID(), group });
-        if (itr == ccDiminishingCache.end() || IsDiminishingExpired(itr->second, now))
-            return 0;
-
-        if (itr->second.hitCount >= 3)
-            return 100000;
-
-        return itr->second.hitCount == 2 ? 140 : 35;
-    }
-
-    void RecordCrowdControl(PlayerbotAI* botAI, Unit* target, std::string const& spell)
-    {
-        if (!target)
-            return;
-
-        DiminishingGroup const group = GetDiminishingGroup(botAI, spell);
-        if (group == DIMINISHING_NONE)
-            return;
-
-        uint32 const now = getMSTime();
-        std::lock_guard<std::mutex> guard(ccDiminishingMutex);
-        PruneDiminishingCache(now);
-
-        CcDiminishingState& state = ccDiminishingCache[{ target->GetGUID(), group }];
-        state.hitCount = IsDiminishingExpired(state, now) ? 1 : std::min<uint8>(state.hitCount + 1, 4);
-        state.lastMs = now;
+        switch (target->GetDiminishing(group))
+        {
+            case DIMINISHING_LEVEL_1:
+                return 0;
+            case DIMINISHING_LEVEL_2:
+                return 45;
+            case DIMINISHING_LEVEL_3:
+                return 180;
+            default:
+                return 100000;
+        }
     }
 }
 
@@ -487,7 +474,7 @@ public:
         if (!botAI->CanCastSpell(spell, creature))
             return;
 
-        if (ai::cc::HasActiveCrowdControl(creature) || ai::cc::IsDiminishingBlocked(botAI, creature, spell))
+        if (!ai::cc::CanApplyCrowdControl(botAI, creature, spell))
             return;
 
         bool const isPolymorph = spell == "polymorph";

@@ -10,6 +10,7 @@
 #include "BattlegroundMgr.h"
 #include "BattlegroundWS.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "BattlegroundAV.h"
 #include "BattlegroundEY.h"
@@ -334,4 +335,101 @@ bool AllianceNoSnowfallGY::IsActive()
     }
 
     return false;
+}
+
+bool PvpHighPressureTrigger::IsActive()
+{
+    return ai::pvp::ShouldUseDefensiveCooldown(botAI, false);
+}
+
+bool PvpCriticalPressureTrigger::IsActive()
+{
+    return ai::pvp::ShouldUseDefensiveCooldown(botAI, true);
+}
+
+bool PvpBurstWindowTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return target && ai::pvp::ShouldUseBurstCooldown(botAI, target);
+}
+
+bool PvpControlWindowTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target)
+        return false;
+
+    ai::pvp::CombatPhase const phase = ai::pvp::GetCombatPhase(botAI, target);
+    return phase == ai::pvp::CombatPhase::Control || phase == ai::pvp::CombatPhase::Setup;
+}
+
+bool PvpPhysicalTargetTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    Player* player = target ? target->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!player || !botAI->IsOpposing(player))
+        return false;
+
+    switch (player->getClass())
+    {
+        case CLASS_WARRIOR:
+        case CLASS_ROGUE:
+        case CLASS_HUNTER:
+        case CLASS_DEATH_KNIGHT:
+        case CLASS_PALADIN:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool PvpCasterTargetTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    Player* player = target ? target->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!player || !botAI->IsOpposing(player))
+        return false;
+
+    switch (player->getClass())
+    {
+        case CLASS_MAGE:
+        case CLASS_WARLOCK:
+        case CLASS_PRIEST:
+        case CLASS_SHAMAN:
+        case CLASS_DRUID:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool PvpIncomingHostileCastTrigger::IsActive()
+{
+    if (!ai::pvp::IsPvpContext(bot))
+        return false;
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    Player* player = target ? target->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    return player && botAI->IsOpposing(player) && target->GetTarget() == bot->GetGUID() &&
+           target->IsNonMeleeSpellCast(true);
+}
+
+bool PvpMeleeAttackerCloseTrigger::IsActive()
+{
+    return ai::pvp::GetClosestPvpMeleeAttacker(botAI, 10.0f) != nullptr;
+}
+
+bool PvpMovementControlledTrigger::IsActive()
+{
+    if (!ai::pvp::IsPvpContext(bot))
+        return false;
+
+    return bot->HasAuraType(SPELL_AURA_MOD_ROOT) || bot->isFrozen() || bot->IsPolymorphed();
+}
+
+bool PvpTargetMajorDefenseTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return target && ai::pvp::IsPvpContext(bot) &&
+           (target->HasAura(642) || target->HasAura(1020) || target->HasAura(45438));
 }
