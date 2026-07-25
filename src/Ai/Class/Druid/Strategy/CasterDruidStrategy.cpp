@@ -150,7 +150,59 @@ void CasterDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "pvp melee attacker close",
             {
-                NextAction("typhoon", ACTION_EMERGENCY + 5)
+                NextAction("typhoon", ACTION_EMERGENCY + 5),
+                NextAction("nature's grasp", ACTION_EMERGENCY + 4),
+                NextAction("moonfire", ACTION_MOVE + 11),
+                NextAction("insect swarm", ACTION_MOVE + 10)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp high pressure",
+            {
+                NextAction("rejuvenation", ACTION_EMERGENCY + 3)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "low health",
+            {
+                NextAction("regrowth", ACTION_HIGH + 8)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp burst window",
+            {
+                NextAction("starfall", ACTION_HIGH + 8),
+                NextAction("force of nature", ACTION_HIGH + 7)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp faerie fire",
+            {
+                NextAction("faerie fire", ACTION_HIGH + 2)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp physical target",
+            {
+                NextAction("insect swarm", ACTION_HIGH + 1)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp caster target",
+            {
+                NextAction("moonfire", ACTION_HIGH + 1)
             }
         )
     );
@@ -158,7 +210,7 @@ void CasterDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "pvp insect swarm",
             {
-                NextAction("insect swarm", ACTION_HIGH + 4)
+                NextAction("insect swarm", ACTION_HIGH)
             }
         )
     );
@@ -166,7 +218,7 @@ void CasterDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "pvp moonfire",
             {
-                NextAction("moonfire", ACTION_HIGH + 3)
+                NextAction("moonfire", ACTION_HIGH - 1)
             }
         )
     );
@@ -206,7 +258,7 @@ void CasterDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "eclipse (solar)",
             {
-                NextAction("wrath", ACTION_NORMAL + 6)
+                NextAction("wrath", ACTION_HIGH + 4)
             }
         )
     );
@@ -214,7 +266,7 @@ void CasterDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode(
             "eclipse (lunar)",
             {
-                NextAction("starfire", ACTION_NORMAL + 6)
+                NextAction("starfire", ACTION_HIGH + 4)
             }
         )
     );

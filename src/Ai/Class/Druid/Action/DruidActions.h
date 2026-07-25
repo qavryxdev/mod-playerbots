@@ -7,6 +7,7 @@
 #define _PLAYERBOT_DRUIDACTIONS_H
 
 #include "GenericSpellActions.h"
+#include "ObjectGuid.h"
 #include "SharedDefines.h"
 
 class PlayerbotAI;
@@ -16,6 +17,8 @@ class CastFaerieFireAction : public CastDebuffSpellAction
 {
 public:
     CastFaerieFireAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "faerie fire") {}
+
+    bool isUseful() override;
 };
 
 class CastFaerieFireFeralAction : public CastSpellAction
@@ -28,12 +31,16 @@ class CastRejuvenationAction : public CastHealingSpellAction
 {
 public:
     CastRejuvenationAction(PlayerbotAI* botAI) : CastHealingSpellAction(botAI, "rejuvenation") {}
+
+    bool isUseful() override;
 };
 
 class CastRegrowthAction : public CastHealingSpellAction
 {
 public:
     CastRegrowthAction(PlayerbotAI* botAI) : CastHealingSpellAction(botAI, "regrowth") {}
+
+    bool isUseful() override;
 };
 
 class CastHealingTouchAction : public CastHealingSpellAction
@@ -152,6 +159,8 @@ class CastWrathAction : public CastSpellAction
 {
 public:
     CastWrathAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "wrath") {}
+
+    bool isUseful() override;
 };
 
 class CastStarfallAction : public CastSpellAction
@@ -174,7 +183,13 @@ class CastMoonfireAction : public CastDebuffSpellAction
 public:
     CastMoonfireAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "moonfire", true) {}
 
+    bool Execute(Event event) override;
     bool isUseful() override;
+
+private:
+    ObjectGuid lastPvpAttemptTarget;
+    uint32 nextPvpAttemptMs = 0;
+    uint32 nextPvpNewTargetMs = 0;
 };
 
 class CastInsectSwarmAction : public CastDebuffSpellAction
@@ -182,13 +197,21 @@ class CastInsectSwarmAction : public CastDebuffSpellAction
 public:
     CastInsectSwarmAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "insect swarm", true) {}
 
+    bool Execute(Event event) override;
     bool isUseful() override;
+
+private:
+    ObjectGuid lastPvpAttemptTarget;
+    uint32 nextPvpAttemptMs = 0;
+    uint32 nextPvpNewTargetMs = 0;
 };
 
 class CastStarfireAction : public CastSpellAction
 {
 public:
     CastStarfireAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "starfire") {}
+
+    bool isUseful() override;
 };
 
 class CastEntanglingRootsAction : public CastSpellAction
@@ -223,6 +246,9 @@ class CastCycloneAction : public CastCrowdControlSpellAction
 {
 public:
     CastCycloneAction(PlayerbotAI* botAI) : CastCrowdControlSpellAction(botAI, "cyclone") {}
+
+    bool isPossible() override;
+    bool isUseful() override;
 };
 
 class CastTyphoonAction : public CastSpellAction
@@ -368,6 +394,8 @@ class CastForceOfNatureAction : public CastSpellAction
 {
 public:
     CastForceOfNatureAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "force of nature") {}
+
+    bool isUseful() override;
 };
 
 #endif

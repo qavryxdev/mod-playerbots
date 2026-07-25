@@ -66,6 +66,8 @@ namespace ai::pvp
     bool IsMajorDefenseActive(Unit* target);
     bool ShouldUseDefensiveCooldown(PlayerbotAI* botAI, bool critical = false);
     bool ShouldUseBurstCooldown(PlayerbotAI* botAI, Unit* target);
+    bool ShouldUseDruidPvpDot(PlayerbotAI* botAI, Unit* target, std::string const& spell);
+    bool ShouldUseDruidFaerieFire(PlayerbotAI* botAI, Unit* target);
     bool ShouldUseHunterSting(PlayerbotAI* botAI, Unit* target, std::string const& sting);
     bool ShouldUseWarlockCurse(PlayerbotAI* botAI, Unit* target, std::string const& curse);
 }

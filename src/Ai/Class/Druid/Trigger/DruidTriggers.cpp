@@ -8,19 +8,6 @@
 #include "Playerbots.h"
 #include "PvpTactics.h"
 
-namespace
-{
-    bool IsPvpDruidDotTarget(PlayerbotAI* botAI, Player* bot, Unit* target)
-    {
-        Player* enemy = target ? target->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
-        return bot && target && target->IsAlive() && target->IsInWorld() &&
-               target->GetMapId() == bot->GetMapId() && ai::pvp::IsPvpContext(bot) &&
-               enemy && botAI->IsOpposing(enemy) &&
-               ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target) &&
-               ai::pvp::CanDamageTarget(botAI, target, false);
-    }
-}
-
 bool MarkOfTheWildOnPartyTrigger::IsActive()
 {
     return BuffOnPartyTrigger::IsActive() && !botAI->HasAura("gift of the wild", GetTarget());
@@ -45,12 +32,20 @@ bool ThornsTrigger::IsActive() { return BuffTrigger::IsActive() && !botAI->HasAu
 
 bool PvpInsectSwarmTrigger::IsActive()
 {
-    return IsPvpDruidDotTarget(botAI, bot, GetTarget()) && BuffTrigger::IsActive();
+    return ai::pvp::ShouldUseDruidPvpDot(botAI, GetTarget(), "insect swarm") &&
+           BuffTrigger::IsActive();
 }
 
 bool PvpMoonfireTrigger::IsActive()
 {
-    return IsPvpDruidDotTarget(botAI, bot, GetTarget()) && BuffTrigger::IsActive();
+    return ai::pvp::ShouldUseDruidPvpDot(botAI, GetTarget(), "moonfire") &&
+           BuffTrigger::IsActive();
+}
+
+bool PvpFaerieFireTrigger::IsActive()
+{
+    return ai::pvp::ShouldUseDruidFaerieFire(botAI, GetTarget()) &&
+           BuffTrigger::IsActive();
 }
 
 bool BearFormTrigger::IsActive() { return !botAI->HasAnyAuraOf(bot, "bear form", "dire bear form", nullptr); }

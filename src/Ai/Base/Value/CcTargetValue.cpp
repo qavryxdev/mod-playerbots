@@ -384,6 +384,50 @@ namespace ai::cc
         return nullptr;
     }
 
+    Unit* GetActiveCycloneTarget(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot)
+            return nullptr;
+
+        uint32 const cycloneSpellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", "cyclone")->Get();
+        SpellInfo const* cycloneSpellInfo = cycloneSpellId ? sSpellMgr->GetSpellInfo(cycloneSpellId) : nullptr;
+        if (!cycloneSpellInfo)
+            return nullptr;
+
+        ObjectGuid const casterGuid = bot->GetGUID();
+        std::unordered_set<ObjectGuid> checked;
+
+        auto checkGuid = [&](ObjectGuid const& guid) -> Unit*
+        {
+            if (!guid || checked.find(guid) != checked.end())
+                return nullptr;
+
+            checked.insert(guid);
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsInWorld() || !unit->IsAlive() || unit->GetMapId() != bot->GetMapId())
+                return nullptr;
+
+            return HasSpellRankFromCaster(unit, casterGuid, cycloneSpellInfo) ? unit : nullptr;
+        };
+
+        if (Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
+            if (HasSpellRankFromCaster(currentTarget, casterGuid, cycloneSpellInfo))
+                return currentTarget;
+
+        GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        for (ObjectGuid const& guid : attackers)
+            if (Unit* unit = checkGuid(guid))
+                return unit;
+
+        GuidVector possibleTargets = botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets")->Get();
+        for (ObjectGuid const& guid : possibleTargets)
+            if (Unit* unit = checkGuid(guid))
+                return unit;
+
+        return nullptr;
+    }
+
     bool IsGoodPolymorphTarget(PlayerbotAI* botAI, Unit* target)
     {
         if (!botAI || !target || !target->IsAlive())
@@ -594,6 +638,9 @@ Unit* CcTargetValue::Calculate()
         return nullptr;
 
     if (qualifier == "fear" && ai::cc::GetActiveFearTarget(botAI))
+        return nullptr;
+
+    if (qualifier == "cyclone" && ai::cc::GetActiveCycloneTarget(botAI))
         return nullptr;
 
     FindTargetForCcStrategy strategy(botAI, qualifier);

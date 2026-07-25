@@ -93,6 +93,7 @@ public:
         creators["moonfire"] = &DruidTriggerFactoryInternal::moonfire;
         creators["pvp insect swarm"] = &DruidTriggerFactoryInternal::pvp_insect_swarm;
         creators["pvp moonfire"] = &DruidTriggerFactoryInternal::pvp_moonfire;
+        creators["pvp faerie fire"] = &DruidTriggerFactoryInternal::pvp_faerie_fire;
         creators["nature's grasp"] = &DruidTriggerFactoryInternal::natures_grasp;
         creators["tiger's fury"] = &DruidTriggerFactoryInternal::tigers_fury;
         creators["berserk"] = &DruidTriggerFactoryInternal::berserk;
@@ -136,6 +137,7 @@ private:
     static Trigger* moonfire(PlayerbotAI* botAI) { return new MoonfireTrigger(botAI); }
     static Trigger* pvp_insect_swarm(PlayerbotAI* botAI) { return new PvpInsectSwarmTrigger(botAI); }
     static Trigger* pvp_moonfire(PlayerbotAI* botAI) { return new PvpMoonfireTrigger(botAI); }
+    static Trigger* pvp_faerie_fire(PlayerbotAI* botAI) { return new PvpFaerieFireTrigger(botAI); }
     static Trigger* faerie_fire(PlayerbotAI* botAI) { return new FaerieFireTrigger(botAI); }
     static Trigger* natures_grasp(PlayerbotAI* botAI) { return new NaturesGraspTrigger(botAI); }
     static Trigger* tigers_fury(PlayerbotAI* botAI) { return new TigersFuryTrigger(botAI); }

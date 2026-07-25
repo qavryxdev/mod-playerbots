@@ -1495,6 +1495,62 @@ namespace ai::pvp
         return !IsMajorDefenseActive(target) && GetCombatPhase(botAI, target) == CombatPhase::Burst;
     }
 
+    bool ShouldUseDruidPvpDot(PlayerbotAI* botAI, Unit* target, std::string const& spell)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !target || !target->IsAlive() || !target->IsInWorld() ||
+            target->GetMapId() != bot->GetMapId() || !IsPvpContext(bot) ||
+            !IsEnemyPlayerOrOwnedUnit(botAI, target) ||
+            !CanEngageDuringBattlegroundCapture(botAI, target) ||
+            !CanDamageTarget(botAI, target, false) || IsMajorDefenseActive(target))
+            return false;
+
+        CombatPhase const phase = GetCombatPhase(botAI, target);
+        if (phase != CombatPhase::Setup && phase != CombatPhase::Sustain)
+            return false;
+
+        float minimumHealthPct = 0.0f;
+        uint32 const friendlyAttackers = CountFriendlyPlayerAttackers(botAI, target);
+        if (spell == "insect swarm")
+        {
+            minimumHealthPct = 25.0f;
+            if (friendlyAttackers >= 4 && target->GetHealthPct() < 70.0f)
+                return false;
+        }
+        else if (spell == "moonfire")
+        {
+            minimumHealthPct = 18.0f;
+            if (friendlyAttackers >= 5 && target->GetHealthPct() < 60.0f)
+                return false;
+        }
+        else
+            return false;
+
+        return target->GetHealthPct() > minimumHealthPct;
+    }
+
+    bool ShouldUseDruidFaerieFire(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        Player* enemy = GetControllingPlayer(target);
+        if (!bot || !target || !enemy || !target->IsAlive() || !target->IsInWorld() ||
+            target->GetMapId() != bot->GetMapId() || !IsPvpContext(bot) ||
+            !botAI->IsOpposing(enemy) || !CanEngageDuringBattlegroundCapture(botAI, target) ||
+            !CanDamageTarget(botAI, target, false) || IsMajorDefenseActive(target))
+            return false;
+
+        ShapeshiftForm const form = enemy->GetShapeshiftForm();
+        bool const stealthThreat = enemy->getClass() == CLASS_ROGUE ||
+            (enemy->getClass() == CLASS_DRUID &&
+             (form == FORM_CAT || form == FORM_BEAR || form == FORM_DIREBEAR));
+        if (!stealthThreat || target->GetHealthPct() <= 20.0f)
+            return false;
+
+        CombatPhase const phase = GetCombatPhase(botAI, target);
+        return phase == CombatPhase::Setup || phase == CombatPhase::Sustain ||
+               phase == CombatPhase::Control;
+    }
+
     bool ShouldUseHunterSting(PlayerbotAI* botAI, Unit* target, std::string const& sting)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;

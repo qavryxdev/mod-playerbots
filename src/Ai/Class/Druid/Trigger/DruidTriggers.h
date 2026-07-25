@@ -88,7 +88,8 @@ public:
 class PvpInsectSwarmTrigger : public BuffTrigger
 {
 public:
-    PvpInsectSwarmTrigger(PlayerbotAI* botAI) : BuffTrigger(botAI, "insect swarm", 1, true) {}
+    PvpInsectSwarmTrigger(PlayerbotAI* botAI)
+        : BuffTrigger(botAI, "insect swarm", 1, true, false, 1500) {}
 
     std::string const GetTargetName() override { return "current target"; }
     bool IsActive() override;
@@ -97,7 +98,17 @@ public:
 class PvpMoonfireTrigger : public BuffTrigger
 {
 public:
-    PvpMoonfireTrigger(PlayerbotAI* botAI) : BuffTrigger(botAI, "moonfire", 1, true) {}
+    PvpMoonfireTrigger(PlayerbotAI* botAI)
+        : BuffTrigger(botAI, "moonfire", 1, true, false, 1500) {}
+
+    std::string const GetTargetName() override { return "current target"; }
+    bool IsActive() override;
+};
+
+class PvpFaerieFireTrigger : public BuffTrigger
+{
+public:
+    PvpFaerieFireTrigger(PlayerbotAI* botAI) : BuffTrigger(botAI, "faerie fire", 1) {}
 
     std::string const GetTargetName() override { return "current target"; }
     bool IsActive() override;

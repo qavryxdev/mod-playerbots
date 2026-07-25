@@ -830,7 +830,7 @@ AiPlayerbot.RandomBotMaxLevelChance = 0.1
 
 # Fix the level of randombots (they won't level up)
 # Default: 0 (disabled)
-AiPlayerbot.RandomBotFixedLevel = 0
+AiPlayerbot.RandomBotFixedLevel = 1
 
 # Set RandomBotMaxLevel bots to RandomBotMinLevel
 # Default: 0 (disabled)
