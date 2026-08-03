@@ -86,8 +86,11 @@ void GenericHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("master's call", ACTION_EMERGENCY + 6),
           NextAction("disengage", ACTION_EMERGENCY + 5) }));
     triggers.push_back(new TriggerNode("pvp high pressure",
-        { NextAction("deterrence", ACTION_EMERGENCY + 5),
-          NextAction("frost trap", ACTION_EMERGENCY + 4) }));
+        { NextAction("deterrence", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("pvp physical pressure",
+        { NextAction("frost trap", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("pvp burst window",
+        { NextAction("rapid fire", ACTION_HIGH + 8) }));
     triggers.push_back(new TriggerNode("pvp caster target",
         { NextAction("viper sting", ACTION_HIGH + 6),
           NextAction("serpent sting", ACTION_HIGH + 5),

@@ -162,6 +162,20 @@ public:
     bool IsActive() override;
 };
 
+class PvpPhysicalPressureTrigger : public Trigger
+{
+public:
+    PvpPhysicalPressureTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp physical pressure", 1) {}
+    bool IsActive() override;
+};
+
+class PvpMagicPressureTrigger : public Trigger
+{
+public:
+    PvpMagicPressureTrigger(PlayerbotAI* botAI) : Trigger(botAI, "pvp magic pressure", 1) {}
+    bool IsActive() override;
+};
+
 class PvpBurstWindowTrigger : public Trigger
 {
 public:

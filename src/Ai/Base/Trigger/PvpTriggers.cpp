@@ -347,6 +347,16 @@ bool PvpCriticalPressureTrigger::IsActive()
     return ai::pvp::ShouldUseDefensiveCooldown(botAI, true);
 }
 
+bool PvpPhysicalPressureTrigger::IsActive()
+{
+    return ai::pvp::HasPhysicalPressure(botAI);
+}
+
+bool PvpMagicPressureTrigger::IsActive()
+{
+    return ai::pvp::HasMagicPressure(botAI);
+}
+
 bool PvpBurstWindowTrigger::IsActive()
 {
     Unit* target = AI_VALUE(Unit*, "current target");
@@ -367,20 +377,7 @@ bool PvpPhysicalTargetTrigger::IsActive()
 {
     Unit* target = AI_VALUE(Unit*, "current target");
     Player* player = target ? target->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
-    if (!player || !botAI->IsOpposing(player))
-        return false;
-
-    switch (player->getClass())
-    {
-        case CLASS_WARRIOR:
-        case CLASS_ROGUE:
-        case CLASS_HUNTER:
-        case CLASS_DEATH_KNIGHT:
-        case CLASS_PALADIN:
-            return true;
-        default:
-            return false;
-    }
+    return player && botAI->IsOpposing(player) && ai::pvp::IsPhysicalDamageTarget(botAI, target);
 }
 
 bool PvpCasterTargetTrigger::IsActive()
@@ -390,17 +387,7 @@ bool PvpCasterTargetTrigger::IsActive()
     if (!player || !botAI->IsOpposing(player))
         return false;
 
-    switch (player->getClass())
-    {
-        case CLASS_MAGE:
-        case CLASS_WARLOCK:
-        case CLASS_PRIEST:
-        case CLASS_SHAMAN:
-        case CLASS_DRUID:
-            return true;
-        default:
-            return false;
-    }
+    return ai::pvp::IsCasterTarget(botAI, target);
 }
 
 bool PvpIncomingHostileCastTrigger::IsActive()
@@ -408,10 +395,7 @@ bool PvpIncomingHostileCastTrigger::IsActive()
     if (!ai::pvp::IsPvpContext(bot))
         return false;
 
-    Unit* target = AI_VALUE(Unit*, "current target");
-    Player* player = target ? target->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
-    return player && botAI->IsOpposing(player) && target->GetTarget() == bot->GetGUID() &&
-           target->IsNonMeleeSpellCast(true);
+    return ai::pvp::HasIncomingHostileCast(botAI);
 }
 
 bool PvpMeleeAttackerCloseTrigger::IsActive()
@@ -430,6 +414,5 @@ bool PvpMovementControlledTrigger::IsActive()
 bool PvpTargetMajorDefenseTrigger::IsActive()
 {
     Unit* target = AI_VALUE(Unit*, "current target");
-    return target && ai::pvp::IsPvpContext(bot) &&
-           (target->HasAura(642) || target->HasAura(1020) || target->HasAura(45438));
+    return target && ai::pvp::IsPvpContext(bot) && ai::pvp::IsMajorDefenseActive(target);
 }

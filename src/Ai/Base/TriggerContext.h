@@ -86,6 +86,8 @@ public:
         creators["enemy player near"] = &TriggerContext::enemy_player_near;
         creators["pvp high pressure"] = &TriggerContext::pvp_high_pressure;
         creators["pvp critical pressure"] = &TriggerContext::pvp_critical_pressure;
+        creators["pvp physical pressure"] = &TriggerContext::pvp_physical_pressure;
+        creators["pvp magic pressure"] = &TriggerContext::pvp_magic_pressure;
         creators["pvp burst window"] = &TriggerContext::pvp_burst_window;
         creators["pvp control window"] = &TriggerContext::pvp_control_window;
         creators["pvp physical target"] = &TriggerContext::pvp_physical_target;
@@ -345,6 +347,8 @@ private:
     static Trigger* enemy_player_near(PlayerbotAI* botAI) { return new EnemyPlayerNear(botAI); }
     static Trigger* pvp_high_pressure(PlayerbotAI* botAI) { return new PvpHighPressureTrigger(botAI); }
     static Trigger* pvp_critical_pressure(PlayerbotAI* botAI) { return new PvpCriticalPressureTrigger(botAI); }
+    static Trigger* pvp_physical_pressure(PlayerbotAI* botAI) { return new PvpPhysicalPressureTrigger(botAI); }
+    static Trigger* pvp_magic_pressure(PlayerbotAI* botAI) { return new PvpMagicPressureTrigger(botAI); }
     static Trigger* pvp_burst_window(PlayerbotAI* botAI) { return new PvpBurstWindowTrigger(botAI); }
     static Trigger* pvp_control_window(PlayerbotAI* botAI) { return new PvpControlWindowTrigger(botAI); }
     static Trigger* pvp_physical_target(PlayerbotAI* botAI) { return new PvpPhysicalTargetTrigger(botAI); }

@@ -131,9 +131,19 @@ bool CastSpellAction::Execute(Event /*event*/)
     if (interrupt && !ai::pvp::TryReserveInterrupt(botAI, target, spell))
         return false;
 
+    bool const defensive = ai::pvp::IsDefensiveCooldownSpell(spell);
+    if (defensive && !ai::pvp::TryReserveDefensiveCooldown(botAI, spell))
+    {
+        if (interrupt)
+            ai::pvp::ReleaseInterrupt(botAI, target);
+        return false;
+    }
+
     bool const cast = botAI->CastSpell(spell, target);
     if (interrupt && !cast)
         ai::pvp::ReleaseInterrupt(botAI, target);
+    if (defensive && !cast)
+        ai::pvp::ReleaseDefensiveCooldown(botAI);
 
     return cast;
 }
@@ -157,6 +167,11 @@ bool CastSpellAction::isUseful()
         return false;
 
     if (!spellTarget->IsInWorld() || spellTarget->GetMapId() != bot->GetMapId())
+        return false;
+
+    if (!ai::pvp::CanUseDefensiveCooldown(botAI, spell) ||
+        !ai::pvp::CanUseOffensiveCooldown(botAI, spell) ||
+        !ai::pvp::CanUseUtilitySpell(botAI, spellTarget, spell))
         return false;
 
     if (getThreatType() == ActionThreatType::Aoe && !ai::pvp::CurrentAoeIsSafe(botAI))

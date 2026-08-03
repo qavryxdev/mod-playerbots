@@ -6,6 +6,7 @@
 #include "PvpTactics.h"
 
 #include "AiObjectContext.h"
+#include "AiFactory.h"
 #include "Battleground.h"
 #include "BattlegroundAB.h"
 #include "BattlegroundAV.h"
@@ -74,6 +75,12 @@ namespace
         uint32 untilMs = 0;
     };
 
+    struct DefensiveReservation
+    {
+        std::string spell;
+        uint32 untilMs = 0;
+    };
+
     struct CombatPlanState
     {
         ObjectGuid target;
@@ -86,6 +93,12 @@ namespace
         float healthPct = 100.0f;
         float recentLossPerSecond = 0.0f;
         uint32 sampledMs = 0;
+    };
+
+    struct PressureCacheEntry
+    {
+        ai::pvp::PressureProfile profile;
+        uint32 untilMs = 0;
     };
 
     struct DefenseObservation
@@ -109,10 +122,14 @@ namespace
 
     std::mutex crowdControlReservationsMutex;
     std::unordered_map<ObjectGuid, CrowdControlReservation> crowdControlReservations;
+    std::mutex defensiveReservationsMutex;
+    std::unordered_map<ObjectGuid, DefensiveReservation> defensiveReservations;
     std::mutex combatPlansMutex;
     std::unordered_map<ObjectGuid, CombatPlanState> combatPlans;
     std::mutex healthSamplesMutex;
     std::unordered_map<ObjectGuid, HealthSample> healthSamples;
+    std::mutex pressureCacheMutex;
+    std::unordered_map<ObjectGuid, PressureCacheEntry> pressureCache;
     std::mutex defenseObservationsMutex;
     std::unordered_map<ObjectGuid, DefenseObservation> defenseObservations;
 
@@ -207,15 +224,6 @@ namespace
                              static_cast<float>(maximum) : 0.0f;
     }
 
-    bool IsFeralDruidForm(Player* player)
-    {
-        if (!player || player->getClass() != CLASS_DRUID)
-            return false;
-
-        ShapeshiftForm const form = player->GetShapeshiftForm();
-        return form == FORM_CAT || form == FORM_BEAR || form == FORM_DIREBEAR;
-    }
-
     uint32 GetMajorDefenseMask(Unit* target)
     {
         if (!target)
@@ -302,16 +310,27 @@ namespace
         return result;
     }
 
-    bool IsPhysicalDamageClass(uint8 playerClass)
+    bool IsPersonalDefensiveSpell(std::string const& spell)
     {
-        return playerClass == CLASS_WARRIOR || playerClass == CLASS_ROGUE || playerClass == CLASS_HUNTER ||
-               playerClass == CLASS_DEATH_KNIGHT || playerClass == CLASS_PALADIN;
+        static std::unordered_set<std::string> const spells =
+        {
+            "anti magic shell", "barkskin", "cloak of shadows", "deterrence", "dispersion", "divine shield",
+            "evasion", "ice block", "icebound fortitude", "mana shield", "retaliation",
+            "shield wall", "shamanistic rage", "stoneclaw totem", "survival instincts"
+        };
+        return spells.find(spell) != spells.end();
     }
 
-    bool IsMagicDamageClass(uint8 playerClass)
+    bool IsOffensiveCooldownSpell(std::string const& spell)
     {
-        return playerClass == CLASS_MAGE || playerClass == CLASS_WARLOCK || playerClass == CLASS_PRIEST ||
-               playerClass == CLASS_SHAMAN || playerClass == CLASS_DRUID;
+        static std::unordered_set<std::string> const spells =
+        {
+            "adrenaline rush", "arcane power", "avenging wrath", "berserk", "bestial wrath", "bladestorm",
+            "cold blood", "combustion", "dancing rune weapon", "death wish", "demonic empowerment",
+            "elemental mastery", "feral spirit", "force of nature", "icy veins", "killing spree", "metamorphosis",
+            "rapid fire", "shadow dance", "starfall", "summon gargoyle"
+        };
+        return spells.find(spell) != spells.end();
     }
 
     uint32 CountFriendlyPlayerAttackers(PlayerbotAI* botAI, Unit* target)
@@ -800,6 +819,155 @@ namespace ai::pvp
         return bot && (bot->InBattleground() || bot->InArena() || bot->duel || bot->IsPvP() || bot->IsFFAPvP());
     }
 
+    TargetProfile GetTargetProfile(PlayerbotAI* botAI, Unit* target)
+    {
+        TargetProfile profile;
+        Player* player = GetControllingPlayer(target);
+        if (!botAI || !player)
+            return profile;
+
+        profile.valid = true;
+        profile.playerClass = player->getClass();
+        profile.specTab = AiFactory::GetPlayerSpecTab(player);
+        profile.healer = botAI->IsHeal(player);
+        profile.usesMana = player->GetMaxPower(POWER_MANA) > 0;
+
+        switch (profile.playerClass)
+        {
+            case CLASS_WARRIOR:
+            case CLASS_ROGUE:
+                profile.melee = true;
+                profile.physicalDamage = true;
+                break;
+            case CLASS_HUNTER:
+                profile.rangedPhysical = true;
+                profile.physicalDamage = true;
+                break;
+            case CLASS_DEATH_KNIGHT:
+                profile.melee = true;
+                profile.physicalDamage = true;
+                profile.magicDamage = true;
+                break;
+            case CLASS_PALADIN:
+                if (profile.specTab == PALADIN_TAB_HOLY || profile.healer)
+                {
+                    profile.caster = true;
+                    profile.magicDamage = true;
+                }
+                else
+                {
+                    profile.melee = true;
+                    profile.physicalDamage = true;
+                    profile.magicDamage = true;
+                }
+                break;
+            case CLASS_PRIEST:
+            case CLASS_MAGE:
+            case CLASS_WARLOCK:
+                profile.caster = true;
+                profile.magicDamage = true;
+                break;
+            case CLASS_SHAMAN:
+                if (profile.specTab == SHAMAN_TAB_ENHANCEMENT)
+                {
+                    profile.melee = true;
+                    profile.physicalDamage = true;
+                    profile.magicDamage = true;
+                }
+                else
+                {
+                    profile.caster = true;
+                    profile.magicDamage = true;
+                }
+                break;
+            case CLASS_DRUID:
+            {
+                ShapeshiftForm const form = player->GetShapeshiftForm();
+                profile.feralDruid = profile.specTab == DRUID_TAB_FERAL || form == FORM_CAT ||
+                                     form == FORM_BEAR || form == FORM_DIREBEAR;
+                profile.treeDruid = form == FORM_TREE;
+                if (profile.feralDruid && !profile.healer)
+                {
+                    profile.melee = true;
+                    profile.physicalDamage = true;
+                }
+                else
+                {
+                    profile.caster = true;
+                    profile.magicDamage = true;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+
+        return profile;
+    }
+
+    bool IsPhysicalDamageTarget(PlayerbotAI* botAI, Unit* target)
+    {
+        return GetTargetProfile(botAI, target).physicalDamage;
+    }
+
+    bool IsCasterTarget(PlayerbotAI* botAI, Unit* target)
+    {
+        TargetProfile const profile = GetTargetProfile(botAI, target);
+        return profile.caster || profile.healer;
+    }
+
+    bool HasIncomingHostileCast(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !IsPvpContext(bot))
+            return false;
+
+        std::unordered_set<ObjectGuid> checked;
+        auto isThreateningCast = [&](Unit* caster) -> bool
+        {
+            if (!caster || !caster->IsAlive() || !caster->IsInWorld() || caster->GetMapId() != bot->GetMapId() ||
+                !checked.insert(caster->GetGUID()).second || !IsEnemyPlayerOrOwnedUnit(botAI, caster) ||
+                ServerFacade::instance().GetDistance2d(bot, caster) > 45.0f)
+                return false;
+
+            SpellInfo const* spellInfo = GetCurrentCastingSpell(caster);
+            if (!spellInfo || spellInfo->IsPositive())
+                return false;
+
+            ObjectGuid const intendedTarget = caster->GetTarget();
+            if (intendedTarget == bot->GetGUID())
+                return true;
+
+            Unit* protectedTarget = intendedTarget ? botAI->GetUnit(intendedTarget) : nullptr;
+            Player* protectedPlayer = protectedTarget ? protectedTarget->ToPlayer() : nullptr;
+            if (protectedPlayer && !botAI->IsOpposing(protectedPlayer) && botAI->IsHeal(protectedPlayer) &&
+                ServerFacade::instance().GetDistance2d(bot, protectedPlayer) <= 30.0f)
+                return true;
+
+            return !intendedTarget && ServerFacade::instance().GetDistance2d(bot, caster) <= 18.0f;
+        };
+
+        if (isThreateningCast(botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get()))
+            return true;
+
+        GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        for (ObjectGuid const& guid : attackers)
+            if (isThreateningCast(botAI->GetUnit(guid)))
+                return true;
+
+        GuidVector possibleTargets = botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets")->Get();
+        uint8 scanned = 0;
+        for (ObjectGuid const& guid : possibleTargets)
+        {
+            if (isThreateningCast(botAI->GetUnit(guid)))
+                return true;
+            if (++scanned >= 24)
+                break;
+        }
+
+        return false;
+    }
+
     bool IsInAlteracValley(Player* bot)
     {
         if (!bot || !bot->InBattleground() || !bot->GetBattleground())
@@ -832,8 +1000,17 @@ namespace ai::pvp
 
     bool IsAttackingFriendlyHealer(PlayerbotAI* botAI, Unit* target)
     {
-        Player* victim = target && target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
-        return victim && botAI && !botAI->IsOpposing(victim) && botAI->IsHeal(victim);
+        if (!botAI || !target)
+            return false;
+
+        Player* victim = target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
+        if (!victim && target->GetTarget())
+        {
+            Unit* selectedTarget = botAI->GetUnit(target->GetTarget());
+            victim = selectedTarget ? selectedTarget->ToPlayer() : nullptr;
+        }
+
+        return victim && !botAI->IsOpposing(victim) && botAI->IsHeal(victim);
     }
 
     bool HasActiveBattlegroundCaptureObjective(PlayerbotAI* botAI)
@@ -1299,33 +1476,35 @@ namespace ai::pvp
         int32 score = defense.recentlySpent ? 90 : 0;
         uint8 const botClass = bot->getClass();
         uint8 const targetClass = playerTarget->getClass();
+        TargetProfile const botProfile = GetTargetProfile(botAI, bot);
+        TargetProfile const targetProfile = GetTargetProfile(botAI, target);
 
-        if (botAI->IsHeal(playerTarget))
+        if (targetProfile.healer)
             score += 70;
 
-        if (IsPhysicalDamageClass(botClass))
+        if (botProfile.physicalDamage)
         {
-            if (targetClass == CLASS_MAGE || targetClass == CLASS_PRIEST || targetClass == CLASS_WARLOCK)
+            if (targetProfile.caster)
                 score += 75;
             if (target->HasAura(5277) || target->HasAura(26669) || target->HasAura(19263) ||
                 target->HasAura(1022) || target->HasAura(5599) || target->HasAura(10278))
-                score -= 500;
+                score -= botProfile.magicDamage ? 280 : 500;
         }
 
-        if (IsMagicDamageClass(botClass))
+        if (botProfile.magicDamage)
         {
-            if (targetClass == CLASS_WARRIOR || targetClass == CLASS_PALADIN)
+            if (targetProfile.melee)
                 score += 45;
             if (target->HasAura(31224) || target->HasAura(48707))
-                score -= 500;
+                score -= botProfile.physicalDamage ? 280 : 500;
         }
 
-        if (targetClass == CLASS_HUNTER && IsPhysicalDamageClass(botClass) &&
+        if (targetClass == CLASS_HUNTER && botProfile.melee &&
             ServerFacade::instance().GetDistance2d(bot, target) <= 7.0f)
             score += 110;
 
         if ((targetClass == CLASS_WARRIOR || targetClass == CLASS_DEATH_KNIGHT) &&
-            (botClass == CLASS_MAGE || botClass == CLASS_HUNTER || botClass == CLASS_DRUID))
+            (botProfile.caster || botProfile.rangedPhysical))
             score += 70;
 
         if (targetClass == CLASS_DRUID && botClass == CLASS_WARLOCK && target->HasAura(33891))
@@ -1338,33 +1517,77 @@ namespace ai::pvp
         return score;
     }
 
-    uint32 GetIncomingPressure(PlayerbotAI* botAI)
+    PressureProfile GetIncomingPressureProfile(PlayerbotAI* botAI)
     {
+        PressureProfile profile;
         Player* bot = botAI ? botAI->GetBot() : nullptr;
         if (!bot || !IsPvpContext(bot) || !bot->IsAlive())
-            return 0;
+            return profile;
+
+        uint32 const now = getMSTime();
+        {
+            std::lock_guard<std::mutex> guard(pressureCacheMutex);
+            auto const itr = pressureCache.find(bot->GetGUID());
+            if (itr != pressureCache.end() && itr->second.untilMs >= now)
+                return itr->second.profile;
+        }
 
         GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
-        uint32 pressure = std::min<uint32>(attackers.size(), 4) * 20;
         float const healthPct = bot->GetHealthPct();
-
-        if (healthPct < 70.0f)
-            pressure += 10;
-        if (healthPct < 45.0f)
-            pressure += 20;
-        if (healthPct < 25.0f)
-            pressure += 25;
-        if (botAI->IsHeal(bot) && !attackers.empty())
-            pressure += 10;
+        uint8 consideredAttackers = 0;
 
         for (ObjectGuid const& guid : attackers)
         {
             Unit* attacker = botAI->GetUnit(guid);
-            if (attacker && attacker->GetTarget() == bot->GetGUID() && attacker->IsNonMeleeSpellCast(true))
-                pressure += 8;
+            if (!attacker || !attacker->IsAlive() || !attacker->IsInWorld() ||
+                attacker->GetMapId() != bot->GetMapId())
+                continue;
+
+            if (++consideredAttackers > 4)
+                break;
+
+            profile.total += 20;
+            TargetProfile const attackerProfile = GetTargetProfile(botAI, attacker);
+            if (!attackerProfile.valid)
+            {
+                profile.physical += 20;
+                ++profile.meleeAttackers;
+            }
+            else
+            {
+                if (attackerProfile.physicalDamage && attackerProfile.magicDamage)
+                {
+                    profile.physical += 12;
+                    profile.magic += 12;
+                }
+                else if (attackerProfile.physicalDamage)
+                    profile.physical += 20;
+                else if (attackerProfile.magicDamage)
+                    profile.magic += 20;
+
+                if (attackerProfile.melee)
+                    ++profile.meleeAttackers;
+                if (attackerProfile.caster)
+                    ++profile.casterAttackers;
+            }
+
+            if (attacker->GetTarget() == bot->GetGUID() && attacker->IsNonMeleeSpellCast(true))
+            {
+                profile.total += 8;
+                profile.magic += 8;
+                ++profile.hostileCasts;
+            }
         }
 
-        uint32 const now = getMSTime();
+        if (healthPct < 70.0f)
+            profile.total += 10;
+        if (healthPct < 45.0f)
+            profile.total += 20;
+        if (healthPct < 25.0f)
+            profile.total += 25;
+        if (botAI->IsHeal(bot) && !attackers.empty())
+            profile.total += 10;
+
         {
             std::lock_guard<std::mutex> guard(healthSamplesMutex);
             HealthSample& sample = healthSamples[bot->GetGUID()];
@@ -1386,12 +1609,38 @@ namespace ai::pvp
             }
 
             if (sample.recentLossPerSecond >= 15.0f)
-                pressure += 30;
+                profile.total += 30;
             else if (sample.recentLossPerSecond >= 7.0f)
-                pressure += 15;
+                profile.total += 15;
         }
 
-        return std::min<uint32>(pressure, 150);
+        profile.total = std::min<uint32>(profile.total, 150);
+        profile.physical = std::min<uint32>(profile.physical, 100);
+        profile.magic = std::min<uint32>(profile.magic, 100);
+        {
+            std::lock_guard<std::mutex> guard(pressureCacheMutex);
+            pressureCache[bot->GetGUID()] = { profile, now + 100 };
+        }
+        return profile;
+    }
+
+    uint32 GetIncomingPressure(PlayerbotAI* botAI)
+    {
+        return GetIncomingPressureProfile(botAI).total;
+    }
+
+    bool HasPhysicalPressure(PlayerbotAI* botAI)
+    {
+        PressureProfile const profile = GetIncomingPressureProfile(botAI);
+        return profile.total >= 60 && profile.physical > 0 &&
+               (profile.physical >= profile.magic || profile.meleeAttackers >= 2);
+    }
+
+    bool HasMagicPressure(PlayerbotAI* botAI)
+    {
+        PressureProfile const profile = GetIncomingPressureProfile(botAI);
+        return profile.total >= 60 && profile.magic > 0 &&
+               (profile.magic > profile.physical || profile.casterAttackers >= 2 || profile.hostileCasts >= 2);
     }
 
     Unit* GetClosestPvpMeleeAttacker(PlayerbotAI* botAI, float maxDistance)
@@ -1461,8 +1710,13 @@ namespace ai::pvp
 
         if (active && desired != CombatPhase::Reset && !defended)
         {
-            if (plan.phase == CombatPhase::Setup && desired == CombatPhase::Burst)
-                plan.phase = CombatPhase::Burst;
+            bool const urgentTransition = desired == CombatPhase::Control || desired == CombatPhase::Burst ||
+                (plan.phase == CombatPhase::Reset && pressure < 70);
+            if (urgentTransition)
+            {
+                plan.phase = desired;
+                plan.untilMs = now + CombatPlanLifetimeMs;
+            }
             return plan.phase;
         }
 
@@ -1483,6 +1737,62 @@ namespace ai::pvp
         return pressure >= (critical ? 85u : 60u);
     }
 
+    bool IsDefensiveCooldownSpell(std::string const& spell)
+    {
+        return IsPersonalDefensiveSpell(spell);
+    }
+
+    bool CanUseDefensiveCooldown(PlayerbotAI* botAI, std::string const& spell)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !IsPvpContext(bot) || !IsPersonalDefensiveSpell(spell))
+            return true;
+
+        PressureProfile const pressure = GetIncomingPressureProfile(botAI);
+        bool const emergencyHealth = bot->GetHealthPct() < 25.0f;
+        if (pressure.total < 60 && !emergencyHealth)
+            return false;
+
+        bool const critical = pressure.total >= 95 || emergencyHealth;
+        if (GetMajorDefenseMask(bot) && !critical)
+            return false;
+
+        if (spell == "evasion" || spell == "retaliation")
+            return critical || HasPhysicalPressure(botAI);
+        if (spell == "cloak of shadows" || spell == "anti magic shell")
+            return critical || HasMagicPressure(botAI);
+        if (spell == "icebound fortitude")
+            return critical || HasPhysicalPressure(botAI) || bot->HasAuraType(SPELL_AURA_MOD_STUN);
+
+        return true;
+    }
+
+    bool TryReserveDefensiveCooldown(PlayerbotAI* botAI, std::string const& spell, uint32 holdMs)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !IsPvpContext(bot) || !IsPersonalDefensiveSpell(spell))
+            return true;
+
+        uint32 const now = getMSTime();
+        std::lock_guard<std::mutex> guard(defensiveReservationsMutex);
+        auto itr = defensiveReservations.find(bot->GetGUID());
+        if (itr != defensiveReservations.end() && itr->second.untilMs >= now && itr->second.spell != spell)
+            return false;
+
+        defensiveReservations[bot->GetGUID()] = { spell, now + holdMs };
+        return true;
+    }
+
+    void ReleaseDefensiveCooldown(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot)
+            return;
+
+        std::lock_guard<std::mutex> guard(defensiveReservationsMutex);
+        defensiveReservations.erase(bot->GetGUID());
+    }
+
     bool ShouldUseBurstCooldown(PlayerbotAI* botAI, Unit* target)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
@@ -1493,6 +1803,43 @@ namespace ai::pvp
             return false;
 
         return !IsMajorDefenseActive(target) && GetCombatPhase(botAI, target) == CombatPhase::Burst;
+    }
+
+    bool CanUseOffensiveCooldown(PlayerbotAI* botAI, std::string const& spell)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !IsPvpContext(bot) || !IsOffensiveCooldownSpell(spell))
+            return true;
+
+        if (botAI->IsHeal(bot))
+            return true;
+
+        Unit* target = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        if (!target || !IsEnemyPlayerOrOwnedUnit(botAI, target))
+            return true;
+
+        if (*botAI->GetAiObjectContext()->GetValue<uint8>("aoe count") >= 3 && CurrentAoeIsSafe(botAI))
+            return true;
+
+        return ShouldUseBurstCooldown(botAI, target);
+    }
+
+    bool CanUseUtilitySpell(PlayerbotAI* botAI, Unit* target, std::string const& spell)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !target || !IsPvpContext(bot))
+            return true;
+
+        if (spell != "disarm" && spell != "dismantle")
+            return true;
+
+        Player* playerTarget = GetControllingPlayer(target);
+        TargetProfile const profile = GetTargetProfile(botAI, target);
+        if (!playerTarget || !profile.physicalDamage || profile.feralDruid)
+            return false;
+
+        return playerTarget->HasWeaponForAttack(BASE_ATTACK) || playerTarget->HasWeaponForAttack(OFF_ATTACK) ||
+               playerTarget->HasWeaponForAttack(RANGED_ATTACK);
     }
 
     bool ShouldUseDruidPvpDot(PlayerbotAI* botAI, Unit* target, std::string const& spell)
@@ -1560,15 +1907,16 @@ namespace ai::pvp
         if (!IsPvpContext(bot))
             return true;
 
-        Player* playerTarget = target->ToPlayer();
-        float const manaPct = GetManaPct(target);
+        Player* playerTarget = GetControllingPlayer(target);
+        TargetProfile const targetProfile = GetTargetProfile(botAI, target);
+        float const manaPct = GetManaPct(playerTarget ? static_cast<Unit*>(playerTarget) : target);
         bool const enemyHunter = playerTarget && playerTarget->getClass() == CLASS_HUNTER;
-        bool const feralDruid = IsFeralDruidForm(playerTarget);
-        bool const manaPriority = playerTarget && !feralDruid &&
-            (enemyHunter || botAI->IsHeal(playerTarget) || PlayerbotAI::IsCaster(playerTarget, true));
+        bool const feralDruid = targetProfile.feralDruid;
+        bool const manaPriority = targetProfile.usesMana && !feralDruid &&
+            (enemyHunter || targetProfile.healer || targetProfile.caster);
         uint32 const pressure = GetIncomingPressure(botAI);
         bool const defensivePhysical =
-            playerTarget && !enemyHunter && PlayerbotAI::IsMelee(playerTarget, true) &&
+            targetProfile.melee && !enemyHunter &&
             IsSelfDefenseTarget(bot, target) && pressure >= 70;
 
         std::string desired;
@@ -1617,14 +1965,15 @@ namespace ai::pvp
         if (botAI->HasAura("banish", target, false, true))
             return false;
 
-        Player* playerTarget = target->ToPlayer();
+        Player* playerTarget = GetControllingPlayer(target);
+        TargetProfile const targetProfile = GetTargetProfile(botAI, target);
         bool const enemyHunter = playerTarget && playerTarget->getClass() == CLASS_HUNTER;
-        bool const feralDruid = IsFeralDruidForm(playerTarget);
-        bool const manaCaster = playerTarget && !enemyHunter && !feralDruid &&
-            (botAI->IsHeal(playerTarget) || PlayerbotAI::IsCaster(playerTarget, true));
+        bool const feralDruid = targetProfile.feralDruid;
+        bool const manaCaster = targetProfile.usesMana && !enemyHunter && !feralDruid &&
+            (targetProfile.healer || targetProfile.caster);
         uint32 const pressure = GetIncomingPressure(botAI);
         bool const needsKiting =
-            playerTarget && !enemyHunter && !feralDruid && PlayerbotAI::IsMelee(playerTarget, true) &&
+            targetProfile.melee && !enemyHunter && !feralDruid &&
             IsSelfDefenseTarget(bot, target) && pressure >= 65;
 
         std::string desired;

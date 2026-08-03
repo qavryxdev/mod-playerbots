@@ -297,6 +297,9 @@ void ArmsWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("spell reflection", ACTION_INTERRUPT + 4) }));
     triggers.push_back(new TriggerNode("pvp physical target",
         { NextAction("disarm", ACTION_HIGH + 7) }));
-    triggers.push_back(new TriggerNode("pvp high pressure",
+    triggers.push_back(new TriggerNode("pvp physical pressure",
         { NextAction("retaliation", ACTION_EMERGENCY + 3) }));
+    triggers.push_back(new TriggerNode("pvp burst window",
+        { NextAction("bladestorm", ACTION_HIGH + 8),
+          NextAction("death wish", ACTION_HIGH + 7) }));
 }

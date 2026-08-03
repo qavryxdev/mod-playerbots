@@ -176,10 +176,12 @@ void GenericDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("strangulate on enemy healer", ACTION_INTERRUPT) }));
     triggers.push_back(new TriggerNode("chains of ice",
         { NextAction("chains of ice", ACTION_HIGH + 7) }));
+    triggers.push_back(new TriggerNode("pvp magic pressure",
+        { NextAction("anti magic shell", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("pvp physical pressure",
+        { NextAction("icebound fortitude", ACTION_EMERGENCY + 4) }));
     triggers.push_back(new TriggerNode("pvp high pressure",
-        { NextAction("anti magic shell", ACTION_EMERGENCY + 5),
-          NextAction("icebound fortitude", ACTION_EMERGENCY + 4),
-          NextAction("hungering cold", ACTION_EMERGENCY + 3) }));
+        { NextAction("hungering cold", ACTION_EMERGENCY + 3) }));
     triggers.push_back(new TriggerNode(
         "horn of winter", { NextAction("horn of winter", ACTION_NORMAL + 1) }));
     triggers.push_back(new TriggerNode("critical health",

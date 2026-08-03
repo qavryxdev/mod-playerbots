@@ -19,6 +19,32 @@ class WorldLocation;
 
 namespace ai::pvp
 {
+    struct TargetProfile
+    {
+        bool valid = false;
+        bool healer = false;
+        bool melee = false;
+        bool rangedPhysical = false;
+        bool caster = false;
+        bool physicalDamage = false;
+        bool magicDamage = false;
+        bool usesMana = false;
+        bool feralDruid = false;
+        bool treeDruid = false;
+        uint8 playerClass = 0;
+        uint8 specTab = 0;
+    };
+
+    struct PressureProfile
+    {
+        uint32 total = 0;
+        uint32 physical = 0;
+        uint32 magic = 0;
+        uint8 meleeAttackers = 0;
+        uint8 casterAttackers = 0;
+        uint8 hostileCasts = 0;
+    };
+
     enum class CombatPhase : uint8
     {
         None,
@@ -58,14 +84,27 @@ namespace ai::pvp
                                 uint32 holdMs = 1500);
     void ReleaseCrowdControl(PlayerbotAI* botAI, Unit* target);
 
+    TargetProfile GetTargetProfile(PlayerbotAI* botAI, Unit* target);
+    bool IsPhysicalDamageTarget(PlayerbotAI* botAI, Unit* target);
+    bool IsCasterTarget(PlayerbotAI* botAI, Unit* target);
+    bool HasIncomingHostileCast(PlayerbotAI* botAI);
     int32 ScoreOffensiveDispelTarget(PlayerbotAI* botAI, Unit* target, uint32 dispelType, bool threatTarget = false);
     int32 ScoreClassMatchup(PlayerbotAI* botAI, Unit* target);
+    PressureProfile GetIncomingPressureProfile(PlayerbotAI* botAI);
     uint32 GetIncomingPressure(PlayerbotAI* botAI);
+    bool HasPhysicalPressure(PlayerbotAI* botAI);
+    bool HasMagicPressure(PlayerbotAI* botAI);
     Unit* GetClosestPvpMeleeAttacker(PlayerbotAI* botAI, float maxDistance);
     CombatPhase GetCombatPhase(PlayerbotAI* botAI, Unit* target);
     bool IsMajorDefenseActive(Unit* target);
     bool ShouldUseDefensiveCooldown(PlayerbotAI* botAI, bool critical = false);
+    bool IsDefensiveCooldownSpell(std::string const& spell);
+    bool CanUseDefensiveCooldown(PlayerbotAI* botAI, std::string const& spell);
+    bool TryReserveDefensiveCooldown(PlayerbotAI* botAI, std::string const& spell, uint32 holdMs = 1800);
+    void ReleaseDefensiveCooldown(PlayerbotAI* botAI);
     bool ShouldUseBurstCooldown(PlayerbotAI* botAI, Unit* target);
+    bool CanUseOffensiveCooldown(PlayerbotAI* botAI, std::string const& spell);
+    bool CanUseUtilitySpell(PlayerbotAI* botAI, Unit* target, std::string const& spell);
     bool ShouldUseDruidPvpDot(PlayerbotAI* botAI, Unit* target, std::string const& spell);
     bool ShouldUseDruidFaerieFire(PlayerbotAI* botAI, Unit* target);
     bool ShouldUseHunterSting(PlayerbotAI* botAI, Unit* target, std::string const& sting);

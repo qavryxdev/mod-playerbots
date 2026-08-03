@@ -123,8 +123,8 @@ void GenericShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     CombatStrategy::InitTriggers(triggers);
 
     triggers.push_back(new TriggerNode("hex", { NextAction("hex", ACTION_INTERRUPT + 1), }));
-    triggers.push_back(new TriggerNode("wind shear", { NextAction("wind shear", 23.0f), }));
-    triggers.push_back(new TriggerNode("wind shear on enemy healer", { NextAction("wind shear on enemy healer", 23.0f), }));
+    triggers.push_back(new TriggerNode("wind shear", { NextAction("wind shear", ACTION_INTERRUPT + 3), }));
+    triggers.push_back(new TriggerNode("wind shear on enemy healer", { NextAction("wind shear on enemy healer", ACTION_INTERRUPT + 2), }));
     triggers.push_back(new TriggerNode("purge", { NextAction("purge", ACTION_DISPEL), }));
     triggers.push_back(new TriggerNode("new pet", { NextAction("set pet stance", 65.0f), }));
     triggers.push_back(new TriggerNode("pvp incoming hostile cast",

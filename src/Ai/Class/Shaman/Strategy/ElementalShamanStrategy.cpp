@@ -98,4 +98,6 @@ void ElementalShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    triggers.push_back(new TriggerNode("pvp burst window",
+        { NextAction("elemental mastery", ACTION_HIGH + 8) }));
 }

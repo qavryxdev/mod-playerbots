@@ -129,4 +129,6 @@ void EnhancementShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers
             }
         )
     );
+    triggers.push_back(new TriggerNode("pvp burst window",
+        { NextAction("feral spirit", ACTION_HIGH + 8) }));
 }

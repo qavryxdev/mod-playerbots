@@ -98,6 +98,16 @@ namespace
             target->HasAuraType(SPELL_AURA_PERIODIC_LEECH));
     }
 
+    bool IsDamageBreakableSpell(std::string const& spell)
+    {
+        static std::unordered_set<std::string> const spells =
+        {
+            "blind", "fear", "freezing trap", "hex", "hibernate", "polymorph", "repentance", "sap",
+            "scare beast", "shackle undead", "wyvern sting"
+        };
+        return spells.find(spell) != spells.end();
+    }
+
     bool IsInActiveAoe(PlayerbotAI* botAI, Unit* target)
     {
         if (!botAI || !target)
@@ -519,6 +529,10 @@ public:
             return;
 
         if (!ai::cc::CanApplyCrowdControl(botAI, creature, spell))
+            return;
+
+        if (IsDamageBreakableSpell(spell) &&
+            (HasPeriodicDamage(creature) || IsFriendlyDamagePressure(botAI, creature) || IsInActiveAoe(botAI, creature)))
             return;
 
         bool const isPolymorph = spell == "polymorph";

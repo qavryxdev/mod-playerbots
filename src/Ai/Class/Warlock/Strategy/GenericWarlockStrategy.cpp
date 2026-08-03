@@ -100,6 +100,8 @@ void GenericWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("pvp high pressure",
         { NextAction("death coil", ACTION_EMERGENCY + 5),
           NextAction("shadowfury", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("pvp control window",
+        { NextAction("fear on cc", ACTION_INTERRUPT + 3) }));
     triggers.push_back(new TriggerNode("pvp caster target",
         { NextAction("curse of tongues", ACTION_HIGH + 7),
           NextAction("curse of agony", ACTION_HIGH + 6),

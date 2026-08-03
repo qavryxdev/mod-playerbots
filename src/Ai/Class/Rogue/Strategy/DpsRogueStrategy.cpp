@@ -248,9 +248,12 @@ void DpsRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     );
     triggers.push_back(new TriggerNode("pvp physical target",
         { NextAction("dismantle", ACTION_HIGH + 8) }));
-    triggers.push_back(new TriggerNode("pvp high pressure",
-        { NextAction("evasion", ACTION_EMERGENCY + 5),
-          NextAction("cloak of shadows", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("pvp physical pressure",
+        { NextAction("evasion", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("pvp magic pressure",
+        { NextAction("cloak of shadows", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("pvp control window",
+        { NextAction("blind", ACTION_INTERRUPT + 3) }));
 }
 
 class StealthedRogueStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>

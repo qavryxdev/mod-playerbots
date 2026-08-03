@@ -194,9 +194,10 @@ void GenericMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("spellsteal", { NextAction("spellsteal", 40.0f) }));
     triggers.push_back(new TriggerNode("counterspell", { NextAction("counterspell", ACTION_INTERRUPT + 2) }));
     triggers.push_back(new TriggerNode("counterspell on enemy healer", { NextAction("counterspell on enemy healer", 40.0f) }));
+    triggers.push_back(new TriggerNode("pvp physical pressure",
+        { NextAction("frost nova", ACTION_EMERGENCY + 4) }));
     triggers.push_back(new TriggerNode("pvp high pressure",
-        { NextAction("frost nova", ACTION_EMERGENCY + 4),
-          NextAction("mana shield", ACTION_EMERGENCY + 3) }));
+        { NextAction("mana shield", ACTION_EMERGENCY + 3) }));
     triggers.push_back(new TriggerNode("pvp critical pressure",
         { NextAction("ice block", ACTION_EMERGENCY + 6) }));
 }

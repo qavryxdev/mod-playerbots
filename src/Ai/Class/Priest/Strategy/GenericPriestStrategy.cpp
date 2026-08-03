@@ -47,8 +47,9 @@ void GenericPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("power word: shield", ACTION_HIGH + 1) }));
     triggers.push_back(new TriggerNode("new pet", { NextAction("set pet stance", 60.0f) }));
     triggers.push_back(new TriggerNode("pvp high pressure",
-        { NextAction("psychic scream", ACTION_EMERGENCY + 5),
-          NextAction("power word: shield", ACTION_EMERGENCY + 4) }));
+        { NextAction("power word: shield", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("pvp physical pressure",
+        { NextAction("psychic scream", ACTION_EMERGENCY + 5) }));
     triggers.push_back(new TriggerNode("pvp target major defense",
         { NextAction("mass dispel", ACTION_DISPEL + 8) }));
 }
