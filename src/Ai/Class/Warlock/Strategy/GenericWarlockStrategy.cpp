@@ -97,6 +97,8 @@ void GenericWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    triggers.push_back(new TriggerNode("being attacked",
+        { NextAction("death coil", ACTION_EMERGENCY + 4) }));
     triggers.push_back(new TriggerNode("pvp high pressure",
         { NextAction("death coil", ACTION_EMERGENCY + 5),
           NextAction("shadowfury", ACTION_EMERGENCY + 4) }));

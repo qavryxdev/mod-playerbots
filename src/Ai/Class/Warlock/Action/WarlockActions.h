@@ -185,6 +185,9 @@ class CastWarlockDeathCoilAction : public CastSpellAction
 {
 public:
     CastWarlockDeathCoilAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "death coil") {}
+
+    Unit* GetTarget() override;
+    bool Execute(Event event) override;
 };
 
 class CastSpellLockAction : public CastSpellAction

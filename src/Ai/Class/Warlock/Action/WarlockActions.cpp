@@ -126,6 +126,69 @@ bool CastFearOnCcAction::isUseful()
     return CastCrowdControlSpellAction::isUseful();
 }
 
+Unit* CastWarlockDeathCoilAction::GetTarget()
+{
+    Unit* currentTarget = Action::GetTarget();
+    if (!ai::pvp::IsPvpContext(bot))
+        return currentTarget;
+
+    auto isValidAttacker = [this](Unit* target)
+    {
+        if (!target || !target->IsAlive() || !target->IsInWorld() || target->GetMapId() != bot->GetMapId())
+            return false;
+
+        Player* controllingPlayer = target->ToPlayer();
+        if (!controllingPlayer)
+            controllingPlayer = target->GetCharmerOrOwnerPlayerOrPlayerItself();
+
+        return controllingPlayer && botAI->IsOpposing(controllingPlayer) &&
+               ai::pvp::IsSelfDefenseTarget(bot, target) && bot->GetExactDist2d(target) <= 30.0f &&
+               bot->IsWithinLOSInMap(target) && ai::pvp::CanDamageTarget(botAI, target, false) &&
+               ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target);
+    };
+
+    // Keep a valid current attacker to avoid introducing target churn under pressure.
+    if (isValidAttacker(currentTarget))
+        return currentTarget;
+
+    Unit* closestAttacker = nullptr;
+    float closestDistance = 30.0f;
+    GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+    for (ObjectGuid const& guid : attackers)
+    {
+        Unit* attacker = botAI->GetUnit(guid);
+        if (!isValidAttacker(attacker))
+            continue;
+
+        float const distance = bot->GetExactDist2d(attacker);
+        if (distance <= closestDistance)
+        {
+            closestAttacker = attacker;
+            closestDistance = distance;
+        }
+    }
+
+    return closestAttacker ? closestAttacker : currentTarget;
+}
+
+bool CastWarlockDeathCoilAction::Execute(Event event)
+{
+    Unit* target = GetTarget();
+    bool const pvpCast = ai::pvp::IsPvpContext(bot) && target;
+    std::string const targetName = target ? target->GetName() : "none";
+    float const targetDistance = target ? bot->GetExactDist2d(target) : 0.0f;
+    uint32 const pressure = pvpCast ? ai::pvp::GetIncomingPressure(botAI) : 0;
+
+    bool const cast = CastSpellAction::Execute(event);
+    if (cast && pvpCast)
+    {
+        LOG_DEBUG("playerbots", "PvP death coil cast bot={} target={} distance={:.1f} pressure={}",
+                  bot->GetName(), targetName, targetDistance, pressure);
+    }
+
+    return cast;
+}
+
 Value<Unit*>* CastDevourMagicPurgeAction::GetTargetValue()
 {
     return context->GetValue<Unit*>("offensive dispel target", std::to_string(DISPEL_MAGIC));
