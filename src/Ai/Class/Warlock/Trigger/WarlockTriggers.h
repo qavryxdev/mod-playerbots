@@ -294,6 +294,7 @@ class MetamorphosisTrigger : public BoostTrigger
 {
 public:
     MetamorphosisTrigger(PlayerbotAI* ai) : BoostTrigger(ai, "metamorphosis") {}
+    bool IsActive() override;
 };
 
 class DemonicEmpowermentTrigger : public BuffTrigger
@@ -307,6 +308,7 @@ class ImmolationAuraActiveTrigger : public HasAuraTrigger
 {
 public:
     ImmolationAuraActiveTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "immolation aura") {}
+    bool IsActive() override;
 };
 
 class ShadowTranceTrigger : public HasAuraTrigger
@@ -338,6 +340,14 @@ class MetamorphosisNotActiveTrigger : public HasNoAuraTrigger
 {
 public:
     MetamorphosisNotActiveTrigger(PlayerbotAI* ai) : HasNoAuraTrigger(ai, "metamorphosis") {}
+};
+
+// Demon form grants Immolation Aura, Shadow Cleave and Demon Charge as temporary spells for its
+// duration. Without a trigger for "I am in demon form" none of them were ever reachable.
+class MetamorphosisActiveTrigger : public HasAuraTrigger
+{
+public:
+    MetamorphosisActiveTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "metamorphosis") {}
 };
 
 class MetaMeleeEnemyTooCloseForSpellTrigger : public TwoTriggers

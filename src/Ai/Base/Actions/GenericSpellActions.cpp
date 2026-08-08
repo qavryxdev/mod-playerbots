@@ -51,8 +51,7 @@ namespace
         if (!botAI || !bot)
             return false;
 
-        bool const pvpContext = bot->InBattleground() || bot->InArena() || bot->duel;
-        if (!pvpContext)
+        if (!ai::pvp::IsPvpContext(bot))
             return false;
 
         GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
@@ -127,7 +126,9 @@ bool CastSpellAction::Execute(Event /*event*/)
     }
 
     Unit* target = GetTarget();
-    bool const interrupt = ai::pvp::IsInterruptSpell(spell);
+    // Only dedicated interrupts are coordinated between bots. Dual-use spells such as earth shock or
+    // intercept must stay castable even while the target happens to be casting something.
+    bool const interrupt = ai::pvp::IsDedicatedInterruptSpell(spell);
     if (interrupt && !ai::pvp::TryReserveInterrupt(botAI, target, spell))
         return false;
 
@@ -216,7 +217,7 @@ bool CastSpellAction::isPossible()
     }
 
     Unit* target = GetTarget();
-    if (ai::pvp::IsInterruptSpell(spell) && !ai::pvp::CanAttemptInterrupt(botAI, target, spell))
+    if (ai::pvp::IsDedicatedInterruptSpell(spell) && !ai::pvp::CanAttemptInterrupt(botAI, target, spell))
         return false;
 
     // Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL); //not used, line marked for removal.
@@ -643,6 +644,15 @@ bool CastDebuffSpellAction::isUseful()
     if (!ai::pvp::CanDamageTarget(botAI, target, false))
         return false;
 
-    return CastAuraSpellAction::isUseful() &&
-           (target->GetHealth() / AI_VALUE(float, "estimated group dps")) >= needLifeTime;
+    if (!CastAuraSpellAction::isUseful())
+        return false;
+
+    // "estimated group dps" sums every nearby group member, which in a battleground raid runs into
+    // six figures. Against a player sized health pool the expected lifetime is then a fraction of a
+    // second, so this check rejected every damage over time effect in PvP - shadow priests never
+    // applied Vampiric Touch, warlocks never kept their DoTs up. Judge the target itself instead.
+    if (ai::pvp::IsPvpContext(botAI, target))
+        return target->GetHealthPct() > 20.0f;
+
+    return (target->GetHealth() / AI_VALUE(float, "estimated group dps")) >= needLifeTime;
 }

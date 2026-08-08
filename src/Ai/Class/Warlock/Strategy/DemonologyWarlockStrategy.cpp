@@ -89,6 +89,20 @@ void DemonologyWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers
         )
     );
 
+    // Demon form abilities. Immolation Aura previously hung off the "medium aoe" trigger only, so it
+    // needed three clustered enemies; Demon Charge hung off "immolation aura active" and so depended
+    // on it; and Shadow Cleave had no NextAction anywhere in the module at all. The result was a
+    // demonology warlock spending its whole 30 second Metamorphosis casting ordinary Shadow Bolts.
+    triggers.push_back(
+        new TriggerNode(
+            "metamorphosis active",
+            {
+                NextAction("immolation aura", 27.5f),
+                NextAction("shadow cleave", 27.0f)
+            }
+        )
+    );
+
     // Main DoT triggers for high uptime
     triggers.push_back(
         new TriggerNode(
@@ -177,9 +191,11 @@ MetaMeleeAoeStrategy::MetaMeleeAoeStrategy(PlayerbotAI* botAI) : CombatStrategy(
 
 void MetaMeleeAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // Was keyed off "immolation aura active", which could only ever be true after Immolation Aura had
+    // already been cast - and that in turn required being in melee. Key it off the demon form itself.
     triggers.push_back(
         new TriggerNode(
-            "immolation aura active",
+            "metamorphosis active",
             {
                 NextAction("reach melee", 25.5f),
                 NextAction("demon charge", 25.0f)

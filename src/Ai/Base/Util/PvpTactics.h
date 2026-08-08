@@ -55,7 +55,13 @@ namespace ai::pvp
         Reset
     };
 
+    // Structured PvP only (battleground / arena / duel). Deliberately does NOT include the PvP flag:
+    // a flagged bot questing in the open world must keep its plain PvE behaviour.
     bool IsPvpContext(Player* bot);
+    // Structured PvP, or open-world combat where the target really is player controlled.
+    bool IsPvpContext(PlayerbotAI* botAI, Unit* target);
+    bool IsEnemyPlayerOrOwnedUnit(PlayerbotAI* botAI, Unit* target);
+    bool IsCastingHelpfulSpell(Unit* target);
     bool IsInAlteracValley(Player* bot);
     bool GetActiveAVObjective(PlayerbotAI* botAI, Player* bot, PositionInfo& objective);
     bool IsNearObjective(Unit* unit, PositionInfo const& objective, float radius);
@@ -76,6 +82,10 @@ namespace ai::pvp
     bool CurrentAoeIsSafe(PlayerbotAI* botAI);
     bool IsAoeSafe(PlayerbotAI* botAI, WorldLocation const& position, float radius);
 
+    // Spells whose only purpose is to stop a cast. Only these may be suppressed when the cast is
+    // not worth interrupting - everything else must stay available as normal rotation filler.
+    bool IsDedicatedInterruptSpell(std::string const& spell);
+    // Dedicated interrupts plus dual-use spells (earth shock, hammer of justice, intercept, ...).
     bool IsInterruptSpell(std::string const& spell);
     bool CanAttemptInterrupt(PlayerbotAI* botAI, Unit* target, std::string const& spell);
     bool TryReserveInterrupt(PlayerbotAI* botAI, Unit* target, std::string const& spell, uint32 holdMs = 900);

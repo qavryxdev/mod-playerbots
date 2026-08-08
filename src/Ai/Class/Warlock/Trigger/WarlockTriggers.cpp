@@ -8,6 +8,7 @@
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
 #include "Player.h"
+#include "PvpTactics.h"
 
 static const uint32 SOUL_SHARD_ITEM_ID = 6265;
 
@@ -119,6 +120,31 @@ bool DemonicEmpowermentTrigger::IsActive()
     if (!pet)
         return false;
     return !botAI->HasAura("demonic empowerment", pet);
+}
+
+// Metamorphosis is not purely an offensive cooldown: +600% armour and halved stun/snare duration make
+// it just as much an answer to melee pressure. Spend it on either, rather than only on a kill window.
+bool MetamorphosisTrigger::IsActive()
+{
+    if (!BoostTrigger::IsActive())
+        return false;
+
+    if (!ai::pvp::IsPvpContext(bot))
+        return true;
+
+    if (ai::pvp::HasPhysicalPressure(botAI) || ai::pvp::GetClosestPvpMeleeAttacker(botAI, 10.0f))
+        return true;
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return target && ai::pvp::ShouldUseBurstCooldown(botAI, target);
+}
+
+// Aura name matching is an exact string compare, and casting "Immolation Aura" leaves a buff named
+// "Immolation". Matching only the ability name meant this trigger never fired, which in turn made the
+// whole "meta melee" strategy (reach melee + demon charge) unreachable. Accept either name.
+bool ImmolationAuraActiveTrigger::IsActive()
+{
+    return botAI->HasAura("immolation aura", bot) || botAI->HasAura("immolation", bot);
 }
 
 bool DecimationTrigger::IsActive()

@@ -22,11 +22,14 @@
 #include "SharedDefines.h"
 #include "Spell.h"
 #include "SpellAuras.h"
+#include "SpellDefines.h"
 #include "SpellInfo.h"
 #include "Timer.h"
 #include "Unit.h"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cctype>
 #include <iterator>
 #include <mutex>
@@ -39,6 +42,95 @@ namespace
     constexpr uint32 CrowdControlReservationPruneMs = 4000;
     constexpr uint32 CombatPlanLifetimeMs = 2600;
     constexpr uint32 CaptureBannerSpellId = 21651;
+    constexpr uint32 CaptureCacheLifetimeMs = 300;
+    constexpr uint32 MaintenanceIntervalMs = 60000;
+    constexpr uint32 StaleEntryMs = 300000;
+
+    // Bot AI runs concurrently on several map update threads. One global mutex per table would
+    // serialise every bot on the realm, so each table is split into independent shards.
+    template <typename Key, typename Value, typename Hash = std::hash<Key>>
+    class ShardedMap
+    {
+    public:
+        static constexpr size_t ShardCount = 16;
+
+        struct Shard
+        {
+            std::mutex mutex;
+            std::unordered_map<Key, Value, Hash> map;
+        };
+
+        Shard& GetShard(Key const& key) { return shards[Hash{}(key) % ShardCount]; }
+        std::array<Shard, ShardCount>& GetShards() { return shards; }
+
+    private:
+        std::array<Shard, ShardCount> shards;
+    };
+
+    template <typename Map, typename Predicate>
+    void PruneShardedMap(Map& shardedMap, Predicate expired)
+    {
+        for (auto& shard : shardedMap.GetShards())
+        {
+            std::lock_guard<std::mutex> guard(shard.mutex);
+            for (auto itr = shard.map.begin(); itr != shard.map.end();)
+                itr = expired(itr->second) ? shard.map.erase(itr) : std::next(itr);
+        }
+    }
+
+    bool IsOlderThan(uint32 stampMs, uint32 now, uint32 ageMs)
+    {
+        return stampMs && getMSTimeDiff(stampMs, now) > ageMs;
+    }
+
+    // Rotation gate telemetry. Every PvP rule that can suppress a cast bumps a counter, so a bot
+    // standing around doing nothing can be attributed to a specific rule instead of guessed at.
+    // Dumped once a minute at INFO level, which the playerbots logger already captures.
+    struct GateCounters
+    {
+        std::atomic<uint64> evaluations{0};
+        std::atomic<uint64> crowdControlProtected{0};
+        std::atomic<uint64> interruptNotWorthwhile{0};
+        std::atomic<uint64> interruptTakenByOther{0};
+        std::atomic<uint64> defensiveReserved{0};
+        std::atomic<uint64> defensiveNotWarranted{0};
+        std::atomic<uint64> burstWindowClosed{0};
+        std::atomic<uint64> utilityRejected{0};
+        std::atomic<uint64> aoeUnsafe{0};
+        std::atomic<uint64> captureObjectiveLock{0};
+    };
+
+    GateCounters gateCounters;
+
+    void CountGate(std::atomic<uint64>& counter)
+    {
+        counter.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void ReportGateCounters()
+    {
+        uint64 const evaluations = gateCounters.evaluations.exchange(0, std::memory_order_relaxed);
+        uint64 const crowdControl = gateCounters.crowdControlProtected.exchange(0, std::memory_order_relaxed);
+        uint64 const interruptSkipped = gateCounters.interruptNotWorthwhile.exchange(0, std::memory_order_relaxed);
+        uint64 const interruptTaken = gateCounters.interruptTakenByOther.exchange(0, std::memory_order_relaxed);
+        uint64 const defensiveReserved = gateCounters.defensiveReserved.exchange(0, std::memory_order_relaxed);
+        uint64 const defensiveSkipped = gateCounters.defensiveNotWarranted.exchange(0, std::memory_order_relaxed);
+        uint64 const burstClosed = gateCounters.burstWindowClosed.exchange(0, std::memory_order_relaxed);
+        uint64 const utility = gateCounters.utilityRejected.exchange(0, std::memory_order_relaxed);
+        uint64 const aoe = gateCounters.aoeUnsafe.exchange(0, std::memory_order_relaxed);
+        uint64 const captureLock = gateCounters.captureObjectiveLock.exchange(0, std::memory_order_relaxed);
+
+        uint64 const blocked = crowdControl + interruptSkipped + interruptTaken + defensiveReserved +
+                               defensiveSkipped + burstClosed + utility + aoe + captureLock;
+        if (!evaluations && !blocked)
+            return;
+
+        LOG_INFO("playerbots",
+                 "PvP gates/min: eval={} blocked={} cc={} interruptSkip={} interruptTaken={} "
+                 "defReserved={} defNotWarranted={} burstClosed={} utility={} aoe={} captureLock={}",
+                 evaluations, blocked, crowdControl, interruptSkipped, interruptTaken, defensiveReserved,
+                 defensiveSkipped, burstClosed, utility, aoe, captureLock);
+    }
 
     struct InterruptReservationKey
     {
@@ -65,8 +157,7 @@ namespace
         uint32 untilMs = 0;
     };
 
-    std::mutex interruptReservationsMutex;
-    std::unordered_map<InterruptReservationKey, InterruptReservation, InterruptReservationKeyHash> interruptReservations;
+    ShardedMap<InterruptReservationKey, InterruptReservation, InterruptReservationKeyHash> interruptReservations;
 
     struct CrowdControlReservation
     {
@@ -120,18 +211,54 @@ namespace
         int32 remainingMs = 0;
     };
 
-    std::mutex crowdControlReservationsMutex;
-    std::unordered_map<ObjectGuid, CrowdControlReservation> crowdControlReservations;
-    std::mutex defensiveReservationsMutex;
-    std::unordered_map<ObjectGuid, DefensiveReservation> defensiveReservations;
-    std::mutex combatPlansMutex;
-    std::unordered_map<ObjectGuid, CombatPlanState> combatPlans;
-    std::mutex healthSamplesMutex;
-    std::unordered_map<ObjectGuid, HealthSample> healthSamples;
-    std::mutex pressureCacheMutex;
-    std::unordered_map<ObjectGuid, PressureCacheEntry> pressureCache;
-    std::mutex defenseObservationsMutex;
-    std::unordered_map<ObjectGuid, DefenseObservation> defenseObservations;
+    struct CaptureCacheEntry
+    {
+        bool hasObjective = false;
+        bool prioritizeCapture = false;
+        uint32 untilMs = 0;
+    };
+
+    ShardedMap<ObjectGuid, CrowdControlReservation> crowdControlReservations;
+    ShardedMap<ObjectGuid, DefensiveReservation> defensiveReservations;
+    ShardedMap<ObjectGuid, CombatPlanState> combatPlans;
+    ShardedMap<ObjectGuid, HealthSample> healthSamples;
+    ShardedMap<ObjectGuid, PressureCacheEntry> pressureCache;
+    ShardedMap<ObjectGuid, DefenseObservation> defenseObservations;
+    ShardedMap<ObjectGuid, CaptureCacheEntry> captureCache;
+
+    std::atomic<uint32> lastMaintenanceMs{0};
+
+    // Every one of these tables used to grow for the lifetime of the process; only the interrupt and
+    // crowd control tables were ever pruned. Sweep the rest on a slow timer.
+    void RunPeriodicMaintenance(uint32 now)
+    {
+        uint32 last = lastMaintenanceMs.load(std::memory_order_relaxed);
+        if (last && getMSTimeDiff(last, now) < MaintenanceIntervalMs)
+            return;
+
+        if (!lastMaintenanceMs.compare_exchange_strong(last, now, std::memory_order_relaxed))
+            return;
+
+        // One line per minute, emitted by whichever thread won the CAS above.
+        if (last)
+            ReportGateCounters();
+
+        PruneShardedMap(defensiveReservations,
+            [now](DefensiveReservation const& entry) { return IsOlderThan(entry.untilMs, now, StaleEntryMs); });
+        PruneShardedMap(combatPlans,
+            [now](CombatPlanState const& entry) { return IsOlderThan(entry.untilMs, now, StaleEntryMs); });
+        PruneShardedMap(healthSamples,
+            [now](HealthSample const& entry) { return IsOlderThan(entry.sampledMs, now, StaleEntryMs); });
+        PruneShardedMap(pressureCache,
+            [now](PressureCacheEntry const& entry) { return IsOlderThan(entry.untilMs, now, StaleEntryMs); });
+        PruneShardedMap(captureCache,
+            [now](CaptureCacheEntry const& entry) { return IsOlderThan(entry.untilMs, now, StaleEntryMs); });
+        PruneShardedMap(defenseObservations, [now](DefenseObservation const& entry)
+        {
+            return !entry.activeMask && IsOlderThan(entry.lastSeenMs, now, StaleEntryMs) &&
+                   IsOlderThan(entry.unavailableUntilMs, now, StaleEntryMs);
+        });
+    }
 
     SpellInfo const* GetCurrentCastingSpell(Unit* target)
     {
@@ -147,25 +274,6 @@ namespace
                 return spell->m_spellInfo;
 
         return nullptr;
-    }
-
-    bool IsCastingHelpfulSpell(Unit* target)
-    {
-        SpellInfo const* spellInfo = GetCurrentCastingSpell(target);
-        return spellInfo && (spellInfo->IsPositive() ||
-            PlayerbotAI::IsHealingSpell(spellInfo->SpellFamilyName, spellInfo->SpellFamilyFlags));
-    }
-
-    bool IsEnemyPlayerOrOwnedUnit(PlayerbotAI* botAI, Unit* target)
-    {
-        if (!botAI || !target)
-            return false;
-
-        Player* owner = target->ToPlayer();
-        if (!owner)
-            owner = target->GetCharmerOrOwnerPlayerOrPlayerItself();
-
-        return owner && botAI->IsOpposing(owner);
     }
 
     Player* GetControllingPlayer(Unit* target)
@@ -275,13 +383,14 @@ namespace
 
         uint32 const now = getMSTime();
         uint32 const currentMask = GetMajorDefenseMask(target);
-        std::lock_guard<std::mutex> guard(defenseObservationsMutex);
-        auto itr = defenseObservations.find(target->GetGUID());
+        auto& shard = defenseObservations.GetShard(target->GetGUID());
+        std::lock_guard<std::mutex> guard(shard.mutex);
+        auto itr = shard.map.find(target->GetGUID());
 
         if (currentMask)
         {
-            if (itr == defenseObservations.end())
-                itr = defenseObservations.emplace(target->GetGUID(), DefenseObservation{}).first;
+            if (itr == shard.map.end())
+                itr = shard.map.emplace(target->GetGUID(), DefenseObservation{}).first;
 
             DefenseObservation& observation = itr->second;
             observation.activeMask = currentMask;
@@ -290,7 +399,7 @@ namespace
             return result;
         }
 
-        if (itr == defenseObservations.end())
+        if (itr == shard.map.end())
             return result;
 
         DefenseObservation& observation = itr->second;
@@ -305,32 +414,59 @@ namespace
         result.recentlySpent = observation.unavailableUntilMs &&
             static_cast<int32>(observation.unavailableUntilMs - now) > 0;
         if (!result.recentlySpent)
-            defenseObservations.erase(itr);
+            shard.map.erase(itr);
 
         return result;
     }
 
+    // Emergency buttons worth coordinating. Deliberately excludes mana shield, shamanistic rage and
+    // stoneclaw totem: those are routine upkeep/regen casts, and gating them behind combat pressure
+    // meant a mage never pre-shielded and an enhancement shaman never regenerated mana.
     bool IsPersonalDefensiveSpell(std::string const& spell)
     {
         static std::unordered_set<std::string> const spells =
         {
             "anti magic shell", "barkskin", "cloak of shadows", "deterrence", "dispersion", "divine shield",
-            "evasion", "ice block", "icebound fortitude", "mana shield", "retaliation",
-            "shield wall", "shamanistic rage", "stoneclaw totem", "survival instincts"
+            "evasion", "ice block", "icebound fortitude", "retaliation", "shield wall", "survival instincts"
         };
         return spells.find(spell) != spells.end();
     }
 
+    // Higher tier may pre-empt a lower tier reservation - a mage must be able to follow barkskin-class
+    // filler with ice block inside the same reservation window.
+    uint8 GetDefensiveTier(std::string const& spell)
+    {
+        if (spell == "divine shield" || spell == "ice block" || spell == "shield wall" || spell == "dispersion")
+            return 2;
+        return IsPersonalDefensiveSpell(spell) ? 1 : 0;
+    }
+
+    // Burst cooldowns that must be spent on an opening, not hoarded.
     bool IsOffensiveCooldownSpell(std::string const& spell)
     {
         static std::unordered_set<std::string> const spells =
         {
             "adrenaline rush", "arcane power", "avenging wrath", "berserk", "bestial wrath", "bladestorm",
             "cold blood", "combustion", "dancing rune weapon", "death wish", "demonic empowerment",
-            "elemental mastery", "feral spirit", "force of nature", "icy veins", "killing spree", "metamorphosis",
-            "rapid fire", "shadow dance", "starfall", "summon gargoyle"
+            "elemental mastery", "icy veins", "killing spree",
+            "rapid fire", "shadow dance"
         };
+        // starfall / feral spirit / force of nature / summon gargoyle are used on cooldown as plain
+        // damage, so they are intentionally absent - gating them wasted most of their uptime.
+        // metamorphosis is absent because it is also a defensive cooldown; MetamorphosisTrigger
+        // decides when to spend it.
         return spells.find(spell) != spells.end();
+    }
+
+    // Control that opens a burst window even at full target health.
+    bool IsControlledForBurst(Unit* target)
+    {
+        return target && (
+            target->HasAuraType(SPELL_AURA_MOD_STUN) ||
+            target->HasAuraType(SPELL_AURA_MOD_ROOT) ||
+            target->HasAuraType(SPELL_AURA_MOD_SILENCE) ||
+            target->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) ||
+            target->isFrozen());
     }
 
     uint32 CountFriendlyPlayerAttackers(PlayerbotAI* botAI, Unit* target)
@@ -444,23 +580,25 @@ namespace
         return count;
     }
 
-    void PruneInterruptReservations(uint32 now)
+    template <typename Shard>
+    void PruneInterruptReservations(Shard& shard, uint32 now)
     {
-        for (auto itr = interruptReservations.begin(); itr != interruptReservations.end();)
+        for (auto itr = shard.map.begin(); itr != shard.map.end();)
         {
             if (itr->second.untilMs + InterruptReservationPruneMs < now)
-                itr = interruptReservations.erase(itr);
+                itr = shard.map.erase(itr);
             else
                 ++itr;
         }
     }
 
-    void PruneCrowdControlReservations(uint32 now)
+    template <typename Shard>
+    void PruneCrowdControlReservations(Shard& shard, uint32 now)
     {
-        for (auto itr = crowdControlReservations.begin(); itr != crowdControlReservations.end();)
+        for (auto itr = shard.map.begin(); itr != shard.map.end();)
         {
             if (itr->second.untilMs + CrowdControlReservationPruneMs < now)
-                itr = crowdControlReservations.erase(itr);
+                itr = shard.map.erase(itr);
             else
                 ++itr;
         }
@@ -816,7 +954,35 @@ namespace ai::pvp
 {
     bool IsPvpContext(Player* bot)
     {
-        return bot && (bot->InBattleground() || bot->InArena() || bot->duel || bot->IsPvP() || bot->IsFFAPvP());
+        // The PvP flag used to be part of this test, which meant a flagged bot questing in the open
+        // world ran the whole PvP tactic layer against ordinary creatures: it refused to damage
+        // feared mobs, hoarded its offensive cooldowns and never pre-cast its own upkeep buffs.
+        return bot && (bot->InBattleground() || bot->InArena() || bot->duel);
+    }
+
+    bool IsEnemyPlayerOrOwnedUnit(PlayerbotAI* botAI, Unit* target)
+    {
+        if (!botAI || !target)
+            return false;
+
+        Player* owner = target->ToPlayer();
+        if (!owner)
+            owner = target->GetCharmerOrOwnerPlayerOrPlayerItself();
+
+        return owner && botAI->IsOpposing(owner);
+    }
+
+    bool IsCastingHelpfulSpell(Unit* target)
+    {
+        SpellInfo const* spellInfo = GetCurrentCastingSpell(target);
+        return spellInfo && (spellInfo->IsPositive() ||
+            PlayerbotAI::IsHealingSpell(spellInfo->SpellFamilyName, spellInfo->SpellFamilyFlags));
+    }
+
+    bool IsPvpContext(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        return bot && (IsPvpContext(bot) || IsEnemyPlayerOrOwnedUnit(botAI, target));
     }
 
     TargetProfile GetTargetProfile(PlayerbotAI* botAI, Unit* target)
@@ -1013,12 +1179,12 @@ namespace ai::pvp
         return victim && !botAI->IsOpposing(victim) && botAI->IsHeal(victim);
     }
 
-    bool HasActiveBattlegroundCaptureObjective(PlayerbotAI* botAI)
-    {
-        Player* bot = botAI ? botAI->GetBot() : nullptr;
-        if (!bot || !bot->InBattleground() || bot->InArena())
-            return false;
+    // Scans up to 24 nearby enemies; kept separate from HasCaptureObjectiveThreat so the cached
+    // capture state can call it without recursing back into the cache.
+    static bool ScanCaptureObjectiveThreat(PlayerbotAI* botAI);
 
+    static bool ComputeHasActiveBattlegroundCaptureObjective(PlayerbotAI* botAI, Player* bot)
+    {
         if (HasCaptureBannerCast(bot) || IsCarryingBattlegroundFlag(bot))
             return true;
 
@@ -1046,6 +1212,61 @@ namespace ai::pvp
             default:
                 return false;
         }
+    }
+
+    static bool ComputeShouldPrioritizeBattlegroundCapture(PlayerbotAI* botAI, Player* bot, bool hasObjective)
+    {
+        if (!hasObjective || HasSelfDefenseAttacker(bot))
+            return false;
+
+        if (HasCaptureBannerCast(bot) || IsCarryingBattlegroundFlag(bot))
+            return true;
+
+        PositionInfo objective;
+        if (!GetActiveBattlegroundObjective(botAI, bot, objective))
+            return false;
+
+        float const commitRadius = IsInAlteracValley(bot) ? 75.0f : 55.0f;
+        if (!IsNearObjective(bot, objective, commitRadius))
+            return false;
+
+        return !ScanCaptureObjectiveThreat(botAI);
+    }
+
+    // This chain walks every battleground capture object and scans nearby enemies, and it used to run
+    // once per candidate inside target selection and once per action inside CastSpellAction::isUseful.
+    // A short per-bot cache keeps the behaviour while collapsing that to one evaluation per tick.
+    static CaptureCacheEntry GetCaptureState(PlayerbotAI* botAI, Player* bot)
+    {
+        uint32 const now = getMSTime();
+        auto& shard = captureCache.GetShard(bot->GetGUID());
+        {
+            std::lock_guard<std::mutex> guard(shard.mutex);
+            auto const itr = shard.map.find(bot->GetGUID());
+            if (itr != shard.map.end() && itr->second.untilMs >= now)
+                return itr->second;
+        }
+
+        CaptureCacheEntry state;
+        state.hasObjective = ComputeHasActiveBattlegroundCaptureObjective(botAI, bot);
+        state.prioritizeCapture = ComputeShouldPrioritizeBattlegroundCapture(botAI, bot, state.hasObjective);
+        state.untilMs = now + CaptureCacheLifetimeMs;
+
+        {
+            std::lock_guard<std::mutex> guard(shard.mutex);
+            shard.map[bot->GetGUID()] = state;
+        }
+
+        return state;
+    }
+
+    bool HasActiveBattlegroundCaptureObjective(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !bot->InBattleground() || bot->InArena())
+            return false;
+
+        return GetCaptureState(botAI, bot).hasObjective;
     }
 
     bool IsSelfDefenseTarget(Player* bot, Unit* target)
@@ -1110,10 +1331,10 @@ namespace ai::pvp
         return botCanInfluenceObjective && (captureTargetMatchesObjective || targetIsOnObjective);
     }
 
-    bool HasCaptureObjectiveThreat(PlayerbotAI* botAI)
+    static bool ScanCaptureObjectiveThreat(PlayerbotAI* botAI)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
-        if (!bot || !HasActiveBattlegroundCaptureObjective(botAI))
+        if (!bot)
             return false;
 
         std::unordered_set<ObjectGuid> checked;
@@ -1151,24 +1372,22 @@ namespace ai::pvp
         return false;
     }
 
+    bool HasCaptureObjectiveThreat(PlayerbotAI* botAI)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !HasActiveBattlegroundCaptureObjective(botAI))
+            return false;
+
+        return ScanCaptureObjectiveThreat(botAI);
+    }
+
     bool ShouldPrioritizeBattlegroundCapture(PlayerbotAI* botAI)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
-        if (!bot || !HasActiveBattlegroundCaptureObjective(botAI) || HasSelfDefenseAttacker(bot))
+        if (!bot || !bot->InBattleground() || bot->InArena())
             return false;
 
-        if (HasCaptureBannerCast(bot) || IsCarryingBattlegroundFlag(bot))
-            return true;
-
-        PositionInfo objective;
-        if (!GetActiveBattlegroundObjective(botAI, bot, objective))
-            return false;
-
-        float const commitRadius = IsInAlteracValley(bot) ? 75.0f : 55.0f;
-        if (!IsNearObjective(bot, objective, commitRadius))
-            return false;
-
-        return !HasCaptureObjectiveThreat(botAI);
+        return GetCaptureState(botAI, bot).prioritizeCapture;
     }
 
     bool CanEngageDuringBattlegroundCapture(PlayerbotAI* botAI, Unit* target)
@@ -1177,7 +1396,11 @@ namespace ai::pvp
             return true;
 
         Player* bot = botAI ? botAI->GetBot() : nullptr;
-        return IsSelfDefenseTarget(bot, target) || IsCaptureObjectiveThreat(botAI, target);
+        bool const engage = IsSelfDefenseTarget(bot, target) || IsCaptureObjectiveThreat(botAI, target);
+        if (!engage)
+            CountGate(gateCounters.captureObjectiveLock);
+
+        return engage;
     }
 
     bool IsObjectiveRelevantEnemy(PlayerbotAI* botAI, Unit* target, bool threatTarget, float botObjectiveRadius,
@@ -1214,30 +1437,79 @@ namespace ai::pvp
         return false;
     }
 
+    // Only auras the core itself will strip on damage count as "do not touch". Testing aura *types*
+    // instead lumped in effects that damage never breaks - most importantly warlock Death Coil, whose
+    // horror is a MOD_FEAR aura. Every bot in range used to stop attacking a death coiled target for
+    // the full duration, and the target was dropped from target selection entirely.
     bool IsBreakableCrowdControlled(Unit* target)
     {
-        return target && (
-            target->IsPolymorphed() ||
-            target->HasAuraType(SPELL_AURA_MOD_CONFUSE) ||
-            target->HasAuraType(SPELL_AURA_MOD_FEAR) ||
-            target->HasAuraType(SPELL_AURA_MOD_CHARM) ||
-            target->HasAuraType(SPELL_AURA_AOE_CHARM) ||
-            target->HasAuraWithMechanic(1 << MECHANIC_SLEEP) ||
-            target->HasAuraWithMechanic(1 << MECHANIC_SAPPED));
+        if (!target)
+            return false;
+
+        constexpr uint32 damageBreaksAura = AURA_INTERRUPT_FLAG_TAKE_DAMAGE | AURA_INTERRUPT_FLAG_DIRECT_DAMAGE;
+
+        Unit::AuraApplicationMap const& auras = target->GetAppliedAuras();
+        for (auto const& [_, aurApp] : auras)
+        {
+            Aura const* aura = aurApp ? aurApp->GetBase() : nullptr;
+            SpellInfo const* spellInfo = aura ? aura->GetSpellInfo() : nullptr;
+            if (!aura || aura->IsRemoved() || !spellInfo || spellInfo->IsPositive())
+                continue;
+
+            if (!(spellInfo->AuraInterruptFlags & damageBreaksAura))
+                continue;
+
+            for (SpellEffectInfo const& effect : spellInfo->Effects)
+            {
+                if (effect.Effect != SPELL_EFFECT_APPLY_AURA)
+                    continue;
+
+                switch (effect.ApplyAuraName)
+                {
+                    case SPELL_AURA_MOD_CONFUSE:
+                    case SPELL_AURA_MOD_FEAR:
+                    case SPELL_AURA_MOD_CHARM:
+                    case SPELL_AURA_AOE_CHARM:
+                    case SPELL_AURA_MOD_POSSESS:
+                    case SPELL_AURA_MOD_PACIFY:
+                    case SPELL_AURA_MOD_PACIFY_SILENCE:
+                    case SPELL_AURA_MOD_STUN:
+                        return true;
+                    default:
+                        break;
+                }
+            }
+        }
+
+        return false;
     }
 
     bool CanDamageTarget(PlayerbotAI* botAI, Unit* target, bool areaDamage)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
-        if (!IsPvpContext(bot) || !target || !IsBreakableCrowdControlled(target))
+        if (!bot || !target || !IsPvpContext(botAI, target))
+            return true;
+
+        // Counted only past the PvP check, so bots questing in the open world never touch the
+        // shared counters at all.
+        CountGate(gateCounters.evaluations);
+
+        if (!IsBreakableCrowdControlled(target))
             return true;
 
         if (areaDamage)
+        {
+            CountGate(gateCounters.crowdControlProtected);
             return false;
+        }
 
         Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
-        return currentTarget == target && target->GetHealthPct() < 12.0f &&
-               GetCombatPhase(botAI, target) == CombatPhase::Burst;
+        bool const allowed = currentTarget == target && target->GetHealthPct() < 12.0f &&
+                             GetCombatPhase(botAI, target) == CombatPhase::Burst;
+        if (!allowed)
+            CountGate(gateCounters.crowdControlProtected);
+
+        return allowed;
     }
 
     bool SpellCanBreakCrowdControl(SpellInfo const* spellInfo)
@@ -1317,16 +1589,28 @@ namespace ai::pvp
             return true;
 
         WorldLocation position = *botAI->GetAiObjectContext()->GetValue<WorldLocation>("aoe position");
-        return IsAoeSafe(botAI, position, sPlayerbotAIConfig.aoeRadius + 2.0f);
+        bool const safe = IsAoeSafe(botAI, position, sPlayerbotAIConfig.aoeRadius + 2.0f);
+        if (!safe)
+            CountGate(gateCounters.aoeUnsafe);
+
+        return safe;
+    }
+
+    bool IsDedicatedInterruptSpell(std::string const& spell)
+    {
+        return spell == "counterspell" || spell == "kick" || spell == "pummel" || spell == "shield bash" ||
+               spell == "mind freeze" || spell == "strangulate" || spell == "wind shear" ||
+               spell == "silence" || spell == "spell lock" || spell == "silencing shot";
     }
 
     bool IsInterruptSpell(std::string const& spell)
     {
-        return spell == "counterspell" || spell == "kick" || spell == "pummel" || spell == "shield bash" ||
-               spell == "mind freeze" || spell == "strangulate" || spell == "wind shear" || spell == "earth shock" ||
-               spell == "silence" || spell == "spell lock" || spell == "silencing shot" ||
-               spell == "hammer of justice" || spell == "bash" || spell == "intercept" ||
-               spell == "repentance" || spell == "arcane torrent";
+        // Dual-use spells: they can interrupt, but they are also plain rotation damage, a gap closer
+        // or a stun. Suppressing them whenever the target happens to be casting something not worth
+        // interrupting removed them from the rotation entirely, so they are never gated - only
+        // the dedicated interrupts above are.
+        return IsDedicatedInterruptSpell(spell) || spell == "earth shock" || spell == "hammer of justice" ||
+               spell == "bash" || spell == "intercept" || spell == "repentance" || spell == "arcane torrent";
     }
 
     bool CanAttemptInterrupt(PlayerbotAI* botAI, Unit* target, std::string const& spell)
@@ -1335,19 +1619,27 @@ namespace ai::pvp
         SpellInfo const* castingSpell = GetCurrentCastingSpell(target);
         if (!bot || !target)
             return false;
-        if (!IsInterruptSpell(spell) || !castingSpell)
+        if (!IsDedicatedInterruptSpell(spell) || !castingSpell)
             return true;
 
         if (!botAI->IsInterruptableSpellCasting(target, spell))
+        {
+            CountGate(gateCounters.interruptNotWorthwhile);
             return false;
+        }
 
         uint32 const now = getMSTime();
         InterruptReservationKey key{ target->GetGUID(), castingSpell->Id };
-        std::lock_guard<std::mutex> guard(interruptReservationsMutex);
-        PruneInterruptReservations(now);
+        auto& shard = interruptReservations.GetShard(key);
+        std::lock_guard<std::mutex> guard(shard.mutex);
+        PruneInterruptReservations(shard, now);
 
-        auto itr = interruptReservations.find(key);
-        return itr == interruptReservations.end() || itr->second.untilMs < now || itr->second.bot == bot->GetGUID();
+        auto itr = shard.map.find(key);
+        bool const free = itr == shard.map.end() || itr->second.untilMs < now || itr->second.bot == bot->GetGUID();
+        if (!free)
+            CountGate(gateCounters.interruptTakenByOther);
+
+        return free;
     }
 
     bool TryReserveInterrupt(PlayerbotAI* botAI, Unit* target, std::string const& spell, uint32 holdMs)
@@ -1356,20 +1648,21 @@ namespace ai::pvp
         SpellInfo const* castingSpell = GetCurrentCastingSpell(target);
         if (!bot || !target)
             return false;
-        if (!IsInterruptSpell(spell) || !castingSpell)
+        if (!IsDedicatedInterruptSpell(spell) || !castingSpell)
             return true;
         if (!botAI->IsInterruptableSpellCasting(target, spell))
             return false;
 
         uint32 const now = getMSTime();
         InterruptReservationKey key{ target->GetGUID(), castingSpell->Id };
-        std::lock_guard<std::mutex> guard(interruptReservationsMutex);
-        PruneInterruptReservations(now);
-        auto itr = interruptReservations.find(key);
-        if (itr != interruptReservations.end() && itr->second.untilMs >= now && itr->second.bot != bot->GetGUID())
+        auto& shard = interruptReservations.GetShard(key);
+        std::lock_guard<std::mutex> guard(shard.mutex);
+        PruneInterruptReservations(shard, now);
+        auto itr = shard.map.find(key);
+        if (itr != shard.map.end() && itr->second.untilMs >= now && itr->second.bot != bot->GetGUID())
             return false;
 
-        interruptReservations[key] = { bot->GetGUID(), now + holdMs };
+        shard.map[key] = { bot->GetGUID(), now + holdMs };
         return true;
     }
 
@@ -1379,13 +1672,16 @@ namespace ai::pvp
         if (!bot || !target)
             return;
 
-        std::lock_guard<std::mutex> guard(interruptReservationsMutex);
-        for (auto itr = interruptReservations.begin(); itr != interruptReservations.end();)
+        for (auto& shard : interruptReservations.GetShards())
         {
-            if (itr->first.target == target->GetGUID() && itr->second.bot == bot->GetGUID())
-                itr = interruptReservations.erase(itr);
-            else
-                ++itr;
+            std::lock_guard<std::mutex> guard(shard.mutex);
+            for (auto itr = shard.map.begin(); itr != shard.map.end();)
+            {
+                if (itr->first.target == target->GetGUID() && itr->second.bot == bot->GetGUID())
+                    itr = shard.map.erase(itr);
+                else
+                    ++itr;
+            }
         }
     }
 
@@ -1402,27 +1698,28 @@ namespace ai::pvp
             return false;
 
         uint32 const now = getMSTime();
-        std::lock_guard<std::mutex> guard(crowdControlReservationsMutex);
-        PruneCrowdControlReservations(now);
-        auto itr = crowdControlReservations.find(target->GetGUID());
-        if (itr != crowdControlReservations.end() && itr->second.untilMs >= now &&
-            itr->second.bot != bot->GetGUID())
+        auto& shard = crowdControlReservations.GetShard(target->GetGUID());
+        std::lock_guard<std::mutex> guard(shard.mutex);
+        PruneCrowdControlReservations(shard, now);
+        auto itr = shard.map.find(target->GetGUID());
+        if (itr != shard.map.end() && itr->second.untilMs >= now && itr->second.bot != bot->GetGUID())
             return false;
 
-        crowdControlReservations[target->GetGUID()] = { bot->GetGUID(), spell, now + holdMs };
+        shard.map[target->GetGUID()] = { bot->GetGUID(), spell, now + holdMs };
         return true;
     }
 
     void ReleaseCrowdControl(PlayerbotAI* botAI, Unit* target)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
-        if (!bot || !target || !IsPvpContext(bot))
+        if (!bot || !target)
             return;
 
-        std::lock_guard<std::mutex> guard(crowdControlReservationsMutex);
-        auto itr = crowdControlReservations.find(target->GetGUID());
-        if (itr != crowdControlReservations.end() && itr->second.bot == bot->GetGUID())
-            crowdControlReservations.erase(itr);
+        auto& shard = crowdControlReservations.GetShard(target->GetGUID());
+        std::lock_guard<std::mutex> guard(shard.mutex);
+        auto itr = shard.map.find(target->GetGUID());
+        if (itr != shard.map.end() && itr->second.bot == bot->GetGUID())
+            shard.map.erase(itr);
     }
 
     int32 ScoreOffensiveDispelTarget(PlayerbotAI* botAI, Unit* target, uint32 dispelType, bool threatTarget)
@@ -1521,14 +1818,16 @@ namespace ai::pvp
     {
         PressureProfile profile;
         Player* bot = botAI ? botAI->GetBot() : nullptr;
+        RunPeriodicMaintenance(getMSTime());
         if (!bot || !IsPvpContext(bot) || !bot->IsAlive())
             return profile;
 
         uint32 const now = getMSTime();
         {
-            std::lock_guard<std::mutex> guard(pressureCacheMutex);
-            auto const itr = pressureCache.find(bot->GetGUID());
-            if (itr != pressureCache.end() && itr->second.untilMs >= now)
+            auto& shard = pressureCache.GetShard(bot->GetGUID());
+            std::lock_guard<std::mutex> guard(shard.mutex);
+            auto const itr = shard.map.find(bot->GetGUID());
+            if (itr != shard.map.end() && itr->second.untilMs >= now)
                 return itr->second.profile;
         }
 
@@ -1589,8 +1888,9 @@ namespace ai::pvp
             profile.total += 10;
 
         {
-            std::lock_guard<std::mutex> guard(healthSamplesMutex);
-            HealthSample& sample = healthSamples[bot->GetGUID()];
+            auto& shard = healthSamples.GetShard(bot->GetGUID());
+            std::lock_guard<std::mutex> guard(shard.mutex);
+            HealthSample& sample = shard.map[bot->GetGUID()];
             if (!sample.sampledMs)
             {
                 sample.healthPct = healthPct;
@@ -1618,8 +1918,9 @@ namespace ai::pvp
         profile.physical = std::min<uint32>(profile.physical, 100);
         profile.magic = std::min<uint32>(profile.magic, 100);
         {
-            std::lock_guard<std::mutex> guard(pressureCacheMutex);
-            pressureCache[bot->GetGUID()] = { profile, now + 100 };
+            auto& shard = pressureCache.GetShard(bot->GetGUID());
+            std::lock_guard<std::mutex> guard(shard.mutex);
+            shard.map[bot->GetGUID()] = { profile, now + 100 };
         }
         return profile;
     }
@@ -1695,7 +1996,7 @@ namespace ai::pvp
         else if (IsCastingHelpfulSpell(target) && GetControllingPlayer(target) &&
                  botAI->IsHeal(GetControllingPlayer(target)))
             desired = CombatPhase::Control;
-        else if (target->GetHealthPct() < 45.0f ||
+        else if (target->GetHealthPct() < 55.0f || IsControlledForBurst(target) ||
                  (GetControllingPlayer(target) && botAI->IsHeal(GetControllingPlayer(target)) &&
                   friendlyAttackers >= 2))
             desired = CombatPhase::Burst;
@@ -1703,8 +2004,9 @@ namespace ai::pvp
             desired = CombatPhase::Setup;
 
         uint32 const now = getMSTime();
-        std::lock_guard<std::mutex> guard(combatPlansMutex);
-        CombatPlanState& plan = combatPlans[bot->GetGUID()];
+        auto& shard = combatPlans.GetShard(bot->GetGUID());
+        std::lock_guard<std::mutex> guard(shard.mutex);
+        CombatPlanState& plan = shard.map[bot->GetGUID()];
         bool const sameTarget = plan.target == target->GetGUID();
         bool const active = sameTarget && plan.untilMs >= now;
 
@@ -1751,11 +2053,17 @@ namespace ai::pvp
         PressureProfile const pressure = GetIncomingPressureProfile(botAI);
         bool const emergencyHealth = bot->GetHealthPct() < 25.0f;
         if (pressure.total < 60 && !emergencyHealth)
+        {
+            CountGate(gateCounters.defensiveNotWarranted);
             return false;
+        }
 
         bool const critical = pressure.total >= 95 || emergencyHealth;
         if (GetMajorDefenseMask(bot) && !critical)
+        {
+            CountGate(gateCounters.defensiveNotWarranted);
             return false;
+        }
 
         if (spell == "evasion" || spell == "retaliation")
             return critical || HasPhysicalPressure(botAI);
@@ -1774,12 +2082,19 @@ namespace ai::pvp
             return true;
 
         uint32 const now = getMSTime();
-        std::lock_guard<std::mutex> guard(defensiveReservationsMutex);
-        auto itr = defensiveReservations.find(bot->GetGUID());
-        if (itr != defensiveReservations.end() && itr->second.untilMs >= now && itr->second.spell != spell)
+        auto& shard = defensiveReservations.GetShard(bot->GetGUID());
+        std::lock_guard<std::mutex> guard(shard.mutex);
+        auto itr = shard.map.find(bot->GetGUID());
+        // A held reservation must never lock the bot out of a stronger button - it only stops it from
+        // double-popping two cooldowns of the same weight.
+        if (itr != shard.map.end() && itr->second.untilMs >= now && itr->second.spell != spell &&
+            GetDefensiveTier(spell) <= GetDefensiveTier(itr->second.spell))
+        {
+            CountGate(gateCounters.defensiveReserved);
             return false;
+        }
 
-        defensiveReservations[bot->GetGUID()] = { spell, now + holdMs };
+        shard.map[bot->GetGUID()] = { spell, now + holdMs };
         return true;
     }
 
@@ -1789,8 +2104,9 @@ namespace ai::pvp
         if (!bot)
             return;
 
-        std::lock_guard<std::mutex> guard(defensiveReservationsMutex);
-        defensiveReservations.erase(bot->GetGUID());
+        auto& shard = defensiveReservations.GetShard(bot->GetGUID());
+        std::lock_guard<std::mutex> guard(shard.mutex);
+        shard.map.erase(bot->GetGUID());
     }
 
     bool ShouldUseBurstCooldown(PlayerbotAI* botAI, Unit* target)
@@ -1802,7 +2118,27 @@ namespace ai::pvp
         if (!IsObjectiveRelevantEnemy(botAI, target, false, 70.0f, 50.0f))
             return false;
 
-        return !IsMajorDefenseActive(target) && GetCombatPhase(botAI, target) == CombatPhase::Burst;
+        if (IsMajorDefenseActive(target))
+            return false;
+
+        // Never burst while about to die - survival first.
+        if (GetIncomingPressure(botAI) >= 90)
+            return false;
+
+        // A burst window in PvP is an opening: the target is controlled, already damaged, is the
+        // enemy healer, or the team is committed to it. Waiting for the old "below 45% health"
+        // condition meant the cooldowns were still unused when the target got healed or ran away.
+        if (IsControlledForBurst(target) || target->GetHealthPct() <= 60.0f)
+            return true;
+
+        Player* playerTarget = GetControllingPlayer(target);
+        if (playerTarget && botAI->IsHeal(playerTarget))
+            return true;
+
+        if (CountFriendlyPlayerAttackers(botAI, target) >= 2)
+            return true;
+
+        return GetCombatPhase(botAI, target) == CombatPhase::Burst;
     }
 
     bool CanUseOffensiveCooldown(PlayerbotAI* botAI, std::string const& spell)
@@ -1821,7 +2157,11 @@ namespace ai::pvp
         if (*botAI->GetAiObjectContext()->GetValue<uint8>("aoe count") >= 3 && CurrentAoeIsSafe(botAI))
             return true;
 
-        return ShouldUseBurstCooldown(botAI, target);
+        bool const burst = ShouldUseBurstCooldown(botAI, target);
+        if (!burst)
+            CountGate(gateCounters.burstWindowClosed);
+
+        return burst;
     }
 
     bool CanUseUtilitySpell(PlayerbotAI* botAI, Unit* target, std::string const& spell)
@@ -1836,10 +2176,18 @@ namespace ai::pvp
         Player* playerTarget = GetControllingPlayer(target);
         TargetProfile const profile = GetTargetProfile(botAI, target);
         if (!playerTarget || !profile.physicalDamage || profile.feralDruid)
+        {
+            CountGate(gateCounters.utilityRejected);
             return false;
+        }
 
-        return playerTarget->HasWeaponForAttack(BASE_ATTACK) || playerTarget->HasWeaponForAttack(OFF_ATTACK) ||
-               playerTarget->HasWeaponForAttack(RANGED_ATTACK);
+        bool const armed = playerTarget->HasWeaponForAttack(BASE_ATTACK) ||
+                           playerTarget->HasWeaponForAttack(OFF_ATTACK) ||
+                           playerTarget->HasWeaponForAttack(RANGED_ATTACK);
+        if (!armed)
+            CountGate(gateCounters.utilityRejected);
+
+        return armed;
     }
 
     bool ShouldUseDruidPvpDot(PlayerbotAI* botAI, Unit* target, std::string const& spell)

@@ -21,9 +21,49 @@
 #include "UnitDefines.h"
 #include "Timer.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
 
 const int ITEM_SOUL_SHARD = 6265;
+
+namespace
+{
+    constexpr float ImmolationAuraRadius = 8.0f;
+
+    // Immolation Aura costs 64% of base mana for a 15 second aura on a 30 second cooldown, so it only
+    // pays for itself when several enemies are already standing in it.
+    uint8 CountEnemiesInImmolationRange(PlayerbotAI* botAI, Player* bot)
+    {
+        if (!botAI || !bot)
+            return 0;
+
+        uint8 count = 0;
+        std::unordered_set<ObjectGuid> checked;
+        auto consider = [&](ObjectGuid const& guid)
+        {
+            if (!guid || !checked.insert(guid).second)
+                return;
+
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsAlive() || !unit->IsInWorld() || unit->GetMapId() != bot->GetMapId())
+                return;
+
+            if (bot->IsFriendlyTo(unit) || !bot->IsValidAttackTarget(unit))
+                return;
+
+            if (bot->GetExactDist2d(unit) <= ImmolationAuraRadius)
+                ++count;
+        };
+
+        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
+            consider(guid);
+
+        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets")->Get())
+            consider(guid);
+
+        return count;
+    }
+}
 
 // Checks if the bot has less than 26 soul shards, and if so, allows casting Drain Soul
 bool CastDrainSoulAction::isUseful() { return AI_VALUE2(uint32, "item count", "soul shard") < 26; }
@@ -229,17 +269,27 @@ bool CastHellfireAction::isUseful()
 // Checks if the "meta melee aoe" strategy is active, OR if the bot is in melee range of the target
 bool CastImmolationAuraAction::isUseful()
 {
-    if (botAI->HasStrategy("meta melee", BOT_STATE_COMBAT))
-        return true;
-
-    Unit* target = AI_VALUE(Unit*, "current target");
-    if (!target)
-        return false;
-
+    // The spell only exists while in demon form, so check that first - the "meta melee" shortcut used
+    // to skip this and had the bot try to cast it in caster form.
     if (!bot->HasAura(47241))  // 47241 is Metamorphosis spell ID (WotLK)
         return false;
 
-    return bot->IsWithinCombatRange(target, 5.0f);  // 5 yard AoE radius
+    // The ability is "Immolation Aura" but the buff it leaves is named "Immolation"; accept either so
+    // the bot does not burn a global cooldown recasting an aura that is already ticking.
+    if (botAI->HasAura("immolation", bot) || botAI->HasAura("immolation aura", bot))
+        return false;
+
+    // At 64% of base mana this is the most expensive thing a demonology warlock casts. Against a
+    // single target it is a straight loss compared to spending the same global cooldown on a normal
+    // spell, which the demon form already buffs by 20%.
+    if (bot->GetPowerPct(POWER_MANA) < 40.0f)
+        return false;
+
+    uint8 const enemiesInRange = CountEnemiesInImmolationRange(botAI, bot);
+    if (botAI->HasStrategy("meta melee", BOT_STATE_COMBAT))
+        return enemiesInRange >= 1;
+
+    return enemiesInRange >= 2;
 }
 
 // Checks if the "warlock tank" strategy is active, and if so, prevents the use of Soulshatter

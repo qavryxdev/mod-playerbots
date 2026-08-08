@@ -21,55 +21,17 @@
 
 namespace
 {
+    // These helpers used to be copy-pasted here with subtly different rules than the ones in
+    // PvpTactics, so fixes only ever landed on one side. They now forward to the single definition.
+    using ai::pvp::IsAttackingFriendlyHealer;
+    using ai::pvp::IsBreakableCrowdControlled;
+    using ai::pvp::IsCastingHelpfulSpell;
+    using ai::pvp::IsEnemyPlayerOrOwnedUnit;
+    using ai::pvp::IsNearObjective;
+
     bool IsPvpTargetingContext(Player* bot)
     {
-        return bot && (bot->InBattleground() || bot->InArena() || bot->duel);
-    }
-
-    bool IsBreakableCrowdControlled(Unit* target)
-    {
-        return target && (target->IsPolymorphed() || target->HasAuraType(SPELL_AURA_MOD_CONFUSE) ||
-                          target->HasAuraType(SPELL_AURA_MOD_FEAR));
-    }
-
-    SpellInfo const* GetCurrentCastingSpell(Unit* target)
-    {
-        if (!target)
-            return nullptr;
-
-        Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (spell && spell->m_spellInfo)
-            return spell->m_spellInfo;
-
-        spell = target->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
-        return spell ? spell->m_spellInfo : nullptr;
-    }
-
-    bool IsCastingHelpfulSpell(Unit* target)
-    {
-        if (SpellInfo const* spellInfo = GetCurrentCastingSpell(target))
-            return spellInfo->IsPositive() ||
-                   PlayerbotAI::IsHealingSpell(spellInfo->SpellFamilyName, spellInfo->SpellFamilyFlags);
-
-        return false;
-    }
-
-    bool IsAttackingFriendlyHealer(PlayerbotAI* botAI, Unit* target)
-    {
-        Player* victim = target && target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
-        return victim && !botAI->IsOpposing(victim) && botAI->IsHeal(victim);
-    }
-
-    bool IsEnemyPlayerOrOwnedUnit(PlayerbotAI* botAI, Unit* target)
-    {
-        if (!botAI || !target)
-            return false;
-
-        Player* owner = target->ToPlayer();
-        if (!owner)
-            owner = target->GetCharmerOrOwnerPlayerOrPlayerItself();
-
-        return owner && botAI->IsOpposing(owner);
+        return ai::pvp::IsPvpContext(bot);
     }
 
     bool IsAlteracTowerBowman(Unit* target)
@@ -89,37 +51,7 @@ namespace
 
     bool GetActiveAVObjective(PlayerbotAI* botAI, Player* bot, PositionInfo& objective)
     {
-        if (!botAI || !bot)
-            return false;
-
-        Battleground* bg = bot->GetBattleground();
-        if (!bg)
-            return false;
-
-        BattlegroundTypeId bgType = bg->GetBgTypeID();
-        if (bgType == BATTLEGROUND_RB)
-            bgType = bg->GetBgTypeID(true);
-
-        if (bgType != BATTLEGROUND_AV)
-            return false;
-
-        PositionMap& positions = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get();
-        auto const itr = positions.find("bg objective");
-        if (itr == positions.end() || !itr->second.valueSet)
-            return false;
-
-        objective = itr->second;
-        return true;
-    }
-
-    bool IsNearObjective(Unit* unit, PositionInfo const& objective, float radius)
-    {
-        if (!unit || !objective.valueSet)
-            return false;
-
-        float const dx = unit->GetPositionX() - objective.x;
-        float const dy = unit->GetPositionY() - objective.y;
-        return dx * dx + dy * dy <= radius * radius;
+        return ai::pvp::GetActiveAVObjective(botAI, bot, objective);
     }
 
     bool CanFreeTargetDuringAVObjective(PlayerbotAI* botAI, Unit* target, bool threatTarget)
@@ -193,7 +125,7 @@ public:
             return;
 
         if (!target->IsInWorld() || target->GetMapId() != bot->GetMapId() || bot->IsFriendlyTo(target) ||
-            !bot->IsValidAttackTarget(target) || !bot->IsWithinLOSInMap(target) || IsBreakableCrowdControlled(target))
+            !bot->IsValidAttackTarget(target) || !bot->IsWithinLOSInMap(target))
             return;
 
         if (!ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target))
@@ -263,6 +195,12 @@ public:
             score += 240;
         else if (healthPct < 50.0f)
             score += 120;
+
+        // A crowd controlled enemy is a bad pick, but excluding it outright used to leave the bot with
+        // no target at all whenever the only enemy nearby got feared or sapped - and then the whole
+        // rotation stalled. Rank it last instead so it still serves as a fallback.
+        if (IsBreakableCrowdControlled(target))
+            score -= 4000;
 
         if (target == currentTarget)
             score += 420;

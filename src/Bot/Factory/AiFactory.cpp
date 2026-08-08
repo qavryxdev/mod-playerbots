@@ -489,6 +489,10 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         engine->removeStrategy("custom::say", false);
         engine->removeStrategy("flee", false);
         engine->removeStrategy("threat", false);
+        // Metamorphosis does not lock the spellbook and its melee abilities are on 30s/6s cooldowns,
+        // so roughly 70% of the demon form window is still normal casting - buffed by 20%. Running a
+        // cloth caster into melee for that is a PvE-trash trade, not a PvP one.
+        engine->removeStrategy("meta melee", false);
         engine->addStrategy("boost", false);
     }
 }
