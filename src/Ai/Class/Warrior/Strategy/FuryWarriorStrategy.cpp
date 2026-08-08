@@ -97,6 +97,17 @@ void FuryWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    // Execute only existed as a default action below bloodthirst, whirlwind and sunder armor, so a
+    // fury warrior applied an armor debuff to a target at 15% health and reached its finisher only
+    // once everything above it was on cooldown. Arms already promotes it the same way.
+    triggers.push_back(
+        new TriggerNode(
+            "target critical health",
+            {
+                NextAction("execute", ACTION_HIGH + 5)
+            }
+        )
+    );
     triggers.push_back(
         new TriggerNode(
             "berserker stance", {

@@ -35,6 +35,17 @@ void ShadowPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    // Shadow Word: Death was the lowest ranked filler bar Shoot, so the finisher lost to Mind Blast
+    // and Mind Flay on a dying target. Promote it above the damage over time effects too - refreshing
+    // a DoT on a target about to die is wasted.
+    triggers.push_back(
+        new TriggerNode(
+            "target critical health",
+            {
+                NextAction("shadow word: death", ACTION_HIGH + 5)
+            }
+        )
+    );
     triggers.push_back(
         new TriggerNode(
             "low mana",
