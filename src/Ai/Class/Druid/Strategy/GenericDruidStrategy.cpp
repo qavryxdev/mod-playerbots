@@ -20,6 +20,8 @@ public:
         creators["abolish poison on party"] = &abolish_poison_on_party;
         creators["rebirth"] = &rebirth;
         creators["entangling roots on cc"] = &entangling_roots_on_cc;
+        creators["cyclone"] = &cyclone;
+        creators["hibernate on cc"] = &hibernate_on_cc;
         creators["innervate"] = &innervate;
     }
 
@@ -88,6 +90,25 @@ private:
                               /*C*/ {});
     }
 
+    // Cyclone and Hibernate are caster-only spells, and PlayerbotAI::CanCastSpell treats a shapeshift
+    // failure as castable, so without this prerequisite a cat or bear druid keeps queueing them at
+    // interrupt priority and every attempt silently fails at the real cast.
+    static ActionNode* cyclone([[maybe_unused]] PlayerbotAI* botAI)
+    {
+        return new ActionNode("cyclone",
+                              /*P*/ { NextAction("caster form") },
+                              /*A*/ {},
+                              /*C*/ {});
+    }
+
+    static ActionNode* hibernate_on_cc([[maybe_unused]] PlayerbotAI* botAI)
+    {
+        return new ActionNode("hibernate on cc",
+                              /*P*/ { NextAction("caster form") },
+                              /*A*/ {},
+                              /*C*/ {});
+    }
+
     static ActionNode* innervate([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("innervate",
@@ -116,9 +137,12 @@ void GenericDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("new pet", { NextAction("set pet stance", 60.0f) }));
     triggers.push_back(new TriggerNode("pvp high pressure",
         { NextAction("barkskin", ACTION_EMERGENCY + 5) }));
+    // Only shifting *into* a form strips the root, so a druid that already sits in the fallback form
+    // has to drop it first - otherwise the shift action is simply useless and the bot stays rooted.
     triggers.push_back(new TriggerNode("pvp movement controlled",
         { NextAction("travel form", ACTION_EMERGENCY + 6),
-          NextAction("cat form", ACTION_EMERGENCY + 5) }));
+          NextAction("cat form", ACTION_EMERGENCY + 5),
+          NextAction("caster form", ACTION_EMERGENCY + 4) }));
 }
 
 void DruidCureStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

@@ -7,6 +7,7 @@
 #include "TotemsShamanStrategy.h"
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
+#include "PvpTactics.h"
 #include "Action.h"
 
 #include <string>
@@ -51,10 +52,13 @@ bool CastCleansingTotemAction::isUseful()
     return CastTotemAction::isUseful() && !AI_VALUE2(bool, "has totem", "mana tide totem");
 }
 
-// Will only cast Stoneclaw Totem if low on health and not in a group
+// Solo bots keep Stoneclaw as a last-ditch aggro dump, so it stays off the table while grouped and a
+// tank is expected to hold threat. A battleground or arena raid has no tank and the bot is in that
+// raid group for the whole match, so the group check has to be lifted there or the peel totem the
+// PvP rules ask for can never be dropped.
 bool CastStoneclawTotemAction::isUseful()
 {
-    return !bot->GetGroup();
+    return CastTotemAction::isUseful() && (!bot->GetGroup() || ai::pvp::IsPvpContext(bot));
 }
 
 // Will only cast Lava Burst if Flame Shock is on the target

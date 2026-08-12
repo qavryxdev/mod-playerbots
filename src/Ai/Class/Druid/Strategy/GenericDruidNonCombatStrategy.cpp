@@ -23,6 +23,7 @@ public:
         creators["remove curse on party"] = &remove_curse_on_party;
         creators["abolish poison on party"] = &abolish_poison_on_party;
         creators["revive"] = &revive;
+        creators["prowl"] = &prowl;
     }
 
 private:
@@ -92,6 +93,14 @@ private:
                               /*A*/ {},
                               /*C*/ {});
     }
+    // Prowl is a cat-form ability, and out of combat the bot is normally in no form at all.
+    static ActionNode* prowl([[maybe_unused]] PlayerbotAI* botAI)
+    {
+        return new ActionNode("prowl",
+                              /*P*/ { NextAction("cat form") },
+                              /*A*/ {},
+                              /*C*/ {});
+    }
 };
 
 GenericDruidNonCombatStrategy::GenericDruidNonCombatStrategy(PlayerbotAI* botAI) : NonCombatStrategy(botAI)
@@ -104,6 +113,7 @@ void GenericDruidNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& trig
     NonCombatStrategy::InitTriggers(triggers);
 
     triggers.push_back(new TriggerNode("mark of the wild", { NextAction("mark of the wild", 14.0f) }));
+    triggers.push_back(new TriggerNode("prowl", { NextAction("prowl", ACTION_NORMAL + 5) }));
     triggers.push_back(new TriggerNode("party member cure poison", { NextAction("abolish poison on party", 20.0f) }));
     triggers.push_back(new TriggerNode("party member dead", { NextAction("revive", ACTION_CRITICAL_HEAL + 10) }));
 

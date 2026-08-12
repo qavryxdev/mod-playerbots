@@ -120,10 +120,12 @@ public:
     StrangulateInterruptSpellTrigger(PlayerbotAI* botAI) : InterruptSpellTrigger(botAI, "strangulate") {}
 };
 
-class KillingMachineTrigger : public BoostTrigger
+// Killing Machine is a proc, not a cooldown to press: as a BoostTrigger it reported active exactly
+// while the proc was missing. React to the aura instead so the guaranteed crit gets spent.
+class KillingMachineTrigger : public HasAuraTrigger
 {
 public:
-    KillingMachineTrigger(PlayerbotAI* botAI) : BoostTrigger(botAI, "killing machine") {}
+    KillingMachineTrigger(PlayerbotAI* botAI) : HasAuraTrigger(botAI, "killing machine") {}
 };
 
 class MindFreezeOnEnemyHealerTrigger : public InterruptEnemyHealerTrigger
@@ -136,6 +138,19 @@ class ChainsOfIceSnareTrigger : public SnareTargetTrigger
 {
 public:
     ChainsOfIceSnareTrigger(PlayerbotAI* botAI) : SnareTargetTrigger(botAI, "chains of ice") {}
+};
+
+// Death Grip forces the target to attack the death knight for three seconds. As a gap closer it may
+// therefore only be aimed at an enemy player - gripping a creature would pull it off the tank.
+class EnemyPlayerOutOfMeleeTrigger : public OutOfRangeTrigger
+{
+public:
+    EnemyPlayerOutOfMeleeTrigger(PlayerbotAI* botAI)
+        : OutOfRangeTrigger(botAI, "enemy player out of melee", sPlayerbotAIConfig.meleeDistance)
+    {
+    }
+
+    bool IsActive() override;
 };
 
 class StrangulateOnEnemyHealerTrigger : public InterruptEnemyHealerTrigger

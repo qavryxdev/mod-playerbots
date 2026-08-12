@@ -414,5 +414,8 @@ bool PvpMovementControlledTrigger::IsActive()
 bool PvpTargetMajorDefenseTrigger::IsActive()
 {
     Unit* target = AI_VALUE(Unit*, "current target");
-    return target && ai::pvp::IsPvpContext(bot) && ai::pvp::IsMajorDefenseActive(target);
+    // Only true immunity is worth a reaction here; the priest mass dispel wired to this trigger
+    // cannot remove Barkskin, Evasion, Deterrence or Cloak of Shadows anyway.
+    return target && ai::pvp::IsPvpContext(bot) &&
+           ai::pvp::IsMajorDefenseActive(target, ai::pvp::DEFENSE_TIER_IMMUNE);
 }

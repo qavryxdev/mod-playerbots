@@ -211,6 +211,16 @@ void CatDpsDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         )
     );
 
+    // Opener - pounce falls through to ravage and then shred if the bot is not positioned for it
+    triggers.push_back(
+        new TriggerNode(
+            "stealth opener",
+            {
+                NextAction("pounce", ACTION_HIGH + 9)
+            }
+        )
+    );
+
     // Main spell
     triggers.push_back(
         new TriggerNode(

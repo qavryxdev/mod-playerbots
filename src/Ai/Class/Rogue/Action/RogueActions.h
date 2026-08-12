@@ -140,7 +140,6 @@ public:
     CastEnvenomAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "envenom") {}
 
     bool isUseful() override;
-    bool isPossible() override;
 };
 
 class CastTricksOfTheTradeOnMainTankAction : public BuffOnMainTankAction

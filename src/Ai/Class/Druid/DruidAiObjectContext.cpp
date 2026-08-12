@@ -121,6 +121,8 @@ public:
         creators["ferocious bite time"] = &DruidTriggerFactoryInternal::ferocious_bite_time;
         creators["hurricane channel check"] = &DruidTriggerFactoryInternal::hurricane_channel_check;
         creators["no healer dps strategy"] = &DruidTriggerFactoryInternal::no_healer_dps_strategy;
+        creators["prowl"] = &DruidTriggerFactoryInternal::prowl;
+        creators["stealth opener"] = &DruidTriggerFactoryInternal::stealth_opener;
     }
 
 private:
@@ -164,6 +166,8 @@ private:
     static Trigger* ferocious_bite_time(PlayerbotAI* ai) { return new FerociousBiteTimeTrigger(ai); }
     static Trigger* hurricane_channel_check(PlayerbotAI* ai) { return new HurricaneChannelCheckTrigger(ai); }
     static Trigger* no_healer_dps_strategy(PlayerbotAI* ai) { return new NoHealerDpsStrategyTrigger(ai); }
+    static Trigger* prowl(PlayerbotAI* ai) { return new ProwlTrigger(ai); }
+    static Trigger* stealth_opener(PlayerbotAI* ai) { return new StealthOpenerTrigger(ai); }
 };
 
 class DruidAiObjectContextInternal : public NamedObjectContext<Action>

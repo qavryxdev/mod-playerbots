@@ -30,8 +30,17 @@ bool AttackEnemyPlayerAction::isUseful()
 bool AttackEnemyFlagCarrierAction::isUseful()
 {
     Unit* target = context->GetValue<Unit*>("enemy flag carrier")->Get();
-    return target && ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target), 100.0f) &&
-           PlayerHasFlag::IsCapturingFlag(bot);
+    if (!target ||
+        !ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target), 100.0f))
+        return false;
+
+    // Requiring the bot to be carrying a flag itself meant only a flag carrier ever chased the enemy
+    // carrier - which is the one bot that should be running the other way. Everyone else may chase;
+    // a carrier only engages when it is our flag he is holding, so it can still defend itself.
+    if (!PlayerHasFlag::IsCapturingFlag(bot))
+        return true;
+
+    return target->ToPlayer() && ai::pvp::IsCarryingOurFlag(botAI, target->ToPlayer());
 }
 
 bool AggressiveTargetAction::isUseful()

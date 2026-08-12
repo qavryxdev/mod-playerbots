@@ -70,6 +70,10 @@ void GenericHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("medium threat", { NextAction("feign death", 35.0f) }));
     triggers.push_back(new TriggerNode("hunters pet medium health", { NextAction("mend pet", 22.0f) }));
     triggers.push_back(new TriggerNode("hunters pet low health", { NextAction("mend pet", 21.0f) }));
+    // The pet strategy that revives it only runs out of combat, so a pet that dies mid fight stayed
+    // dead - and with it every ability that targets "pet target" (bestial wrath, kill command,
+    // intimidation). The action itself refuses to start the long cast while the bot is being hit.
+    triggers.push_back(new TriggerNode("hunters pet dead", { NextAction("revive pet", 23.0f) }));
 
     // Dispel Triggers
     triggers.push_back(new TriggerNode("tranquilizing shot enrage", { NextAction("tranquilizing shot", 61.0f) }));
@@ -114,7 +118,7 @@ void AoEHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 void HunterCcStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("scare beast", { NextAction("scare beast on cc", 23.0f) }));
-    triggers.push_back(new TriggerNode("freezing trap", { NextAction("freezing trap on cc", 23.0f) }));
+    triggers.push_back(new TriggerNode("freezing trap", { NextAction("freezing trap", 23.0f) }));
     triggers.push_back(new TriggerNode("pvp control window",
         { NextAction("scatter shot", ACTION_INTERRUPT + 3),
           NextAction("wyvern sting", ACTION_INTERRUPT + 2),

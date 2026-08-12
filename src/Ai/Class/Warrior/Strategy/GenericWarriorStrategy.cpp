@@ -34,8 +34,7 @@ void GenericWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     CombatStrategy::InitTriggers(triggers);
     triggers.push_back(new TriggerNode(
         "enemy out of melee", { NextAction("reach melee", ACTION_HIGH + 1) }));
-    triggers.push_back(new TriggerNode(
-        "fear sleep sap", { NextAction("berserker rage", ACTION_EMERGENCY + 1) }));
+    // Berserker Rage is wired in the fury strategy only - see the note there on the stance prerequisite.
 }
 
 class WarrirorAoeStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>

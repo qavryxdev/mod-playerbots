@@ -13,6 +13,7 @@
 #include "Playerbots.h"
 #include "SharedDefines.h"
 #include "Trigger.h"
+#include <ctime>
 #include <set>
 
 class PlayerbotAI;
@@ -253,18 +254,41 @@ public:
     }
 };
 
-class EclipseSolarCooldownTrigger : public SpellCooldownTrigger
+// The eclipse proc lockout is not a spell cooldown: the aura script keeps its own 30s timer and
+// applies the eclipse aura as a triggered cast, so nothing ever lands in the bot's cooldown map and
+// HasSpellCooldown on the eclipse ids is permanently false. The moment the aura shows up is the
+// moment the script starts that half's lockout, so watching for the aura reconstructs the timer.
+class EclipseProcCooldownTrigger : public Trigger
 {
 public:
-    EclipseSolarCooldownTrigger(PlayerbotAI* ai) : SpellCooldownTrigger(ai, "eclipse (solar)") {}
-    bool IsActive() override { return bot->HasSpellCooldown(48517); }
+    EclipseProcCooldownTrigger(PlayerbotAI* ai, std::string const& name, std::string const& aura)
+        : Trigger(ai, name), aura(aura)
+    {
+    }
+
+    bool IsActive() override;
+
+protected:
+    std::string aura;
+    time_t lastSeen = 0;
 };
 
-class EclipseLunarCooldownTrigger : public SpellCooldownTrigger
+class EclipseSolarCooldownTrigger : public EclipseProcCooldownTrigger
 {
 public:
-    EclipseLunarCooldownTrigger(PlayerbotAI* ai) : SpellCooldownTrigger(ai, "eclipse (lunar)") {}
-    bool IsActive() override { return bot->HasSpellCooldown(48518); }
+    EclipseSolarCooldownTrigger(PlayerbotAI* ai)
+        : EclipseProcCooldownTrigger(ai, "eclipse (solar) cooldown", "eclipse (solar)")
+    {
+    }
+};
+
+class EclipseLunarCooldownTrigger : public EclipseProcCooldownTrigger
+{
+public:
+    EclipseLunarCooldownTrigger(PlayerbotAI* ai)
+        : EclipseProcCooldownTrigger(ai, "eclipse (lunar) cooldown", "eclipse (lunar)")
+    {
+    }
 };
 
 class MangleCatTrigger : public DebuffTrigger
@@ -319,6 +343,26 @@ public:
 protected:
     uint32 minEnemies;
     static const std::set<uint32> HURRICANE_SPELL_IDS;
+};
+
+// Prowl costs movement speed, so it is only worth entering right before an engagement - hence the
+// feral spec check, the PvP check and the requirement that an enemy player is already in sight.
+class ProwlTrigger : public Trigger
+{
+public:
+    ProwlTrigger(PlayerbotAI* botAI) : Trigger(botAI, "prowl") {}
+
+    bool IsActive() override;
+};
+
+// Gate for the pounce -> ravage -> shred opener: both openers need stealth and the bot has to be on
+// top of its victim already, otherwise the whole chain fails at the cast.
+class StealthOpenerTrigger : public Trigger
+{
+public:
+    StealthOpenerTrigger(PlayerbotAI* botAI) : Trigger(botAI, "stealth opener") {}
+
+    bool IsActive() override;
 };
 
 class NoHealerDpsStrategyTrigger : public Trigger

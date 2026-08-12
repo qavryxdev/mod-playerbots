@@ -10,6 +10,7 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "SharedDefines.h"
 #include "Player.h"
@@ -106,6 +107,24 @@ bool HunterLowAmmoTrigger::IsActive()
 bool HunterHasAmmoTrigger::IsActive()
 {
     return !AmmoCountTrigger::IsActive();
+}
+
+bool HunterEnemyTooCloseForAutoShotTrigger::IsActive()
+{
+    if (EnemyTooCloseForAutoShotTrigger::IsActive())
+        return true;
+
+    if (!ai::pvp::IsPvpContext(bot))
+        return false;
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsPlayer() || !bot->IsWithinMeleeRange(target))
+        return false;
+
+    // Keep the trap weave exception of the base trigger: with immolation trap ready the hunter wants
+    // to stay in melee long enough to drop it.
+    uint32 const trapSpellId = AI_VALUE2(uint32, "spell id", "immolation trap");
+    return !trapSpellId || bot->HasSpellCooldown(trapSpellId);
 }
 
 bool SwitchToRangedTrigger::IsActive()

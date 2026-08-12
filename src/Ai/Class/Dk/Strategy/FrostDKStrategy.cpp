@@ -118,6 +118,16 @@ void FrostDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         )
     );
 
+    // The proc guarantees a crit on the next strike and is consumed by it, so spend it at once.
+    triggers.push_back(
+        new TriggerNode(
+            "killing machine",
+            {
+                NextAction("frost strike", ACTION_HIGH + 3)
+            }
+        )
+    );
+
     triggers.push_back(
         new TriggerNode(
             "high blood rune",

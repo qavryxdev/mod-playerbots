@@ -17,6 +17,8 @@ public:
         creators["hibernate"] = &hibernate;
         creators["entangling roots"] = &entangling_roots;
         creators["entangling roots on cc"] = &entangling_roots_on_cc;
+        creators["cyclone"] = &cyclone;
+        creators["hibernate on cc"] = &hibernate_on_cc;
         creators["wrath"] = &wrath;
         creators["starfall"] = &starfall;
         creators["insect swarm"] = &insect_swarm;
@@ -60,6 +62,28 @@ private:
     {
         return new ActionNode(
             "entangling roots on cc",
+            /*P*/ { NextAction("moonkin form") },
+            /*A*/ {},
+            /*C*/ {}
+        );
+    }
+
+    // Moonkin Form does not block either spell, so the balance build overrides the generic
+    // caster-form prerequisite and keeps its form bonuses while it crowd controls.
+    static ActionNode* cyclone([[maybe_unused]] PlayerbotAI* botAI)
+    {
+        return new ActionNode(
+            "cyclone",
+            /*P*/ { NextAction("moonkin form") },
+            /*A*/ {},
+            /*C*/ {}
+        );
+    }
+
+    static ActionNode* hibernate_on_cc([[maybe_unused]] PlayerbotAI* botAI)
+    {
+        return new ActionNode(
+            "hibernate on cc",
             /*P*/ { NextAction("moonkin form") },
             /*A*/ {},
             /*C*/ {}
@@ -139,6 +163,9 @@ std::vector<NextAction> CasterDruidStrategy::getDefaultActions()
         NextAction("starfall", ACTION_HIGH + 1.0f),
         NextAction("force of nature", ACTION_DEFAULT + 1.0f),
         NextAction("wrath", ACTION_DEFAULT + 0.1f),
+        // Starfire is the only spell that can proc Eclipse (Solar); without a filler entry the
+        // rotation would fall back to Wrath alone whenever no eclipse rule is driving the queue.
+        NextAction("starfire", ACTION_DEFAULT + 0.05f),
     };
 }
 

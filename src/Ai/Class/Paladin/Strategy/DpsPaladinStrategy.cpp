@@ -150,6 +150,15 @@ void DpsPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    // Retribution does no meaningful healing, so the healing penalty costs nothing here.
+    triggers.push_back(
+        new TriggerNode(
+            "medium mana",
+            {
+                NextAction("divine plea", ACTION_HIGH)
+            }
+        )
+    );
 
     triggers.push_back(
         new TriggerNode(
@@ -180,6 +189,10 @@ void DpsPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("repentance", ACTION_INTERRUPT + 2) }));
     triggers.push_back(new TriggerNode("repentance on enemy healer",
         { NextAction("repentance on enemy healer", ACTION_INTERRUPT + 1) }));
+    // Lowest of the three repentance uses: stopping a cast or a healer is worth more than holding a
+    // target that is already snared.
+    triggers.push_back(new TriggerNode("repentance on snare target",
+        { NextAction("repentance on snare target", ACTION_INTERRUPT) }));
     triggers.push_back(new TriggerNode("pvp physical target",
         { NextAction("judgement of justice", ACTION_HIGH + 5) }));
     triggers.push_back(new TriggerNode("pvp burst window",

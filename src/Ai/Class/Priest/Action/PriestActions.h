@@ -35,8 +35,15 @@ public:
 };
 
 CC_ACTION(CastShackleUndeadAction, "shackle undead");
-SPELL_ACTION_U(CastManaBurnAction, "mana burn",
-               AI_VALUE2(uint8, "mana", "self target") < 50 && AI_VALUE2(uint8, "mana", "current target") >= 20);
+// Mana Burn returns nothing to the caster in 3.3.5, so the bot's own mana is irrelevant - the old
+// rule fired exactly when it helped least. It is an anti-healer tool: point it at an enemy healer
+// with mana left. SPELL_ACTION_U would also drop the whole PvP gate block, so this chains instead.
+class CastManaBurnAction : public CastSpellAction
+{
+public:
+    CastManaBurnAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "mana burn") {}
+    bool isUseful() override;
+};
 BUFF_ACTION(CastLevitateAction, "levitate");
 BUFF_ACTION(CastDivineSpiritAction, "divine spirit");
 BUFF_PARTY_ACTION(CastDivineSpiritOnPartyAction, "divine spirit");

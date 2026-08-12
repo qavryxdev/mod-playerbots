@@ -370,6 +370,10 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 engine->addStrategiesNoInit("melee", "dps assist", "aoe", nullptr);
             else
                 engine->addStrategiesNoInit("dps", "dps assist", "aoe", nullptr);
+            // Neither stealth strategy was ever attached, so the whole opener subsystem - Stealth
+            // itself, Ambush, Cheap Shot, Garrote - was unreachable and rogues only ever became
+            // stealthed through Vanish.
+            engine->addStrategiesNoInit("stealth", "stealthed", nullptr);
             break;
         case CLASS_WARLOCK:
             if (tab == WARLOCK_TAB_AFFLICTION)

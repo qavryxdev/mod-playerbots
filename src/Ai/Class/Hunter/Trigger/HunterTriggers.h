@@ -8,6 +8,7 @@
 
 #include "CureTriggers.h"
 #include "GenericTriggers.h"
+#include "RangeTriggers.h"
 #include "Trigger.h"
 #include "PlayerbotAI.h"
 #include <set>
@@ -185,6 +186,17 @@ class AutoShotTrigger : public Trigger
 {
 public:
     AutoShotTrigger(PlayerbotAI* botAI) : Trigger(botAI, "auto shot") {}
+};
+
+// The shared trigger only opens the deadzone escape while the attacker is NOT on the bot, which is
+// exactly the case that never happens in PvP: a melee opponent that has picked the hunter as its
+// victim keeps the node closed forever, so the hunter stands in the deadzone with no ranged damage.
+class HunterEnemyTooCloseForAutoShotTrigger : public EnemyTooCloseForAutoShotTrigger
+{
+public:
+    HunterEnemyTooCloseForAutoShotTrigger(PlayerbotAI* botAI) : EnemyTooCloseForAutoShotTrigger(botAI) {}
+
+    bool IsActive() override;
 };
 
 class SwitchToRangedTrigger : public Trigger

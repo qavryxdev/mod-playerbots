@@ -191,11 +191,15 @@ void ArmsWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         )
     );
 
+    // The trigger picks a snare target that is usually not the current one, and only hamstring is a
+    // snare action that follows it. Going through piercing howl - a fury talent an arms warrior does
+    // not have - meant the chain fell to its mocking blow fallback and taunted whatever was in front
+    // of the bot, on a two minute cooldown, before ever reaching hamstring.
     triggers.push_back(
         new TriggerNode(
             "hamstring",
             {
-                NextAction("piercing howl", ACTION_HIGH)
+                NextAction("hamstring", ACTION_HIGH)
             }
         )
     );

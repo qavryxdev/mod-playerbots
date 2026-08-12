@@ -19,6 +19,10 @@ void PriestNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(
         new TriggerNode("inner fire",{ NextAction("inner fire", 10.0f) }));
+    // Ranked above every party buff below so the priest always wards itself first - the ward is a
+    // single charge on a long cooldown and the priest is the one that gets feared on purpose.
+    triggers.push_back(
+        new TriggerNode("fear ward",{ NextAction("fear ward", 15.0f) }));
     triggers.push_back(new TriggerNode(
         "party member dead",{ NextAction("remove shadowform", ACTION_CRITICAL_HEAL + 11),
                                                NextAction("resurrection", ACTION_CRITICAL_HEAL + 10) }));
@@ -65,6 +69,9 @@ void PriestBuffStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                        { NextAction("power word: fortitude on party", 11.0f) }));
     triggers.push_back(new TriggerNode("divine spirit on party",
                                       { NextAction("divine spirit on party", 13.0f) }));
+    // Lowest of the buffs on purpose: an ally only gets the ward once the priest's own is up.
+    triggers.push_back(new TriggerNode("fear ward on party",
+                                      { NextAction("fear ward on party", 10.0f) }));
 }
 
 void PriestShadowResistanceStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

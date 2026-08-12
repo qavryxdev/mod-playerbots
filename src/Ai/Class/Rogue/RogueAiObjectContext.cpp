@@ -78,12 +78,12 @@ public:
         creators["off hand weapon no enchant"] = &RogueTriggerFactoryInternal::off_hand_weapon_no_enchant;
         creators["tricks of the trade on main tank"] = &RogueTriggerFactoryInternal::tricks_of_the_trade_on_main_tank;
         creators["adrenaline rush"] = &RogueTriggerFactoryInternal::adrenaline_rush;
-        creators["blade fury"] = &RogueTriggerFactoryInternal::blade_fury;
+        creators["blade flurry"] = &RogueTriggerFactoryInternal::blade_flurry;
     }
 
 private:
     static Trigger* adrenaline_rush(PlayerbotAI* botAI) { return new AdrenalineRushTrigger(botAI); }
-    static Trigger* blade_fury(PlayerbotAI* botAI) { return new BladeFuryTrigger(botAI); }
+    static Trigger* blade_flurry(PlayerbotAI* botAI) { return new BladeFlurryTrigger(botAI); }
     static Trigger* kick(PlayerbotAI* botAI) { return new KickInterruptSpellTrigger(botAI); }
     static Trigger* rupture(PlayerbotAI* botAI) { return new RuptureTrigger(botAI); }
     static Trigger* slice_and_dice(PlayerbotAI* botAI) { return new SliceAndDiceTrigger(botAI); }
@@ -122,6 +122,7 @@ public:
         creators["vanish"] = &RogueAiObjectContextInternal::vanish;
         creators["evasion"] = &RogueAiObjectContextInternal::evasion;
         creators["cloak of shadows"] = &RogueAiObjectContextInternal::cloak_of_shadows;
+        creators["dismantle"] = &RogueAiObjectContextInternal::dismantle;
         creators["kick"] = &RogueAiObjectContextInternal::kick;
         creators["feint"] = &RogueAiObjectContextInternal::feint;
         creators["backstab"] = &RogueAiObjectContextInternal::backstab;
@@ -163,6 +164,7 @@ private:
     static Action* vanish(PlayerbotAI* botAI) { return new CastVanishAction(botAI); }
     static Action* evasion(PlayerbotAI* botAI) { return new CastEvasionAction(botAI); }
     static Action* cloak_of_shadows(PlayerbotAI* botAI) { return new CastCloakOfShadowsAction(botAI); }
+    static Action* dismantle(PlayerbotAI* botAI) { return new CastDismantleAction(botAI); }
     static Action* kick(PlayerbotAI* botAI) { return new CastKickAction(botAI); }
     static Action* feint(PlayerbotAI* botAI) { return new CastFeintAction(botAI); }
     static Action* backstab(PlayerbotAI* botAI) { return new CastBackstabAction(botAI); }

@@ -106,6 +106,7 @@ public:
         creators["frost ward"] = &MageTriggerFactoryInternal::frost_ward;
         creators["arcane blast stack"] = &MageTriggerFactoryInternal::arcane_blast_stack;
         creators["mirror image"] = &MageTriggerFactoryInternal::mirror_image;
+        creators["high threat"] = &MageTriggerFactoryInternal::high_threat;
         creators["frost nova on target"] = &MageTriggerFactoryInternal::frost_nova_on_target;
         creators["frostbite on target"] = &MageTriggerFactoryInternal::frostbite_on_target;
         creators["no focus magic"] = &MageTriggerFactoryInternal::no_focus_magic;
@@ -155,6 +156,7 @@ private:
     static Trigger* counterspell_enemy_healer(PlayerbotAI* botAI) { return new CounterspellEnemyHealerTrigger(botAI); }
     static Trigger* arcane_blast_stack(PlayerbotAI* botAI) { return new ArcaneBlastStackTrigger(botAI); }
     static Trigger* mirror_image(PlayerbotAI* botAI) { return new MirrorImageTrigger(botAI); }
+    static Trigger* high_threat(PlayerbotAI* botAI) { return new HighThreatTrigger(botAI); }
     static Trigger* frost_nova_on_target(PlayerbotAI* botAI) { return new FrostNovaOnTargetTrigger(botAI); }
     static Trigger* frostbite_on_target(PlayerbotAI* botAI) { return new FrostbiteOnTargetTrigger(botAI); }
     static Trigger* no_focus_magic(PlayerbotAI* botAI) { return new NoFocusMagicTrigger(botAI); }
@@ -220,6 +222,7 @@ public:
         creators["living bomb on attackers"] = &MageAiObjectContextInternal::living_bomb_on_attackers;
         creators["dragon's breath"] = &MageAiObjectContextInternal::dragons_breath;
         creators["blast wave"] = &MageAiObjectContextInternal::blast_wave;
+        creators["arcane explosion"] = &MageAiObjectContextInternal::arcane_explosion;
         creators["invisibility"] = &MageAiObjectContextInternal::invisibility;
         creators["evocation"] = &MageAiObjectContextInternal::evocation;
         creators["arcane blast"] = &MageAiObjectContextInternal::arcane_blast;
@@ -286,6 +289,7 @@ private:
     static Action* living_bomb_on_attackers(PlayerbotAI* botAI) { return new CastLivingBombOnAttackersAction(botAI); }
     static Action* dragons_breath(PlayerbotAI* botAI) { return new CastDragonsBreathAction(botAI); }
     static Action* blast_wave(PlayerbotAI* botAI) { return new CastBlastWaveAction(botAI); }
+    static Action* arcane_explosion(PlayerbotAI* botAI) { return new CastArcaneExplosionAction(botAI); }
     static Action* invisibility(PlayerbotAI* botAI) { return new CastInvisibilityAction(botAI); }
     static Action* evocation(PlayerbotAI* botAI) { return new CastEvocationAction(botAI); }
     static Action* counterspell_on_enemy_healer(PlayerbotAI* botAI) { return new CastCounterspellOnEnemyHealerAction(botAI); }

@@ -42,11 +42,14 @@ void HealPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    // Divine plea halves healing done, so holy only reaches for it once mana is genuinely gone -
+    // at that point half output beats no output. Every other spec takes it far earlier.
     triggers.push_back(
         new TriggerNode(
             "low mana",
             {
-                NextAction("divine favor", ACTION_HIGH + 1)
+                NextAction("divine favor", ACTION_HIGH + 1),
+                NextAction("divine plea", ACTION_HIGH)
             }
         )
     );

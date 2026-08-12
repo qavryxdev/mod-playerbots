@@ -86,6 +86,9 @@ public:
         creators["has ammo"] = &HunterTriggerFactoryInternal::has_ammo;
         creators["switch to melee"] = &HunterTriggerFactoryInternal::switch_to_melee;
         creators["switch to ranged"] = &HunterTriggerFactoryInternal::switch_to_ranged;
+        // Deliberately shadows the shared registration for hunters only: the generic version cannot
+        // fire while the melee opponent is actually attacking the bot, see the trigger comment.
+        creators["enemy too close for auto shot"] = &HunterTriggerFactoryInternal::enemy_too_close_for_auto_shot;
         creators["misdirection on main tank"] = &HunterTriggerFactoryInternal::misdirection_on_main_tank;
         creators["tranquilizing shot enrage"] = &HunterTriggerFactoryInternal::remove_enrage;
         creators["tranquilizing shot magic"] = &HunterTriggerFactoryInternal::remove_magic;
@@ -124,6 +127,10 @@ private:
     static Trigger* has_ammo(PlayerbotAI* botAI) { return new HunterHasAmmoTrigger(botAI); }
     static Trigger* switch_to_melee(PlayerbotAI* botAI) { return new SwitchToMeleeTrigger(botAI); }
     static Trigger* switch_to_ranged(PlayerbotAI* botAI) { return new SwitchToRangedTrigger(botAI); }
+    static Trigger* enemy_too_close_for_auto_shot(PlayerbotAI* botAI)
+    {
+        return new HunterEnemyTooCloseForAutoShotTrigger(botAI);
+    }
     static Trigger* misdirection_on_main_tank(PlayerbotAI* botAI) { return new MisdirectionOnMainTankTrigger(botAI); }
     static Trigger* remove_enrage(PlayerbotAI* botAI) { return new TargetRemoveEnrageTrigger(botAI); }
     static Trigger* remove_magic(PlayerbotAI* botAI) { return new TargetRemoveMagicTrigger(botAI); }
@@ -193,6 +200,9 @@ public:
         creators["disengage"] = &HunterAiObjectContextInternal::disengage;
         creators["immolation trap"] = &HunterAiObjectContextInternal::immolation_trap;
         creators["explosive trap"] = &HunterAiObjectContextInternal::explosive_trap;
+        // Plain name casts whatever rank the bot actually knows; the explicit ranks below exist only
+        // for the lock and load chain, which needs to land a second, differently ranked debuff.
+        creators["explosive shot"] = &HunterAiObjectContextInternal::explosive_shot_base;
         creators["explosive shot base"] = &HunterAiObjectContextInternal::explosive_shot_base;
         creators["explosive shot rank 4"] = &HunterAiObjectContextInternal::explosive_shot_rank_4;
         creators["explosive shot rank 3"] = &HunterAiObjectContextInternal::explosive_shot_rank_3;

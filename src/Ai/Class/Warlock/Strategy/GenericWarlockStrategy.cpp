@@ -16,6 +16,10 @@ public:
         creators["spell lock"] = &spell_lock;
         creators["devour magic purge"] = &devour_magic_purge;
         creators["devour magic cleanse"] = &devour_magic_cleanse;
+        creators["summon voidwalker"] = &summon_voidwalker;
+        creators["summon felguard"] = &summon_felguard;
+        creators["summon succubus"] = &summon_succubus;
+        creators["summon felhunter"] = &summon_felhunter;
     }
 
 private:
@@ -25,6 +29,12 @@ private:
     static ActionNode* spell_lock(PlayerbotAI*) { return new ActionNode("spell lock", {}, {}, {}); }
     static ActionNode* devour_magic_purge(PlayerbotAI*) { return new ActionNode("devour magic purge", {}, {}, {}); }
     static ActionNode* devour_magic_cleanse(PlayerbotAI*) { return new ActionNode("devour magic cleanse", {}, {}, {}); }
+    // Same pass-through chain the non-combat strategy uses, so a mid fight resummon falls back through
+    // Felguard -> Felhunter -> Succubus -> Voidwalker -> Imp to whatever the warlock actually knows.
+    static ActionNode* summon_voidwalker(PlayerbotAI*) { return new ActionNode("summon voidwalker", {}, { NextAction("summon imp") }, {}); }
+    static ActionNode* summon_succubus(PlayerbotAI*) { return new ActionNode("summon succubus", {}, { NextAction("summon voidwalker") }, {}); }
+    static ActionNode* summon_felhunter(PlayerbotAI*) { return new ActionNode("summon felhunter", {}, { NextAction("summon succubus") }, {}); }
+    static ActionNode* summon_felguard(PlayerbotAI*) { return new ActionNode("summon felguard", {}, { NextAction("summon felhunter") }, {}); }
 };
 
 GenericWarlockStrategy::GenericWarlockStrategy(PlayerbotAI* botAI) : CombatStrategy(botAI)
@@ -41,11 +51,22 @@ void GenericWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     CombatStrategy::InitTriggers(triggers);
 
+    // Life Tap must never sit level with the escape nodes below: spending health for mana at the same
+    // priority as Death Coil is what kills a focused warlock.
     triggers.push_back(
         new TriggerNode(
             "low mana",
             {
-                NextAction("life tap", 95.0f)
+                NextAction("life tap", ACTION_HIGH + 5)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "no pet in combat",
+            {
+                NextAction("fel domination", ACTION_HIGH + 6),
+                NextAction("summon felguard", ACTION_HIGH + 5)
             }
         )
     );
@@ -122,6 +143,16 @@ void GenericWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    // Drain Life is the only self-heal the warlock has outside a Healthstone; its own isUseful()
+    // refuses the channel while anything is in contact.
+    triggers.push_back(
+        new TriggerNode(
+            "low health",
+            {
+                NextAction("drain life", ACTION_EMERGENCY + 2)
+            }
+        )
+    );
 }
 
 // ===== AoE Strategy, 3+ enemies =====
@@ -137,7 +168,10 @@ void AoEWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                 NextAction("shadowflame", 22.5f),
                 NextAction("seed of corruption on attacker", 22.0f),
                 NextAction("seed of corruption", 21.5f),
-                NextAction("rain of fire", 21.0f)
+                NextAction("rain of fire", 21.0f),
+                // Last resort only: Hellfire also burns the warlock, so it sits below every other
+                // area spell and gates itself on three enemies already standing in its radius.
+                NextAction("hellfire", 20.5f)
             }
         )
     );

@@ -37,7 +37,8 @@ private:
             "kick",
             /*P*/ {},
             /*A*/ {
-                NextAction("kidney shot") },
+                NextAction("kidney shot"),
+                NextAction("gouge") },
             /*C*/ {}
         );
     }
@@ -253,7 +254,12 @@ void DpsRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("pvp magic pressure",
         { NextAction("cloak of shadows", ACTION_EMERGENCY + 4) }));
     triggers.push_back(new TriggerNode("pvp control window",
-        { NextAction("blind", ACTION_INTERRUPT + 3) }));
+        { NextAction("blind", ACTION_INTERRUPT + 3),
+          NextAction("kidney shot", ACTION_INTERRUPT + 2) }));
+    // Vanish and the out of melee stealth both leave the bot stealthed while the dps rotation keeps
+    // running; this hands the engine over to the stealthed strategy so the opener is actually used.
+    triggers.push_back(new TriggerNode("in stealth",
+        { NextAction("check stealth", ACTION_EMERGENCY) }));
 }
 
 class StealthedRogueStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>

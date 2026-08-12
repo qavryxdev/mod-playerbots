@@ -30,7 +30,8 @@ void GenericPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("flash of light", ACTION_EMERGENCY + 3), NextAction("holy light", ACTION_EMERGENCY + 2)}));
     triggers.push_back(new TriggerNode("protect party member",
         { NextAction("blessing of protection on party", ACTION_EMERGENCY + 3) }));
-    triggers.push_back(new TriggerNode("high mana", { NextAction("divine plea", ACTION_HIGH) }));
+    // Divine plea is deliberately not here: it halves healing done for its whole duration, so it
+    // belongs to the specs that do not heal. Each spec strategy pushes its own node.
     triggers.push_back(new TriggerNode("hand of freedom on party",
         { NextAction("hand of freedom on party", ACTION_HIGH + 4) }));
     triggers.push_back(new TriggerNode("pvp high pressure",

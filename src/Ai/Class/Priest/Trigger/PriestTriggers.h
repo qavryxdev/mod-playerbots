@@ -17,7 +17,9 @@ DEBUFF_CHECKISOWNER_TRIGGER(HolyFireTrigger, "holy fire");
 DEBUFF_CHECKISOWNER_TRIGGER(PowerWordPainTrigger, "shadow word: pain");
 DEBUFF_ENEMY_TRIGGER(PowerWordPainOnAttackerTrigger, "shadow word: pain");
 DEBUFF_CHECKISOWNER_TRIGGER(VampiricTouchTrigger, "vampiric touch");
-DEBUFF_ENEMY_TRIGGER(VampiricTouchOnAttackerTrigger, "vampiric touch on attacker");
+// The macro argument is the aura name that is looked up on the attacker, not the node name -
+// DebuffOnAttackerTrigger::getName() appends " on attacker" for the registry key by itself.
+DEBUFF_ENEMY_TRIGGER(VampiricTouchOnAttackerTrigger, "vampiric touch");
 BUFF_TRIGGER(VampiricEmbraceTrigger, "vampiric embrace");
 CURE_TRIGGER(DispelMagicTrigger, "dispel magic", DISPEL_MAGIC);
 CURE_PARTY_TRIGGER(DispelMagicPartyMemberTrigger, "dispel magic", DISPEL_MAGIC);
@@ -46,6 +48,7 @@ BUFF_TRIGGER(TouchOfWeaknessTrigger, "touch of weakness");
 DEBUFF_TRIGGER(HexOfWeaknessTrigger, "hex of weakness");
 BUFF_TRIGGER(ShadowguardTrigger, "shadowguard");
 BUFF_TRIGGER(FearWardTrigger, "fear ward");
+BUFF_PARTY_TRIGGER(FearWardOnPartyTrigger, "fear ward");
 DEFLECT_TRIGGER(FeedbackTrigger, "feedback");
 SNARE_TRIGGER(ChastiseTrigger, "chastise");
 

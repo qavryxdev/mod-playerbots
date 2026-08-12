@@ -68,6 +68,16 @@ bool DesolationTrigger::IsActive()
     return bot->HasAura(66817) && BuffTrigger::IsActive();
 }
 
+bool EnemyPlayerOutOfMeleeTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, GetTargetName());
+    Player* player = target ? target->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!player || !botAI->IsOpposing(player))
+        return false;
+
+    return OutOfRangeTrigger::IsActive();
+}
+
 bool DeathAndDecayCooldownTrigger::IsActive()
 {
     uint32 spellId = AI_VALUE2(uint32, "spell id", name);

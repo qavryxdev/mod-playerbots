@@ -95,6 +95,15 @@ void TankPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    // Protection carries Guarded by the Light, so the healing penalty is waived for this spec.
+    triggers.push_back(
+        new TriggerNode(
+            "medium mana",
+            {
+                NextAction("divine plea", ACTION_HIGH)
+            }
+        )
+    );
     triggers.push_back(new TriggerNode(
         "light aoe",
         {

@@ -5,6 +5,8 @@
 
 #include "PriestActions.h"
 
+#include "PvpTactics.h"
+
 #include "Event.h"
 #include "Playerbots.h"
 
@@ -69,7 +71,8 @@ bool CastPowerWordShieldOnAlmostFullHealthBelowAction::isUseful()
         {
             continue;
         }
-        return true;
+        // Chain to the base so the shared pvp gate is not bypassed by this bespoke scan.
+        return HealPartyMemberAction::isUseful();
     }
     return false;
 }
@@ -102,5 +105,18 @@ Unit* CastPowerWordShieldOnNotFullAction::GetTarget()
 
 bool CastPowerWordShieldOnNotFullAction::isUseful()
 {
-    return GetTarget();
+    // Chain to the base so the shared pvp gate is not bypassed by this bespoke scan.
+    return GetTarget() && HealPartyMemberAction::isUseful();
+}
+
+bool CastManaBurnAction::isUseful()
+{
+    Unit* target = GetTarget();
+    if (!target || AI_VALUE2(uint8, "mana", "current target") < 20)
+        return false;
+
+    if (ai::pvp::IsPvpContext(botAI, target) && !ai::pvp::GetTargetProfile(botAI, target).healer)
+        return false;
+
+    return CastSpellAction::isUseful();
 }

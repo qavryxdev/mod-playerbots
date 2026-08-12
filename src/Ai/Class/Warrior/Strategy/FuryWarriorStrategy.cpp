@@ -76,10 +76,13 @@ FuryWarriorStrategy::FuryWarriorStrategy(PlayerbotAI* botAI) : GenericWarriorStr
 
 std::vector<NextAction> FuryWarriorStrategy::getDefaultActions()
 {
+    // Sunder armor was the filler between bloodthirst and whirlwind, which cost roughly five opening
+    // global cooldowns on a debuff that deals no damage. Stacking it is the tank strategy's job; the
+    // rage dump belongs here instead.
     return {
         NextAction("bloodthirst", ACTION_DEFAULT + 0.5f),
         NextAction("whirlwind", ACTION_DEFAULT + 0.4f),
-        NextAction("sunder armor", ACTION_DEFAULT + 0.3f),
+        NextAction("heroic strike", ACTION_DEFAULT + 0.3f),
         NextAction("execute", ACTION_DEFAULT + 0.2f),
         NextAction("melee", ACTION_DEFAULT)
     };
@@ -209,6 +212,83 @@ void FuryWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             "critical health",
             {
                 NextAction("enraged regeneration", ACTION_EMERGENCY)
+            }
+        )
+    );
+
+    // Fury had no way to hold a target down: after its one charge or intercept it could neither slow
+    // the target nor free itself, and no node named any of the registered intercept triggers, so the
+    // healer stun was only ever used by accident when charge failed. Hamstring and the intercept
+    // variants below resolve against the snare target and enemy healer values, so they peel the unit
+    // the trigger picked rather than whatever the bot happens to be hitting.
+    triggers.push_back(
+        new TriggerNode(
+            "hamstring",
+            {
+                NextAction("hamstring", ACTION_HIGH + 3)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "intercept on enemy healer",
+            {
+                NextAction("intercept on enemy healer", ACTION_INTERRUPT + 1)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "intercept on snare target",
+            {
+                NextAction("intercept on snare target", ACTION_HIGH + 4)
+            }
+        )
+    );
+    // Heroic Fury clears the root or snare and resets intercept - the only escape a fury warrior has.
+    // Fury had no "pvp " nodes at all: the six that exist live in ArmsWarriorStrategy and
+    // TankWarriorStrategy, which fury bots never get.
+    triggers.push_back(
+        new TriggerNode(
+            "pvp physical pressure",
+            {
+                NextAction("retaliation", ACTION_EMERGENCY + 3)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp physical target",
+            {
+                NextAction("disarm", ACTION_HIGH + 7)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp burst window",
+            {
+                NextAction("death wish", ACTION_HIGH + 8),
+                NextAction("recklessness", ACTION_HIGH + 7)
+            }
+        )
+    );
+    triggers.push_back(
+        new TriggerNode(
+            "pvp movement controlled",
+            {
+                NextAction("heroic fury", ACTION_EMERGENCY)
+            }
+        )
+    );
+    // Berserker Rage lives here rather than in the shared warrior strategy: it needs Berserker Stance,
+    // and a stance change cannot be cast while feared, so for the stance locked specs the prerequisite
+    // could never resolve. Arms and protection break fear through the racials strategy instead.
+    triggers.push_back(
+        new TriggerNode(
+            "fear sleep sap",
+            {
+                NextAction("berserker rage", ACTION_EMERGENCY + 1)
             }
         )
     );

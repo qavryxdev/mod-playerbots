@@ -38,10 +38,7 @@ uint32 GetSoulstoneCount(Player* bot)
 
 namespace
 {
-    bool IsPvpContext(Player* bot)
-    {
-        return bot && (bot->InBattleground() || bot->InArena() || bot->duel || bot->IsPvP() || bot->IsFFAPvP());
-    }
+    using ai::pvp::IsPvpContext;
 
     bool IsEnemyTreeHealerDruid(PlayerbotAI* botAI, Unit* target)
     {
@@ -322,4 +319,26 @@ bool RainOfFireChannelCheckTrigger::IsActive()
 
     // Not channeling Rain of Fire
     return false;
+}
+
+bool NoPetInCombatTrigger::IsActive()
+{
+    if (!bot->GetMinionGUID().IsEmpty() || AI_VALUE(Unit*, "pet target") || bot->GetGuardianPet() ||
+        bot->GetFirstControlled() || AI_VALUE2(bool, "mounted", "self target"))
+        return false;
+
+    if (botAI->HasAura("fel domination", bot))
+        return true;
+
+    return AI_VALUE(uint8, "my attacker count") == 0;
+}
+
+bool ConflagrateTrigger::IsActive()
+{
+    if (!SpellNoCooldownTrigger::IsActive())
+        return false;
+
+    Unit* target = GetTarget();
+    return target && (botAI->HasAura("immolate", target, false, true) ||
+                      botAI->HasAura("shadowflame", target, false, true));
 }

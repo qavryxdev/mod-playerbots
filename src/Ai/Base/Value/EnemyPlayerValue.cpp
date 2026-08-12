@@ -7,6 +7,8 @@
 
 #include "AttackersValue.h"
 #include "CombatManager.h"
+#include "BattlegroundEY.h"
+#include "BattlegroundWS.h"
 #include "Playerbots.h"
 #include "PvpTactics.h"
 #include "ServerFacade.h"
@@ -60,10 +62,14 @@ Unit* EnemyPlayerValue::Calculate()
 
     auto isEnemyFlagCarrier = [&](Player const* pTarget)
     {
-        if (bot->GetTeamId() == TEAM_HORDE)
-            return pTarget->HasAura(23333);
+        // Eye of the Storm has a single neutral flag, so either faction carrying it is a target.
+        if (pTarget->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
+            return true;
 
-        return pTarget->HasAura(23335);
+        if (bot->GetTeamId() == TEAM_HORDE)
+            return pTarget->HasAura(BG_WS_SPELL_WARSONG_FLAG);
+
+        return pTarget->HasAura(BG_WS_SPELL_SILVERWING_FLAG);
     };
 
     auto isUsableEnemyPlayer = [&](Player* pTarget, float range)

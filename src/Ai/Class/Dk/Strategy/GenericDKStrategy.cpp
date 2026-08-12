@@ -59,11 +59,15 @@ private:
                               /*C*/ {});
     }
 
+    // No alternative on purpose: alternatives are re-pushed at the failed action's own relevance, and
+    // death grip is queued at gap-closer priority. A fallback there would outrank the whole rotation
+    // and spend a rune every tick the grip is on cooldown. Letting the queue fall through instead
+    // leaves the normal chase and rotation nodes in charge.
     static ActionNode* death_grip([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("death grip",
                               /*P*/ {},
-                              /*A*/ { NextAction("icy touch") },
+                              /*A*/ {},
                               /*C*/ {});
     }
 
@@ -176,6 +180,11 @@ void GenericDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("strangulate on enemy healer", ACTION_INTERRUPT) }));
     triggers.push_back(new TriggerNode("chains of ice",
         { NextAction("chains of ice", ACTION_HIGH + 7) }));
+    // Only Blood reached death grip, and only as the fallback of its taunt. Every spec needs the
+    // class gap closer, otherwise a kited DK just runs after the target for the whole fight. The
+    // trigger is restricted to enemy players because the grip taunts - see EnemyPlayerOutOfMeleeTrigger.
+    triggers.push_back(new TriggerNode("enemy player out of melee",
+        { NextAction("death grip", ACTION_MOVE + 10) }));
     triggers.push_back(new TriggerNode("pvp magic pressure",
         { NextAction("anti magic shell", ACTION_EMERGENCY + 5) }));
     triggers.push_back(new TriggerNode("pvp physical pressure",

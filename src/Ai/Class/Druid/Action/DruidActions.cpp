@@ -59,7 +59,7 @@ namespace
 
         return ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target) &&
                ai::pvp::CanDamageTarget(botAI, target, false) &&
-               !ai::pvp::IsMajorDefenseActive(target);
+               !ai::pvp::IsMajorDefenseActive(target, ai::pvp::DEFENSE_TIER_IMMUNE);
     }
 
     struct StarfallPvpSnapshot
@@ -93,7 +93,7 @@ namespace
                 return;
             }
 
-            if (!ai::pvp::IsMajorDefenseActive(unit))
+            if (!ai::pvp::IsMajorDefenseActive(unit, ai::pvp::DEFENSE_TIER_IMMUNE))
                 enemyPlayers.insert(enemy->GetGUID());
         };
 

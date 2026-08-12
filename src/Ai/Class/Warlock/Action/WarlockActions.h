@@ -404,6 +404,7 @@ class CastDrainLifeAction : public CastSpellAction
 {
 public:
     CastDrainLifeAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "drain life") {}
+    bool isUseful() override;
 };
 
 class CastConflagrateAction : public CastSpellAction

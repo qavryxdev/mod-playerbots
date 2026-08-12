@@ -237,6 +237,7 @@ class CastRevivePetAction : public CastBuffSpellAction
 public:
     CastRevivePetAction(PlayerbotAI* botAI) :
         CastBuffSpellAction(botAI, "revive pet") {}
+    bool isUseful() override;
 };
 
 class CastKillCommandAction : public CastBuffSpellAction

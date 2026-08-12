@@ -332,6 +332,65 @@ namespace
                              static_cast<float>(maximum) : 0.0f;
     }
 
+    // Not every defensive cooldown deserves the same reaction. Treating Barkskin (20% reduction) the
+    // same as Divine Shield (full immunity) let a single druid button switch off the entire offensive
+    // layer for every bot attacking it.
+    uint8 GetMajorDefenseTier(Unit* target)
+    {
+        if (!target)
+            return ai::pvp::DEFENSE_TIER_NONE;
+
+        // Full immunity - damage is literally pointless, switch target.
+        if (target->HasAura(642) || target->HasAura(1020) ||                        // Divine Shield
+            target->HasAura(45438) ||                                               // Ice Block
+            target->HasAura(1022) || target->HasAura(5599) || target->HasAura(10278)) // Hand of Protection
+            return ai::pvp::DEFENSE_TIER_IMMUNE;
+
+        // Heavy mitigation or school immunity - do not spend burst cooldowns into it.
+        if (target->HasAura(871) ||                                                 // Shield Wall
+            target->HasAura(47585) ||                                               // Dispersion
+            target->HasAura(33206) || target->HasAura(47788) ||                     // Pain Suppression / Guardian Spirit
+            target->HasAura(31224) ||                                               // Cloak of Shadows
+            target->HasAura(5277) || target->HasAura(26669) ||                      // Evasion
+            target->HasAura(19263))                                                 // Deterrence
+            return ai::pvp::DEFENSE_TIER_HEAVY;
+
+        // Light mitigation - worth a scoring penalty, never worth stopping for.
+        if (target->HasAura(22812) || target->HasAura(61336) ||                     // Barkskin / Survival Instincts
+            target->HasAura(48792) ||                                               // Icebound Fortitude
+            target->HasAura(30823) ||                                               // Shamanistic Rage
+            target->HasAura(48707))                                                 // Anti-Magic Shell
+            return ai::pvp::DEFENSE_TIER_LIGHT;
+
+        return ai::pvp::DEFENSE_TIER_NONE;
+    }
+
+    // Spell Reflection and the shaman Grounding Totem are the two reactive buttons that punish a
+    // caster for continuing rather than merely reducing the damage. Both are detected by aura type
+    // rather than by spell id, which is how the core itself resolves them (Spell.cpp redirects via
+    // SPELL_AURA_SPELL_MAGNET), so ranks and custom variants are covered automatically.
+    bool ReflectsHarmfulSpells(Unit* target)
+    {
+        return target && (target->HasAuraType(SPELL_AURA_REFLECT_SPELLS) ||
+                          target->HasAuraType(SPELL_AURA_REFLECT_SPELLS_SCHOOL));
+    }
+
+    bool HasSpellMagnetUp(PlayerbotAI* botAI, Unit* target)
+    {
+        Player* owner = GetControllingPlayer(target);
+        if (!botAI || !owner)
+            return false;
+
+        // The totem lives in its owner's air slot, so this stays an O(1) lookup instead of the
+        // proximity scan that would otherwise run once per scoring candidate.
+        ObjectGuid const totemGuid = owner->m_SummonSlot[SUMMON_SLOT_TOTEM_AIR];
+        if (!totemGuid)
+            return false;
+
+        Unit* totem = botAI->GetUnit(totemGuid);
+        return totem && totem->IsAlive() && totem->HasAuraType(SPELL_AURA_SPELL_MAGNET);
+    }
+
     uint32 GetMajorDefenseMask(Unit* target)
     {
         if (!target)
@@ -426,7 +485,7 @@ namespace
     {
         static std::unordered_set<std::string> const spells =
         {
-            "anti magic shell", "barkskin", "cloak of shadows", "deterrence", "dispersion", "divine shield",
+            "anti-magic shell", "barkskin", "cloak of shadows", "deterrence", "dispersion", "divine shield",
             "evasion", "ice block", "icebound fortitude", "retaliation", "shield wall", "survival instincts"
         };
         return spells.find(spell) != spells.end();
@@ -998,6 +1057,29 @@ namespace ai::pvp
         profile.healer = botAI->IsHeal(player);
         profile.usesMana = player->GetMaxPower(POWER_MANA) > 0;
 
+        // A pet is not its owner. Classifying a Felguard by the warlock's class made it count as a
+        // caster doing magic damage, so a bot being trained by a melee pet saw magic pressure and
+        // picked the wrong defensive cooldown. Pets are melee physical unless they are one of the
+        // few genuinely ranged minions.
+        if (!target->ToPlayer())
+        {
+            switch (target->GetEntry())
+            {
+                case 416:    // Imp
+                case 510:    // Water Elemental
+                    profile.caster = true;
+                    profile.magicDamage = true;
+                    break;
+                default:
+                    profile.melee = true;
+                    profile.physicalDamage = true;
+                    break;
+            }
+
+            profile.healer = false;
+            return profile;
+        }
+
         switch (profile.playerClass)
         {
             case CLASS_WARRIOR:
@@ -1260,6 +1342,16 @@ namespace ai::pvp
         return state;
     }
 
+    bool IsCarryingOurFlag(PlayerbotAI* botAI, Player* target)
+    {
+        Player* bot = botAI ? botAI->GetBot() : nullptr;
+        if (!bot || !target)
+            return false;
+
+        return bot->GetTeamId() == TEAM_HORDE ? target->HasAura(BG_WS_SPELL_WARSONG_FLAG)
+                                              : target->HasAura(BG_WS_SPELL_SILVERWING_FLAG);
+    }
+
     bool HasActiveBattlegroundCaptureObjective(PlayerbotAI* botAI)
     {
         Player* bot = botAI ? botAI->GetBot() : nullptr;
@@ -1319,16 +1411,26 @@ namespace ai::pvp
         if (!GetActiveBattlegroundObjective(botAI, bot, objective))
             return false;
 
+        bool const botCanInfluenceObjective = IsNearObjective(bot, objective, 70.0f) || bot->IsWithinDist(target, 45.0f);
+        if (!botCanInfluenceObjective)
+            return false;
+
+        // An enemy carrying a flag is a threat to the objective wherever he is standing.
+        if (IsCarryingBattlegroundFlag(playerTarget))
+            return true;
+
+        // Standing on the objective is itself a threat. Requiring the enemy to be channelling the
+        // banner at that exact instant made this branch unreachable, which in turn meant a bot
+        // parked on a node never saw any threat, latched into capture priority and stopped
+        // selecting PvP targets, crowd control, interrupts and dispels entirely.
+        if (IsNearObjective(target, objective, 20.0f))
+            return true;
+
         GameObject* captureTarget = GetCaptureBannerTarget(target);
         if (!captureTarget)
             return false;
 
-        bool const captureTargetMatchesObjective =
-            IsPositionNear2d(objective, captureTarget->GetPositionX(), captureTarget->GetPositionY(), 35.0f);
-        bool const targetIsOnObjective = IsNearObjective(target, objective, 14.0f);
-        bool const botCanInfluenceObjective = IsNearObjective(bot, objective, 70.0f) || bot->IsWithinDist(target, 45.0f);
-
-        return botCanInfluenceObjective && (captureTargetMatchesObjective || targetIsOnObjective);
+        return IsPositionNear2d(objective, captureTarget->GetPositionX(), captureTarget->GetPositionY(), 35.0f);
     }
 
     static bool ScanCaptureObjectiveThreat(PlayerbotAI* botAI)
@@ -1396,7 +1498,12 @@ namespace ai::pvp
             return true;
 
         Player* bot = botAI ? botAI->GetBot() : nullptr;
-        bool const engage = IsSelfDefenseTarget(bot, target) || IsCaptureObjectiveThreat(botAI, target);
+        Player* playerTarget = target ? target->ToPlayer() : nullptr;
+
+        // Holding an objective never justifies ignoring the enemy flag carrier.
+        bool const engage = IsSelfDefenseTarget(bot, target) ||
+                            (playerTarget && IsCarryingBattlegroundFlag(playerTarget)) ||
+                            IsCaptureObjectiveThreat(botAI, target);
         if (!engage)
             CountGate(gateCounters.captureObjectiveLock);
 
@@ -1767,10 +1874,19 @@ namespace ai::pvp
             return 0;
 
         ObservedDefenseState const defense = ObserveMajorDefense(target);
-        if (defense.active)
+        uint8 const defenseTier = ::GetMajorDefenseTier(target);
+
+        // Only full immunity makes the target genuinely not worth attacking. Returning early for any
+        // defensive at all made everything below - including the school specific scoring - dead code
+        // for as long as any enemy held a mitigation button.
+        if (defenseTier >= DEFENSE_TIER_IMMUNE)
             return -900;
 
         int32 score = defense.recentlySpent ? 90 : 0;
+        if (defenseTier == DEFENSE_TIER_HEAVY)
+            score -= 400;
+        else if (defenseTier == DEFENSE_TIER_LIGHT)
+            score -= 120;
         uint8 const botClass = bot->getClass();
         uint8 const targetClass = playerTarget->getClass();
         TargetProfile const botProfile = GetTargetProfile(botAI, bot);
@@ -1794,6 +1910,13 @@ namespace ai::pvp
                 score += 45;
             if (target->HasAura(31224) || target->HasAura(48707))
                 score -= botProfile.physicalDamage ? 280 : 500;
+
+            // Casting into a reflect hits the bot instead, and a spell magnet eats the cast for
+            // free. Both are short lived, so drop the target rather than stop attacking entirely.
+            if (ReflectsHarmfulSpells(target))
+                score -= botProfile.physicalDamage ? 300 : 600;
+            if (HasSpellMagnetUp(botAI, target))
+                score -= botProfile.physicalDamage ? 150 : 350;
         }
 
         if (targetClass == CLASS_HUNTER && botProfile.melee &&
@@ -2028,9 +2151,17 @@ namespace ai::pvp
         return desired;
     }
 
-    bool IsMajorDefenseActive(Unit* target)
+    uint8 GetMajorDefenseTier(Unit* target)
     {
-        return ObserveMajorDefense(target).active;
+        return ::GetMajorDefenseTier(target);
+    }
+
+    bool IsMajorDefenseActive(Unit* target, uint8 minimumTier)
+    {
+        // Keep the observation running for every tier - it is what feeds the "recently spent"
+        // bookkeeping - but only report active at or above the tier the caller cares about.
+        ObserveMajorDefense(target);
+        return ::GetMajorDefenseTier(target) >= minimumTier;
     }
 
     bool ShouldUseDefensiveCooldown(PlayerbotAI* botAI, bool critical)
@@ -2067,7 +2198,7 @@ namespace ai::pvp
 
         if (spell == "evasion" || spell == "retaliation")
             return critical || HasPhysicalPressure(botAI);
-        if (spell == "cloak of shadows" || spell == "anti magic shell")
+        if (spell == "cloak of shadows" || spell == "anti-magic shell")
             return critical || HasMagicPressure(botAI);
         if (spell == "icebound fortitude")
             return critical || HasPhysicalPressure(botAI) || bot->HasAuraType(SPELL_AURA_MOD_STUN);
@@ -2119,6 +2250,11 @@ namespace ai::pvp
             return false;
 
         if (IsMajorDefenseActive(target))
+            return false;
+
+        // A reflect or a spell magnet turns a caster's burst window into wasted cooldowns.
+        if (GetTargetProfile(botAI, bot).magicDamage &&
+            (ReflectsHarmfulSpells(target) || HasSpellMagnetUp(botAI, target)))
             return false;
 
         // Never burst while about to die - survival first.
@@ -2197,7 +2333,8 @@ namespace ai::pvp
             target->GetMapId() != bot->GetMapId() || !IsPvpContext(bot) ||
             !IsEnemyPlayerOrOwnedUnit(botAI, target) ||
             !CanEngageDuringBattlegroundCapture(botAI, target) ||
-            !CanDamageTarget(botAI, target, false) || IsMajorDefenseActive(target))
+            !CanDamageTarget(botAI, target, false) ||
+            IsMajorDefenseActive(target, DEFENSE_TIER_IMMUNE))
             return false;
 
         CombatPhase const phase = GetCombatPhase(botAI, target);
@@ -2231,7 +2368,8 @@ namespace ai::pvp
         if (!bot || !target || !enemy || !target->IsAlive() || !target->IsInWorld() ||
             target->GetMapId() != bot->GetMapId() || !IsPvpContext(bot) ||
             !botAI->IsOpposing(enemy) || !CanEngageDuringBattlegroundCapture(botAI, target) ||
-            !CanDamageTarget(botAI, target, false) || IsMajorDefenseActive(target))
+            !CanDamageTarget(botAI, target, false) ||
+            IsMajorDefenseActive(target, DEFENSE_TIER_IMMUNE))
             return false;
 
         ShapeshiftForm const form = enemy->GetShapeshiftForm();

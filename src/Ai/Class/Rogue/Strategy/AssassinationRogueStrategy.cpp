@@ -13,6 +13,7 @@ public:
         creators["backstab"] = &backstab;
         creators["rupture"] = &rupture;
         creators["blind"] = &blind;
+        creators["kick"] = &kick;
     }
 
 private:
@@ -58,6 +59,19 @@ private:
             "blind",
             /*P*/ {},
             /*A*/ {},
+            /*C*/ {}
+        );
+    }
+    // Kick is on a 10 second cooldown, so the interrupt has to fall through to the combo point stun
+    // and finally to gouge - without this chain these specs had no interrupt at all besides kick.
+    static ActionNode* kick([[maybe_unused]] PlayerbotAI* botAI)
+    {
+        return new ActionNode(
+            "kick",
+            /*P*/ {},
+            /*A*/ {
+                NextAction("kidney shot"),
+                NextAction("gouge") },
             /*C*/ {}
         );
     }
@@ -120,6 +134,9 @@ void AssassinationRogueStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
         new TriggerNode(
             "combo points 4 available",
             {
+                // Rupture reports useful only while the bot's own rupture is missing from the target,
+                // so it takes the finisher slot once per application and leaves the rest to envenom.
+                NextAction("rupture", ACTION_HIGH + 7),
                 NextAction("cold blood", ACTION_HIGH + 6),
                 NextAction("envenom", ACTION_HIGH + 5)
             }
@@ -227,4 +244,20 @@ void AssassinationRogueStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
             }
         )
     );
+
+    // Assassination and Subtlety are the specs that see the most PvP, but only the combat rotation
+    // carried these reactions, so they had no disarm, no reactive defensives and no control opener.
+    triggers.push_back(new TriggerNode("pvp physical target",
+        { NextAction("dismantle", ACTION_HIGH + 8) }));
+    triggers.push_back(new TriggerNode("pvp physical pressure",
+        { NextAction("evasion", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("pvp magic pressure",
+        { NextAction("cloak of shadows", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(new TriggerNode("pvp control window",
+        { NextAction("blind", ACTION_INTERRUPT + 3),
+          NextAction("kidney shot", ACTION_INTERRUPT + 2) }));
+    // Vanish and the out of melee stealth both leave the bot stealthed while this rotation keeps
+    // running; this hands the engine over to the stealthed strategy so the opener is actually used.
+    triggers.push_back(new TriggerNode("in stealth",
+        { NextAction("check stealth", ACTION_EMERGENCY) }));
 }

@@ -196,8 +196,13 @@ void GenericMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("counterspell on enemy healer", { NextAction("counterspell on enemy healer", 40.0f) }));
     triggers.push_back(new TriggerNode("pvp physical pressure",
         { NextAction("frost nova", ACTION_EMERGENCY + 4) }));
+    // Frost Nova only buys the distance; without a follow-up blink the mage is back in melee range
+    // as soon as the root breaks.
+    triggers.push_back(new TriggerNode("pvp melee attacker close",
+        { NextAction("blink back", ACTION_EMERGENCY + 2) }));
     triggers.push_back(new TriggerNode("pvp high pressure",
-        { NextAction("mana shield", ACTION_EMERGENCY + 3) }));
+        { NextAction("mana shield", ACTION_EMERGENCY + 3),
+          NextAction("mirror image", ACTION_EMERGENCY + 1) }));
     triggers.push_back(new TriggerNode("pvp critical pressure",
         { NextAction("ice block", ACTION_EMERGENCY + 6) }));
 }
@@ -215,6 +220,8 @@ void MageBoostStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     if (tab == 0)  // Arcane
     {
+        // Ordered above arcane power so the free instant cast is spent inside the burst window.
+        triggers.push_back(new TriggerNode("presence of mind", { NextAction("presence of mind", 29.5f) }));
         triggers.push_back(new TriggerNode("arcane power", { NextAction("arcane power", 29.0f) }));
         triggers.push_back(new TriggerNode("icy veins", { NextAction("icy veins", 28.5f) }));
         triggers.push_back(new TriggerNode("mirror image", { NextAction("mirror image", 28.0f) }));

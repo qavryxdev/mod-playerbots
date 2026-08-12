@@ -251,11 +251,14 @@ void TankWarriorStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             }
         )
     );
+    // ACTION_MEDIUM_HEAL is 20, i.e. below revenge, devastate, shield slam and the shouts, so the
+    // rotation starved the 60% damage reduction out of every tick it was needed on. Rank it with the
+    // other emergency buttons below; PvpTactics already stops two defensives being popped together.
     triggers.push_back(
         new TriggerNode(
             "low health",
             {
-                NextAction("shield wall", ACTION_MEDIUM_HEAL)
+                NextAction("shield wall", ACTION_EMERGENCY + 1)
             }
         )
     );

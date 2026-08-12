@@ -130,8 +130,12 @@ void GenericShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("pvp incoming hostile cast",
         { NextAction("grounding totem", ACTION_INTERRUPT + 3), }));
     triggers.push_back(new TriggerNode("pvp physical target",
-        { NextAction("earthbind totem", ACTION_HIGH + 6),
-          NextAction("frost shock", ACTION_HIGH + 5), }));
+        { NextAction("earthbind totem", ACTION_HIGH + 6), }));
+    // "frost shock" picks its own victim through the snare-target value, so drive it from the trigger
+    // that reads the same value - firing it on any physical enemy just burns the shared shock
+    // cooldown on ticks where no snare target exists.
+    triggers.push_back(new TriggerNode("frost shock snare",
+        { NextAction("frost shock", ACTION_HIGH + 5), }));
     triggers.push_back(new TriggerNode("pvp high pressure",
         { NextAction("stoneclaw totem", ACTION_EMERGENCY + 4), }));
 }

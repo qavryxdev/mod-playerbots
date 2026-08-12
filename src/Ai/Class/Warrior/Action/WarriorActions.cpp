@@ -36,8 +36,19 @@ bool CastBerserkerRageAction::isUseful()
 
 bool CastSunderArmorAction::isUseful()
 {
-    Aura* aura = botAI->GetAura("sunder armor", GetTarget(), false, true);
-    return !aura || aura->GetStackAmount() < 5 || aura->GetDuration() <= 6000;
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+
+    // The stack/refresh test deliberately replaces the debuff aura test of the base class - sunder
+    // armor has to be recast while its own debuff is up to reach five stacks. Everything else in the
+    // cast funnel (crowd control protection, cooldown reservations, target sanity) must still run,
+    // so chain to CastSpellAction rather than returning here.
+    Aura* aura = botAI->GetAura("sunder armor", target, false, true);
+    if (aura && aura->GetStackAmount() >= 5 && aura->GetDuration() > 6000)
+        return false;
+
+    return CastSpellAction::isUseful();
 }
 
 Unit* CastVigilanceAction::GetTarget()

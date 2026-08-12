@@ -254,7 +254,6 @@ class CastDeepFreezeAction : public CastSpellAction
 {
 public:
     CastDeepFreezeAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "deep freeze") {}
-    bool isPossible() override { return true; }
 };
 
 class CastRemoveCurseAction : public CastCureSpellAction
@@ -403,6 +402,14 @@ class CastBlastWaveAction : public CastSpellAction
 {
 public:
     CastBlastWaveAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "blast wave") {}
+    ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
+    bool isUseful() override;
+};
+
+class CastArcaneExplosionAction : public CastSpellAction
+{
+public:
+    CastArcaneExplosionAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "arcane explosion") {}
     ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
     bool isUseful() override;
 };

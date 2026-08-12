@@ -45,6 +45,16 @@ namespace ai::pvp
         uint8 hostileCasts = 0;
     };
 
+    // Strength of an enemy defensive cooldown. Callers pick the threshold that matters to them:
+    // switching target needs IMMUNE, holding burst needs HEAVY, LIGHT is only a scoring hint.
+    enum MajorDefenseTier : uint8
+    {
+        DEFENSE_TIER_NONE = 0,
+        DEFENSE_TIER_LIGHT = 1,
+        DEFENSE_TIER_HEAVY = 2,
+        DEFENSE_TIER_IMMUNE = 3,
+    };
+
     enum class CombatPhase : uint8
     {
         None,
@@ -66,6 +76,8 @@ namespace ai::pvp
     bool GetActiveAVObjective(PlayerbotAI* botAI, Player* bot, PositionInfo& objective);
     bool IsNearObjective(Unit* unit, PositionInfo const& objective, float radius);
     bool IsAttackingFriendlyHealer(PlayerbotAI* botAI, Unit* target);
+    // True when the enemy player is holding OUR faction's flag.
+    bool IsCarryingOurFlag(PlayerbotAI* botAI, Player* target);
     bool IsObjectiveRelevantEnemy(PlayerbotAI* botAI, Unit* target, bool threatTarget = false,
                                   float botObjectiveRadius = 60.0f, float targetObjectiveRadius = 38.0f);
     bool HasActiveBattlegroundCaptureObjective(PlayerbotAI* botAI);
@@ -106,7 +118,8 @@ namespace ai::pvp
     bool HasMagicPressure(PlayerbotAI* botAI);
     Unit* GetClosestPvpMeleeAttacker(PlayerbotAI* botAI, float maxDistance);
     CombatPhase GetCombatPhase(PlayerbotAI* botAI, Unit* target);
-    bool IsMajorDefenseActive(Unit* target);
+    uint8 GetMajorDefenseTier(Unit* target);
+    bool IsMajorDefenseActive(Unit* target, uint8 minimumTier = DEFENSE_TIER_HEAVY);
     bool ShouldUseDefensiveCooldown(PlayerbotAI* botAI, bool critical = false);
     bool IsDefensiveCooldownSpell(std::string const& spell);
     bool CanUseDefensiveCooldown(PlayerbotAI* botAI, std::string const& spell);

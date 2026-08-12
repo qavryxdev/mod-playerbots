@@ -115,6 +115,17 @@ bool FeedPetAction::Execute(Event /*event*/)
     return true;
 }
 
+bool CastRevivePetAction::isUseful()
+{
+    // Reviving is a multi second cast that every hit pushes back, so in combat it is only worth
+    // starting once nothing is swinging at the hunter - otherwise the bot would stand still and
+    // deal no damage for the rest of the fight.
+    if (bot->IsInCombat() && AI_VALUE(uint8, "my attacker count") > 0)
+        return false;
+
+    return CastBuffSpellAction::isUseful();
+}
+
 bool CastAutoShotAction::isUseful()
 {
     if (botAI->IsInVehicle() && !botAI->IsInVehicle(false, false, true))

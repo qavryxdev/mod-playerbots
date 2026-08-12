@@ -147,6 +147,16 @@ public:
     MirrorImageTrigger(PlayerbotAI* botAI) : BoostTrigger(botAI, "mirror image") {}
 };
 
+// Mirror Image is a threat drop as much as a damage cooldown. "medium threat" is the group sibling of
+// this and refuses to fire without a main tank, so the reactive use needs a plain count of what is on
+// the mage itself.
+class HighThreatTrigger : public MyAttackerCountTrigger
+{
+public:
+    HighThreatTrigger(PlayerbotAI* botAI) : MyAttackerCountTrigger(botAI, 3) {}
+    std::string const getName() override { return "high threat"; }
+};
+
 class IcyVeinsTrigger : public BoostTrigger
 {
 public:

@@ -6,12 +6,69 @@
 #include "MageActions.h"
 #include <cmath>
 #include <string>
+#include <unordered_set>
 #include "CcTargetValue.h"
+#include "ObjectGuid.h"
 #include "UseItemAction.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 #include "SharedDefines.h"
+#include "Unit.h"
+
+namespace
+{
+    constexpr float PointBlankAoeRadius = 10.0f;
+
+    bool CanBeFrozen(Unit* unit)
+    {
+        if (unit->isFrozen())
+            return false;
+
+        Creature* creature = unit->ToCreature();
+        return !creature || !creature->HasMechanicTemplateImmunity(1 << (MECHANIC_FREEZE - 1));
+    }
+
+    // Frost Nova and Arcane Explosion are self-centred point blank areas of effect. What decides
+    // whether they are worth a global cooldown is what stands inside the radius, not the nuke target
+    // the mage happens to be facing on the other side of the field. The bot's own attacker list is
+    // scanned first so the melee that is actually training the mage always counts.
+    Unit* FindPointBlankEnemy(PlayerbotAI* botAI, Player* bot, float radius, bool freezableOnly)
+    {
+        if (!botAI || !bot)
+            return nullptr;
+
+        Unit* found = nullptr;
+        std::unordered_set<ObjectGuid> checked;
+        auto consider = [&](ObjectGuid const& guid)
+        {
+            if (found || !guid || !checked.insert(guid).second)
+                return;
+
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsAlive() || !unit->IsInWorld() || unit->GetMapId() != bot->GetMapId())
+                return;
+
+            if (bot->IsFriendlyTo(unit) || !bot->IsValidAttackTarget(unit))
+                return;
+
+            if (freezableOnly && !CanBeFrozen(unit))
+                return;
+
+            if (bot->GetExactDist2d(unit) <= radius)
+                found = unit;
+        };
+
+        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
+            consider(guid);
+
+        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets")->Get())
+            consider(guid);
+
+        return found;
+    }
+}
 
 Value<Unit*>* CastPolymorphAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }
 
@@ -76,24 +133,27 @@ bool UseManaAgateAction::isUseful()
 
 bool CastFrostNovaAction::isUseful()
 {
-    Unit* target = AI_VALUE(Unit*, "current target");
-    if (!target || !target->IsInWorld())
+    // Judging the nova by the current target made it unusable exactly when it matters: under melee
+    // pressure the mage's current target is the assist target, not the attacker standing on it.
+    if (!FindPointBlankEnemy(botAI, bot, PointBlankAoeRadius, true))
         return false;
 
-    if (target->ToCreature() && target->ToCreature()->HasMechanicTemplateImmunity(1 << (MECHANIC_FREEZE - 1)))
+    return CastSpellAction::isUseful();
+}
+
+bool CastArcaneExplosionAction::isUseful()
+{
+    if (!FindPointBlankEnemy(botAI, bot, PointBlankAoeRadius, false))
         return false;
 
-    if (target->isFrozen())
-        return false;
-
-    return ServerFacade::instance().IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", GetTargetName()), 10.f);
+    return CastSpellAction::isUseful();
 }
 
 bool CastConeOfColdAction::isUseful()
 {
     bool facingTarget = AI_VALUE2(bool, "facing", "current target");
     bool targetClose = ServerFacade::instance().IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", GetTargetName()), 10.f);
-    return facingTarget && targetClose;
+    return facingTarget && targetClose && CastSpellAction::isUseful();
 }
 
 bool CastDragonsBreathAction::isUseful()
@@ -103,7 +163,7 @@ bool CastDragonsBreathAction::isUseful()
         return false;
     bool facingTarget = AI_VALUE2(bool, "facing", "current target");
     bool targetClose = bot->IsWithinCombatRange(target, 10.0f);
-    return facingTarget && targetClose;
+    return facingTarget && targetClose && CastSpellAction::isUseful();
 }
 
 bool CastBlastWaveAction::isUseful()
@@ -112,7 +172,7 @@ bool CastBlastWaveAction::isUseful()
     if (!target)
         return false;
     bool targetClose = bot->IsWithinCombatRange(target, 10.0f);
-    return targetClose;
+    return targetClose && CastSpellAction::isUseful();
 }
 
 Unit* CastFocusMagicOnPartyAction::GetTarget()
@@ -160,7 +220,12 @@ Unit* CastFocusMagicOnPartyAction::GetTarget()
 
 bool CastBlinkBackAction::Execute(Event event)
 {
-    Unit* target = AI_VALUE(Unit*, "current target");
+    // Blink has to move the mage away from whatever is on it. In PvP that is the melee attacker,
+    // which is rarely the same unit as the current (assist) target.
+    Unit* target = ai::pvp::GetClosestPvpMeleeAttacker(botAI, PointBlankAoeRadius);
+    if (!target)
+        target = AI_VALUE(Unit*, "current target");
+
     if (!target)
         return false;
     // can cast spell check passed in isUseful()

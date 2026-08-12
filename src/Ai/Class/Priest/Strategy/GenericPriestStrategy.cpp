@@ -46,6 +46,9 @@ void GenericPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("being attacked",
         { NextAction("power word: shield", ACTION_HIGH + 1) }));
     triggers.push_back(new TriggerNode("new pet", { NextAction("set pet stance", 60.0f) }));
+    // Re-warding mid fight matters more than a filler cast: fears come in waves and the ward is
+    // consumed by the first one. Kept below the heal priorities so it never delays a heal.
+    triggers.push_back(new TriggerNode("fear ward", { NextAction("fear ward", ACTION_NORMAL + 2) }));
     triggers.push_back(new TriggerNode("pvp high pressure",
         { NextAction("power word: shield", ACTION_EMERGENCY + 4) }));
     triggers.push_back(new TriggerNode("pvp physical pressure",

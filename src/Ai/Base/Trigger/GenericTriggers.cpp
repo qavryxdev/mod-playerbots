@@ -274,7 +274,19 @@ bool DebuffTrigger::IsActive()
     {
         return false;
     }
-    return BuffTrigger::IsActive() && (target->GetHealth() / AI_VALUE(float, "estimated group dps")) >= needLifeTime;
+
+    if (!BuffTrigger::IsActive())
+        return false;
+
+    // "estimated group dps" sums every nearby group member, which in a battleground raid runs into
+    // six figures. Against a player sized health pool the expected lifetime is a fraction of a
+    // second, so this rejected every damage over time effect in PvP. The same guard exists in
+    // CastDebuffSpellAction::isUseful - both have to agree, because the trigger is evaluated first
+    // and a false here means the action is never even queued.
+    if (ai::pvp::IsPvpContext(botAI, target))
+        return target->GetHealthPct() > 20.0f;
+
+    return (target->GetHealth() / AI_VALUE(float, "estimated group dps")) >= needLifeTime;
 }
 
 bool DebuffOnBossTrigger::IsActive()

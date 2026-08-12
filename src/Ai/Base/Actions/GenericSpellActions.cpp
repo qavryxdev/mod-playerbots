@@ -459,8 +459,10 @@ bool CastCrowdControlSpellAction::Execute(Event /*event*/)
 bool CastCrowdControlSpellAction::isPossible()
 {
     Unit* target = GetTarget();
+    // Chain to the base: skipping it dropped the vehicle check, the interrupt reservation and the
+    // range check, so an out of range crowd control target was accepted and then failed every tick.
     return target && ai::cc::CanApplyCrowdControl(botAI, target, getName()) &&
-           botAI->CanCastSpell(getName(), target);
+           CastSpellAction::isPossible();
 }
 
 bool CastCrowdControlSpellAction::isUseful()

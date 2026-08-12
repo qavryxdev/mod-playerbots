@@ -29,10 +29,11 @@ const int ITEM_SOUL_SHARD = 6265;
 namespace
 {
     constexpr float ImmolationAuraRadius = 8.0f;
+    constexpr float HellfireRadius = 8.0f;
 
     // Immolation Aura costs 64% of base mana for a 15 second aura on a 30 second cooldown, so it only
-    // pays for itself when several enemies are already standing in it.
-    uint8 CountEnemiesInImmolationRange(PlayerbotAI* botAI, Player* bot)
+    // pays for itself when several enemies are already standing in it. Hellfire is judged the same way.
+    uint8 CountEnemiesInRange(PlayerbotAI* botAI, Player* bot, float radius)
     {
         if (!botAI || !bot)
             return 0;
@@ -51,7 +52,7 @@ namespace
             if (bot->IsFriendlyTo(unit) || !bot->IsValidAttackTarget(unit))
                 return;
 
-            if (bot->GetExactDist2d(unit) <= ImmolationAuraRadius)
+            if (bot->GetExactDist2d(unit) <= radius)
                 ++count;
         };
 
@@ -66,10 +67,42 @@ namespace
 }
 
 // Checks if the bot has less than 26 soul shards, and if so, allows casting Drain Soul
-bool CastDrainSoulAction::isUseful() { return AI_VALUE2(uint32, "item count", "soul shard") < 26; }
+bool CastDrainSoulAction::isUseful()
+{
+    return AI_VALUE2(uint32, "item count", "soul shard") < 26 && CastSpellAction::isUseful();
+}
 
-// Checks if the bot's health is above a certain threshold, and if so, allows casting Life Tap
-bool CastLifeTapAction::isUseful() { return AI_VALUE2(uint8, "health", "self target") > sPlayerbotAIConfig.lowHealth; }
+// Life Tap converts health into mana. Out of PvP the only question is whether the health can be
+// spared; under focus fire the trade is a straight loss, so it also needs a real buffer and no one
+// in contact before it is worth a global cooldown.
+bool CastLifeTapAction::isUseful()
+{
+    uint8 const health = AI_VALUE2(uint8, "health", "self target");
+    if (health <= sPlayerbotAIConfig.lowHealth)
+        return false;
+
+    if (ai::pvp::IsPvpContext(bot))
+    {
+        if (health < 65)
+            return false;
+
+        // 60 is the pressure level at which the class strategies start spending defensive cooldowns.
+        if (ai::pvp::GetIncomingPressure(botAI) >= 60 || ai::pvp::GetClosestPvpMeleeAttacker(botAI, 10.0f))
+            return false;
+    }
+
+    return CastSpellAction::isUseful();
+}
+
+// Drain Life is channelled, so every hit taken clips it. It is the warlock's only self-heal outside a
+// Healthstone, but only while nothing is in contact with the bot.
+bool CastDrainLifeAction::isUseful()
+{
+    if (ai::pvp::GetClosestPvpMeleeAttacker(botAI, 10.0f))
+        return false;
+
+    return CastSpellAction::isUseful();
+}
 
 bool CastCurseOfAgonyAction::isUseful()
 {
@@ -242,7 +275,7 @@ bool CastShadowflameAction::isUseful()
         return false;
     bool facingTarget = AI_VALUE2(bool, "facing", "current target");
     bool targetClose = bot->IsWithinCombatRange(target, 7.0f);  // 7 yard cone
-    return facingTarget && targetClose;
+    return facingTarget && targetClose && CastSpellAction::isUseful();
 }
 
 // Checks if the bot knows Seed of Corruption, and prevents the use of Rain of Fire if it does
@@ -253,17 +286,21 @@ bool CastRainOfFireAction::isUseful()
         return false;
     if (bot->HasSpell(27243) || bot->HasSpell(47835) || bot->HasSpell(47836)) // Seed of Corruption spell IDs
         return false;
-    return true;
+    return CastSpellAction::isUseful();
 }
 
-// Checks if the enemies are close enough to use Hellfire
+// Hellfire is a 15 second channel that burns the warlock for a share of the damage it deals, so it is
+// only worth starting with a healthy bar and with enough enemies already inside its radius to beat a
+// normal single target cast.
 bool CastHellfireAction::isUseful()
 {
-    Unit* target = AI_VALUE(Unit*, "current target");
-    if (!target)
+    if (AI_VALUE2(uint8, "health", "self target") < 60)
         return false;
 
-    return bot->IsWithinCombatRange(target, 5.0f);  // 5 yard AoE radius
+    if (CountEnemiesInRange(botAI, bot, HellfireRadius) < 3)
+        return false;
+
+    return CastSpellAction::isUseful();
 }
 
 // Checks if the "meta melee aoe" strategy is active, OR if the bot is in melee range of the target
@@ -285,11 +322,10 @@ bool CastImmolationAuraAction::isUseful()
     if (bot->GetPowerPct(POWER_MANA) < 40.0f)
         return false;
 
-    uint8 const enemiesInRange = CountEnemiesInImmolationRange(botAI, bot);
-    if (botAI->HasStrategy("meta melee", BOT_STATE_COMBAT))
-        return enemiesInRange >= 1;
+    uint8 const enemiesInRange = CountEnemiesInRange(botAI, bot, ImmolationAuraRadius);
+    uint8 const needed = botAI->HasStrategy("meta melee", BOT_STATE_COMBAT) ? 1 : 2;
 
-    return enemiesInRange >= 2;
+    return enemiesInRange >= needed && CastSpellAction::isUseful();
 }
 
 // Checks if the "warlock tank" strategy is active, and if so, prevents the use of Soulshatter
@@ -300,7 +336,7 @@ bool CastSoulshatterAction::isUseful()
 
     if (botAI->HasStrategy("tank", BOT_STATE_COMBAT))
         return false;
-    return true;
+    return CastSpellAction::isUseful();
 }
 
 // Checks if the bot has enough bag space to create a soul shard, then does so

@@ -71,6 +71,9 @@ public:
         creators["bone shield"] = &DeathKnightTriggerFactoryInternal::bone_shield;
         creators["pestilence glyph"] = &DeathKnightTriggerFactoryInternal::pestilence_glyph;
         creators["blood strike"] = &DeathKnightTriggerFactoryInternal::blood_strike;
+        creators["rune strike"] = &DeathKnightTriggerFactoryInternal::rune_strike;
+        creators["killing machine"] = &DeathKnightTriggerFactoryInternal::killing_machine;
+        creators["enemy player out of melee"] = &DeathKnightTriggerFactoryInternal::enemy_player_out_of_melee;
         creators["plague strike"] = &DeathKnightTriggerFactoryInternal::plague_strike;
         creators["plague strike on attacker"] = &DeathKnightTriggerFactoryInternal::plague_strike_on_attacker;
         creators["icy touch"] = &DeathKnightTriggerFactoryInternal::icy_touch;
@@ -107,6 +110,9 @@ private:
     static Trigger* bone_shield(PlayerbotAI* botAI) { return new BoneShieldTrigger(botAI); }
     static Trigger* pestilence_glyph(PlayerbotAI* botAI) { return new PestilenceGlyphTrigger(botAI); }
     static Trigger* blood_strike(PlayerbotAI* botAI) { return new BloodStrikeTrigger(botAI); }
+    static Trigger* rune_strike(PlayerbotAI* botAI) { return new RuneStrikeTrigger(botAI); }
+    static Trigger* killing_machine(PlayerbotAI* botAI) { return new KillingMachineTrigger(botAI); }
+    static Trigger* enemy_player_out_of_melee(PlayerbotAI* botAI) { return new EnemyPlayerOutOfMeleeTrigger(botAI); }
     static Trigger* plague_strike(PlayerbotAI* botAI) { return new PlagueStrikeDebuffTrigger(botAI); }
     static Trigger* plague_strike_3s(PlayerbotAI* botAI) { return new PlagueStrike3sDebuffTrigger(botAI); }
     static Trigger* dd_cd_and_plague_strike_3s(PlayerbotAI* botAI)
@@ -207,12 +213,12 @@ public:
         creators["strangulate on enemy healer"] = &DeathKnightAiObjectContextInternal::strangulate_on_enemy_healer;
         creators["blood boil"] = &DeathKnightAiObjectContextInternal::blood_boil;
         creators["heart strike"] = &DeathKnightAiObjectContextInternal::heart_strike;
-        creators["mark of_blood"] = &DeathKnightAiObjectContextInternal::mark_of_blood;
+        creators["mark of blood"] = &DeathKnightAiObjectContextInternal::mark_of_blood;
         creators["blood presence"] = &DeathKnightAiObjectContextInternal::blood_presence;
         creators["rune tap"] = &DeathKnightAiObjectContextInternal::rune_tap;
         creators["vampiric blood"] = &DeathKnightAiObjectContextInternal::vampiric_blood;
         creators["death pact"] = &DeathKnightAiObjectContextInternal::death_pact;
-        creators["death rune_mastery"] = &DeathKnightAiObjectContextInternal::death_rune_mastery;
+        creators["death rune mastery"] = &DeathKnightAiObjectContextInternal::death_rune_mastery;
         creators["hysteria"] = &DeathKnightAiObjectContextInternal::hysteria;
         creators["dancing rune weapon"] = &DeathKnightAiObjectContextInternal::dancing_rune_weapon;
         creators["dark command"] = &DeathKnightAiObjectContextInternal::dark_command;

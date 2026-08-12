@@ -6,6 +6,7 @@
 #include "DruidShapeshiftActions.h"
 
 #include "Playerbots.h"
+#include "PvpTactics.h"
 
 bool CastBearFormAction::isUseful()
 {
@@ -24,6 +25,12 @@ std::vector<NextAction> CastDireBearFormAction::getAlternatives()
 
 bool CastTravelFormAction::isUseful()
 {
+    // Shifting into a form strips non-CC roots, which makes Travel Form the cheapest snare break a
+    // druid has. The mount/flag gating below is about using it as a cheap mount and would otherwise
+    // rule that out for every druid past level 20.
+    if (ai::pvp::IsPvpContext(bot) && bot->HasAuraType(SPELL_AURA_MOD_ROOT))
+        return !bot->IsMounted();
+
     bool firstmount = bot->GetLevel() >= 20;
 
     // useful if no mount or with wsg flag

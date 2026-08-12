@@ -10,6 +10,8 @@
 
 class PlayerbotAI;
 
+// Builders share the overcap guard: at 5 combo points the points a builder would generate are lost,
+// so the finisher has to go out first.
 class CastComboAction : public CastMeleeSpellAction
 {
 public:
@@ -18,16 +20,16 @@ public:
     bool isUseful() override;
 };
 
-class CastSinisterStrikeAction : public CastSpellAction
+class CastSinisterStrikeAction : public CastComboAction
 {
 public:
-    CastSinisterStrikeAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "sinister strike") {}
+    CastSinisterStrikeAction(PlayerbotAI* botAI) : CastComboAction(botAI, "sinister strike") {}
 };
 
-class CastMutilateAction : public CastSpellAction
+class CastMutilateAction : public CastComboAction
 {
 public:
-    CastMutilateAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "mutilate") {}
+    CastMutilateAction(PlayerbotAI* botAI) : CastComboAction(botAI, "mutilate") {}
 };
 
 class CastRiposteAction : public CastSpellAction
@@ -42,10 +44,10 @@ public:
     CastGougeAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "gouge") {}
 };
 
-class CastBackstabAction : public CastSpellAction
+class CastBackstabAction : public CastComboAction
 {
 public:
-    CastBackstabAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "backstab") {}
+    CastBackstabAction(PlayerbotAI* botAI) : CastComboAction(botAI, "backstab") {}
 };
 
 #endif

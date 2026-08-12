@@ -143,7 +143,8 @@ bool CheckMountStateAction::isUseful()
 
     // Not useful when in combat and not currently mounted / travel formed
     if ((bot->IsInCombat() || botAI->GetState() == BOT_STATE_COMBAT) &&
-        !bot->IsMounted() && botInShapeshiftForm != FORM_TRAVEL && botInShapeshiftForm != FORM_FLIGHT && botInShapeshiftForm != FORM_FLIGHT_EPIC)
+        !bot->IsMounted() && botInShapeshiftForm != FORM_TRAVEL && botInShapeshiftForm != FORM_GHOSTWOLF &&
+        botInShapeshiftForm != FORM_FLIGHT && botInShapeshiftForm != FORM_FLIGHT_EPIC)
         return false;
 
     // In addition to checking IsOutdoors, also check whether bot is clipping below floor slightly because that will
@@ -185,7 +186,7 @@ bool CheckMountStateAction::isUseful()
 bool CheckMountStateAction::Mount()
 {
     // Remove current Shapeshift if need be
-    if (botInShapeshiftForm != FORM_TRAVEL &&
+    if (botInShapeshiftForm != FORM_TRAVEL && botInShapeshiftForm != FORM_GHOSTWOLF &&
         botInShapeshiftForm != FORM_FLIGHT &&
         botInShapeshiftForm != FORM_FLIGHT_EPIC)
     {

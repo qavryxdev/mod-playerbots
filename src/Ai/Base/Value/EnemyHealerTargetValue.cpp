@@ -36,46 +36,10 @@ namespace
         return nullptr;
     }
 
-    bool GetActiveAVObjective(PlayerbotAI* botAI, Player* bot, PositionInfo& objective)
-    {
-        if (!botAI || !bot)
-            return false;
-
-        Battleground* bg = bot->GetBattleground();
-        if (!bg)
-            return false;
-
-        BattlegroundTypeId bgType = bg->GetBgTypeID();
-        if (bgType == BATTLEGROUND_RB)
-            bgType = bg->GetBgTypeID(true);
-
-        if (bgType != BATTLEGROUND_AV)
-            return false;
-
-        PositionMap& positions = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get();
-        auto const itr = positions.find("bg objective");
-        if (itr == positions.end() || !itr->second.valueSet)
-            return false;
-
-        objective = itr->second;
-        return true;
-    }
-
-    bool IsNearObjective(Unit* unit, PositionInfo const& objective, float radius)
-    {
-        if (!unit || !objective.valueSet)
-            return false;
-
-        float const dx = unit->GetPositionX() - objective.x;
-        float const dy = unit->GetPositionY() - objective.y;
-        return dx * dx + dy * dy <= radius * radius;
-    }
-
-    bool IsAttackingFriendlyHealer(PlayerbotAI* botAI, Unit* target)
-    {
-        Player* victim = target && target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
-        return victim && !botAI->IsOpposing(victim) && botAI->IsHeal(victim);
-    }
+    // Verbatim copies of the shared helpers used to live here and had already drifted from them.
+    using ai::pvp::GetActiveAVObjective;
+    using ai::pvp::IsAttackingFriendlyHealer;
+    using ai::pvp::IsNearObjective;
 
     bool CanScanPvpHealerDuringAVObjective(PlayerbotAI* botAI, Unit* target, bool threatTarget)
     {

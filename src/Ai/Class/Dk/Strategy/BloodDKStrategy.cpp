@@ -142,7 +142,8 @@ void BloodDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             "low health",
             {
                 NextAction("army of the dead", ACTION_HIGH + 4),
-                NextAction("death strike", ACTION_HIGH + 3)
+                NextAction("death strike", ACTION_HIGH + 3),
+                NextAction("mark of blood", ACTION_HIGH + 2)
             }
         )
     );

@@ -398,15 +398,15 @@ namespace ai::cc
         if (!bot || target == bot)
             return false;
 
-        if (Unit* activePolymorph = GetActivePolymorphTarget(botAI))
-            if (activePolymorph != target)
-                return false;
+        // GetActivePolymorphTarget walks every nearby unit and all of its auras. CcTargetValue
+        // already establishes that no polymorph of ours is up before it starts scoring candidates,
+        // so repeating the scan per candidate was pure cost.
 
         Unit* currentTarget = *botAI->GetAiObjectContext()->GetValue<Unit*>("current target");
         if (target == currentTarget || bot->GetVictim() == target)
             return false;
 
-        if (target->GetHealthPct() < 85.0f)
+        if (target->GetHealthPct() < (ai::pvp::IsPvpContext(botAI->GetBot()) ? 20.0f : 85.0f))
             return false;
 
         if (HasPeriodicDamage(target) || IsFriendlyDamagePressure(botAI, target) || IsInActiveAoe(botAI, target))
@@ -436,14 +436,17 @@ namespace ai::cc
         if (group == DIMINISHING_NONE)
             return 0;
 
+        // The old 45/180 penalties were small next to the priority bonuses in the scorer (a healer is
+        // worth 520, a casting healer 500 more), so a target already at the last diminishing step
+        // still outranked a fresh one and the bot spent its crowd control on a quarter duration.
         switch (target->GetDiminishing(group))
         {
             case DIMINISHING_LEVEL_1:
                 return 0;
             case DIMINISHING_LEVEL_2:
-                return 45;
+                return 250;
             case DIMINISHING_LEVEL_3:
-                return 180;
+                return 900;
             default:
                 return 100000;
         }
@@ -471,6 +474,12 @@ public:
             return;
 
         if (!ai::pvp::CanEngageDuringBattlegroundCapture(botAI, creature))
+            return;
+
+        // Without a range reject the scorer happily picks a target 100 yards away out of the
+        // possible-targets list, and the cast then fails every tick while a reachable one is
+        // ignored. EnemyHealerTargetValue applies the same guard.
+        if (ServerFacade::instance().GetDistance2d(bot, creature) > botAI->GetRange("spell"))
             return;
 
         if (!CanFreeCcDuringAVObjective(botAI, creature, threatTarget))
@@ -561,8 +570,13 @@ public:
             uint32 tankCount = 0;
             uint32 dpsCount = 0;
             GetPlayerCount(creature, &tankCount, &dpsCount);
-            if (!tankCount || !dpsCount)
+            // Nobody engaged yet is the bonus; with || this was true for every target that had no
+            // tank on it, which in a battleground is almost all of them.
+            uint32 const engaged = tankCount + dpsCount;
+            if (!engaged)
                 score += 120;
+            else
+                score -= static_cast<int32>(std::min<uint32>(engaged, 4u) * 90);
 
             float minTankDistance = botAI->GetRange("spell");
             Group::MemberSlotList const& groupSlot = group->GetMemberSlots();

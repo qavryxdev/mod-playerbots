@@ -74,8 +74,10 @@ UnholyDKStrategy::UnholyDKStrategy(PlayerbotAI* botAI) : GenericDKStrategy(botAI
 
 std::vector<NextAction> UnholyDKStrategy::getDefaultActions()
 {
+    // Death and Decay belongs to the "medium aoe" node in GenericDKStrategy. The default list is
+    // pushed every tick, so keeping it here at ACTION_HIGH + 5 outranked disease upkeep and spent the
+    // whole rune set on a ground effect a single target simply steps out of.
     return {
-        NextAction("death and decay", ACTION_HIGH + 5),
         NextAction("summon gargoyle", ACTION_DEFAULT + 0.4f),
         NextAction("horn of winter", ACTION_DEFAULT + 0.2f),
         NextAction("death coil", ACTION_DEFAULT + 0.1f),

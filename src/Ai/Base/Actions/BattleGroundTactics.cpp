@@ -138,7 +138,9 @@ enum BattleBotWsgWaitSpot
 
 std::unordered_map<uint32, BGStrategyData> bgStrategies;
 static std::unordered_map<uint32, uint32> avAllianceDebugLogTimers;
+static std::mutex avAllianceDebugLogTimersMutex;
 static std::unordered_map<uint64, uint32> avAllianceMoveDebugLogTimers;
+static std::mutex avAllianceMoveDebugLogTimersMutex;
 static std::unordered_map<uint64, uint32> avTowerFlagCaptureDebugLogTimers;
 static std::mutex avTowerFlagCaptureDebugLogTimersMutex;
 
@@ -149,6 +151,7 @@ struct AllianceAVModeState
 };
 
 static std::unordered_map<uint32, AllianceAVModeState> avAllianceModeStates;
+static std::mutex avAllianceModeStatesMutex;
 
 struct AllianceAVIcebloodBeachheadState
 {
@@ -158,6 +161,7 @@ struct AllianceAVIcebloodBeachheadState
 };
 
 static std::unordered_map<uint32, AllianceAVIcebloodBeachheadState> avAllianceIcebloodBeachheadStates;
+static std::mutex avAllianceIcebloodBeachheadStatesMutex;
 
 struct AllianceAVObjectiveStallState
 {
@@ -3576,6 +3580,7 @@ static AllianceAVBattlefieldMode ApplyAllianceAVModeHysteresis(Battleground* bg,
 
     uint32 const instanceId = bg->GetInstanceID();
     uint32 const elapsedMs = bg->GetStartTime();
+    std::lock_guard<std::mutex> modeGuard(avAllianceModeStatesMutex);
     auto& state = avAllianceModeStates[instanceId];
 
     if (state.sinceMs == 0)
@@ -5249,6 +5254,9 @@ static bool AllianceAVShouldHoldIcebloodBeachhead(Battleground* bg, Battleground
     bool const allianceControlled = node.State == POINT_CONTROLLED && node.OwnerId == TEAM_ALLIANCE;
     uint32 const instanceId = bg->GetInstanceID();
 
+    // Shared across every Alterac Valley instance, and instances update on parallel threads.
+    std::lock_guard<std::mutex> beachheadGuard(avAllianceIcebloodBeachheadStatesMutex);
+
     if (!allianceAssaulting && !allianceControlled)
     {
         avAllianceIcebloodBeachheadStates.erase(instanceId);
@@ -5953,6 +5961,9 @@ static void LogAllianceAVState(Battleground* bg, BattlegroundAV* av, AllianceAVR
 
     uint32 const instanceId = bg->GetInstanceID();
     uint32 const elapsedMs = bg->GetStartTime();
+    // Bot AI for one battleground instance runs on a map update thread, but several instances run
+    // in parallel and share this table.
+    std::lock_guard<std::mutex> debugLogGuard(avAllianceDebugLogTimersMutex);
     auto itr = avAllianceDebugLogTimers.find(instanceId);
     if (itr != avAllianceDebugLogTimers.end() && elapsedMs >= itr->second && elapsedMs - itr->second < 15000)
         return;
@@ -6011,6 +6022,7 @@ static void LogAllianceAVMoveDebug(Player* bot, Battleground* bg, PositionInfo c
     }
 
     uint64 const logKey = botId ^ (reasonHash << 1);
+    std::lock_guard<std::mutex> moveLogGuard(avAllianceMoveDebugLogTimersMutex);
     auto itr = avAllianceMoveDebugLogTimers.find(logKey);
     if (itr != avAllianceMoveDebugLogTimers.end() && elapsedMs >= itr->second && elapsedMs - itr->second < 5000)
         return;

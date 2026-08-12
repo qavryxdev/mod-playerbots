@@ -465,7 +465,12 @@ bool CastBlessingOfKingsOnPartyAction::Execute(Event /*event*/)
     return botAI->CastSpell(castName, target);
 }
 
-bool CastSealSpellAction::isUseful() { return AI_VALUE2(bool, "combat", "self target"); }
+// Chains to the base so the shared pvp gate and the "seal already up" check still apply - without
+// it a bot at low mana re-cast Seal of Wisdom on top of itself every tick.
+bool CastSealSpellAction::isUseful()
+{
+    return AI_VALUE2(bool, "combat", "self target") && CastBuffSpellAction::isUseful();
+}
 
 Value<Unit*>* CastTurnUndeadAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }
 

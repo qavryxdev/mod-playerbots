@@ -158,11 +158,20 @@ public:
 BEGIN_MELEE_SPELL_ACTION(CastCorpseExplosionAction, "corpse explosion")
 END_SPELL_ACTION()
 
-BEGIN_MELEE_SPELL_ACTION(CastAntiMagicShellAction, "anti magic shell")
-END_SPELL_ACTION()
+// Both are self-cast panic buttons against casters. As melee spell actions they were rejected unless
+// an enemy stood in melee range, i.e. never in the kite the trigger ("pvp magic pressure") is written
+// for. The Spell.dbc names carry a hyphen - without it the name never resolved to a spell id at all.
+class CastAntiMagicShellAction : public CastBuffSpellAction
+{
+public:
+    CastAntiMagicShellAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "anti-magic shell") {}
+};
 
-BEGIN_MELEE_SPELL_ACTION(CastAntiMagicZoneAction, "anti magic zone")
-END_SPELL_ACTION()
+class CastAntiMagicZoneAction : public CastBuffSpellAction
+{
+public:
+    CastAntiMagicZoneAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "anti-magic zone") {}
+};
 
 class CastChainsOfIceAction : public CastSpellAction
 {
@@ -316,10 +325,12 @@ public:
     CastMindFreezeAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "mind freeze") {}
 };
 
-class CastStrangulateAction : public CastMeleeSpellAction
+// Strangulate is a 30 yard silence - the melee base class threw away its whole point, leaving only
+// the range Mind Freeze already covers. The healer variant below never had that restriction.
+class CastStrangulateAction : public CastSpellAction
 {
 public:
-    CastStrangulateAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "strangulate") {}
+    CastStrangulateAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "strangulate") {}
 };
 
 class CastMindFreezeOnEnemyHealerAction : public CastSpellOnEnemyHealerAction
@@ -334,16 +345,18 @@ public:
     CastStrangulateOnEnemyHealerAction(PlayerbotAI* botAI) : CastSpellOnEnemyHealerAction(botAI, "strangulate") {}
 };
 
-class CastRuneTapAction : public CastMeleeSpellAction
+// Self-heal and self rune conversion. Neither takes a target, so the melee gate only made them
+// unavailable while snared, rooted or kited - the moments they are actually needed.
+class CastRuneTapAction : public CastBuffSpellAction
 {
 public:
-    CastRuneTapAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "rune tap") {}
+    CastRuneTapAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "rune tap") {}
 };
 
-class CastBloodTapAction : public CastMeleeSpellAction
+class CastBloodTapAction : public CastBuffSpellAction
 {
 public:
-    CastBloodTapAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "blood tap") {}
+    CastBloodTapAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "blood tap") {}
 };
 
 class CastHysteriaAction : public CastSpellAction

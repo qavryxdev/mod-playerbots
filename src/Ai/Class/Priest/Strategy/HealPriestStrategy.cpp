@@ -92,6 +92,18 @@ void HealPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         )
     );
 
+    // The trigger only fires when the priest itself is also hurt, which is exactly when one Binding
+    // Heal beats spending two casts on the ally and on itself. Ranked above the single target heals
+    // of the same tier so it wins that comparison.
+    triggers.push_back(
+        new TriggerNode(
+            "binding heal",
+            {
+                NextAction("binding heal", ACTION_MEDIUM_HEAL + 6)
+            }
+        )
+    );
+
     triggers.push_back(
         new TriggerNode(
             "party member to heal out of spell range",

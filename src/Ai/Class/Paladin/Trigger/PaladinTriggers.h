@@ -69,8 +69,12 @@ DEBUFF_TRIGGER(JudgementOfWisdomTrigger, "judgement of wisdom");
 DEBUFF_TRIGGER(ConsecrationTrigger, "consecration");
 
 // repentance triggers
-INTERRUPT_HEALER_TRIGGER(RepentanceOnHealerTrigger, "repentance on enemy healer");
-SNARE_TRIGGER(RepentanceSnareTrigger, "repentance on snare target");
+// The macro argument is the spell name, not the node name - the base classes append " on enemy
+// healer" / " on snare target" themselves, and the name is what qualifies the shared target value
+// the matching action reads. Passing the node name made both look up a spell that does not exist,
+// so trigger and action resolved different units.
+INTERRUPT_HEALER_TRIGGER(RepentanceOnHealerTrigger, "repentance");
+SNARE_TRIGGER(RepentanceSnareTrigger, "repentance");
 INTERRUPT_TRIGGER(RepentanceInterruptTrigger, "repentance");
 
 class BlessingOnPartyTrigger : public BuffOnPartyTrigger

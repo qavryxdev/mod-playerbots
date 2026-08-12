@@ -5,6 +5,7 @@
 
 #include "RogueActions.h"
 
+#include "AiFactory.h"
 #include "Event.h"
 #include "ObjectGuid.h"
 #include "Player.h"
@@ -36,13 +37,19 @@ bool UnstealthAction::Execute(Event /*event*/)
 
 bool CheckStealthAction::Execute(Event /*event*/)
 {
+    // Combat rogues run "dps", Assassination and Subtlety run "melee". Toggling the wrong one would
+    // leave the bot without a rotation on unstealth, or bolt a second spec's rotation onto its own.
+    uint8 const tab = AiFactory::GetPlayerSpecTab(bot);
+    std::string const rotation =
+        (tab == ROGUE_TAB_ASSASSINATION || tab == ROGUE_TAB_SUBTLETY) ? "melee" : "dps";
+
     if (botAI->HasAura("stealth", bot))
     {
-        botAI->ChangeStrategy("-dps,+stealthed", BOT_STATE_COMBAT);
+        botAI->ChangeStrategy("-" + rotation + ",+stealthed", BOT_STATE_COMBAT);
     }
     else
     {
-        botAI->ChangeStrategy("+dps,-stealthed", BOT_STATE_COMBAT);
+        botAI->ChangeStrategy("+" + rotation + ",-stealthed", BOT_STATE_COMBAT);
     }
 
     return true;
@@ -59,13 +66,9 @@ bool CastVanishAction::isUseful()
 
 bool CastEnvenomAction::isUseful()
 {
-    return AI_VALUE2(uint8, "energy", "self target") >= 35;
-}
-
-bool CastEnvenomAction::isPossible()
-{
-    // alternate to eviscerate if talents unlearned
-    return botAI->HasAura(58410, bot) /* Master Poisoner Rank 3 */;
+    // The base check knows whether the bot is in melee range of a valid target; the energy floor is
+    // only there to stop the finisher from starving the next builder.
+    return CastMeleeSpellAction::isUseful() && AI_VALUE2(uint8, "energy", "self target") >= 35;
 }
 
 bool CastTricksOfTheTradeOnMainTankAction::isUseful()

@@ -48,11 +48,48 @@ bool PvpFaerieFireTrigger::IsActive()
            BuffTrigger::IsActive();
 }
 
+// Matches the 30s lockout spell_dru_eclipse arms when it applies the aura.
+static constexpr time_t ECLIPSE_PROC_COOLDOWN_SECONDS = 30;
+
+bool EclipseProcCooldownTrigger::IsActive()
+{
+    time_t now = time(nullptr);
+
+    if (botAI->HasAura(aura, bot))
+    {
+        lastSeen = now;
+        return true;
+    }
+
+    return lastSeen && (now - lastSeen) < ECLIPSE_PROC_COOLDOWN_SECONDS;
+}
+
 bool BearFormTrigger::IsActive() { return !botAI->HasAnyAuraOf(bot, "bear form", "dire bear form", nullptr); }
 
 bool TreeFormTrigger::IsActive() { return !botAI->HasAura(33891, bot); }
 
 bool CatFormTrigger::IsActive() { return !botAI->HasAura("cat form", bot); }
+
+bool ProwlTrigger::IsActive()
+{
+    if (!botAI->HasStrategy("cat", BOT_STATE_COMBAT) || !ai::pvp::IsPvpContext(bot))
+        return false;
+
+    if (bot->IsMounted() || bot->IsInCombat() || botAI->HasAura("prowl", bot))
+        return false;
+
+    Unit* enemy = AI_VALUE(Unit*, "enemy player target");
+    return enemy && bot->GetDistance(enemy) <= 40.0f;
+}
+
+bool StealthOpenerTrigger::IsActive()
+{
+    if (!botAI->HasAura("prowl", bot))
+        return false;
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return target && bot->IsWithinMeleeRange(target);
+}
 
 const std::set<uint32> HurricaneChannelCheckTrigger::HURRICANE_SPELL_IDS = {
     16914,  // Hurricane Rank 1

@@ -100,6 +100,7 @@ public:
         creators["hex of weakness"] = &PriestTriggerFactoryInternal::hex_of_weakness;
         creators["shadowguard"] = &PriestTriggerFactoryInternal::shadowguard;
         creators["fear ward"] = &PriestTriggerFactoryInternal::fear_ward;
+        creators["fear ward on party"] = &PriestTriggerFactoryInternal::fear_ward_on_party;
         creators["feedback"] = &PriestTriggerFactoryInternal::feedback;
         creators["binding heal"] = &PriestTriggerFactoryInternal::binding_heal;
         creators["chastise"] = &PriestTriggerFactoryInternal::chastise;
@@ -142,6 +143,7 @@ private:
     static Trigger* prayer_of_spirit_on_party(PlayerbotAI* botAI) { return new PrayerOfSpiritTrigger(botAI); }
     static Trigger* feedback(PlayerbotAI* botAI) { return new FeedbackTrigger(botAI); }
     static Trigger* fear_ward(PlayerbotAI* botAI) { return new FearWardTrigger(botAI); }
+    static Trigger* fear_ward_on_party(PlayerbotAI* botAI) { return new FearWardOnPartyTrigger(botAI); }
     static Trigger* shadowguard(PlayerbotAI* botAI) { return new ShadowguardTrigger(botAI); }
     static Trigger* hex_of_weakness(PlayerbotAI* botAI) { return new HexOfWeaknessTrigger(botAI); }
     static Trigger* touch_of_weakness(PlayerbotAI* botAI) { return new TouchOfWeaknessTrigger(botAI); }

@@ -6,6 +6,7 @@
 #include "PartyMemberToHeal.h"
 
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "ServerFacade.h"
 
 class IsTargetOfHealingSpell : public SpellEntryPredicate
@@ -137,7 +138,6 @@ bool PartyMemberToHeal::Check(Unit* player)
 
 Unit* PartyMemberToProtect::Calculate()
 {
-    return nullptr;
     Group* group = bot->GetGroup();
     if (!group)
         return nullptr;
@@ -162,9 +162,12 @@ Unit* PartyMemberToProtect::Calculate()
         if (ServerFacade::instance().GetDistance2d(pVictim, unit) > attackDistance)
             continue;
 
-        if (botAI->IsTank((Player*)pVictim) && pVictim->GetHealthPct() > 10)
-            continue;
-        else if (pVictim->GetHealthPct() > 30)
+        // Raid thresholds assume a tank that is meant to be low. In a battleground a focus target
+        // dies from far above 30%, and Hand of Protection or Pain Suppression arrive too late if the
+        // bot waits for that.
+        float const rescueHealthPct = ai::pvp::IsPvpContext(bot) ? 55.0f
+                                      : (botAI->IsTank((Player*)pVictim) ? 10.0f : 30.0f);
+        if (pVictim->GetHealthPct() > rescueHealthPct)
             continue;
 
         if (find(needProtect.begin(), needProtect.end(), pVictim) == needProtect.end())

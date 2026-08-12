@@ -185,7 +185,10 @@ public:
         creators["curse of tongues"] = &WarlockTriggerFactoryInternal::curse_of_tongues;
         creators["curse of weakness"] = &WarlockTriggerFactoryInternal::curse_of_weakness;
         creators["wrong pet"] = &WarlockTriggerFactoryInternal::wrong_pet;
+        creators["no pet in combat"] = &WarlockTriggerFactoryInternal::no_pet_in_combat;
         creators["rain of fire channel check"] = &WarlockTriggerFactoryInternal::rain_of_fire_channel_check;
+        creators["conflagrate"] = &WarlockTriggerFactoryInternal::conflagrate;
+        creators["chaos bolt"] = &WarlockTriggerFactoryInternal::chaos_bolt;
     }
 
 private:
@@ -234,7 +237,10 @@ private:
     static Trigger* curse_of_tongues(PlayerbotAI* ai) { return new CurseOfTonguesTrigger(ai); }
     static Trigger* curse_of_weakness(PlayerbotAI* ai) { return new CurseOfWeaknessTrigger(ai); }
     static Trigger* wrong_pet(PlayerbotAI* ai) { return new WrongPetTrigger(ai); }
+    static Trigger* no_pet_in_combat(PlayerbotAI* ai) { return new NoPetInCombatTrigger(ai); }
     static Trigger* rain_of_fire_channel_check(PlayerbotAI* ai) { return new RainOfFireChannelCheckTrigger(ai); }
+    static Trigger* conflagrate(PlayerbotAI* ai) { return new ConflagrateTrigger(ai); }
+    static Trigger* chaos_bolt(PlayerbotAI* ai) { return new ChaosBoltTrigger(ai); }
 };
 
 class WarlockAiObjectContextInternal : public NamedObjectContext<Action>

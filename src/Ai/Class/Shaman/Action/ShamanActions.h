@@ -92,6 +92,15 @@ public:
         CastBuffSpellAction(botAI, "water walking") {}
 };
 
+// The shaman's only self-mobility tool. Like the druid travel forms it blocks every other cast while
+// it is up, so it must only be driven from a rule that also knows how to take it off again.
+class CastGhostWolfAction : public CastBuffSpellAction
+{
+public:
+    CastGhostWolfAction(PlayerbotAI* botAI) :
+        CastBuffSpellAction(botAI, "ghost wolf") {}
+};
+
 class CastWaterBreathingOnPartyAction : public BuffOnPartyAction
 {
 public:

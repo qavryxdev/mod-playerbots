@@ -135,6 +135,17 @@ public:
     bool IsActive() override;
 };
 
+// Killing the pet is standard opening play, and losing it costs the warlock its interrupt, its
+// dispels and a large slice of its damage for the rest of the fight. Resummoning mid fight is only
+// realistic while Fel Domination makes it instant, or while nothing is hitting the bot - the plain
+// summon is a 10 second cast that any damage clips.
+class NoPetInCombatTrigger : public Trigger
+{
+public:
+    NoPetInCombatTrigger(PlayerbotAI* botAI) : Trigger(botAI, "no pet in combat", 2 * 1000) {}
+    bool IsActive() override;
+};
+
 // CC and Pet Triggers
 
 class BanishTrigger : public HasCcTargetTrigger
@@ -315,6 +326,21 @@ class ShadowTranceTrigger : public HasAuraTrigger
 {
 public:
     ShadowTranceTrigger(PlayerbotAI* botAI) : HasAuraTrigger(botAI, "shadow trance") {}
+};
+
+// Conflagrate consumes the Immolate (or Shadowflame) on the target, so being off cooldown is only
+// half the condition.
+class ConflagrateTrigger : public SpellNoCooldownTrigger
+{
+public:
+    ConflagrateTrigger(PlayerbotAI* botAI) : SpellNoCooldownTrigger(botAI, "conflagrate") {}
+    bool IsActive() override;
+};
+
+class ChaosBoltTrigger : public SpellNoCooldownTrigger
+{
+public:
+    ChaosBoltTrigger(PlayerbotAI* botAI) : SpellNoCooldownTrigger(botAI, "chaos bolt") {}
 };
 
 class BacklashTrigger : public HasAuraTrigger

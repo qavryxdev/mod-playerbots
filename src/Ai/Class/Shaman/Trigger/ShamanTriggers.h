@@ -259,6 +259,17 @@ public:
     EarthShieldOnMainTankTrigger(PlayerbotAI* botAI) : BuffOnMainTankTrigger(botAI, "earth shield", false) {}
 };
 
+// Earth Shield only lives on one target per caster, so self-casting must never compete with the main
+// tank rule. Structured PvP is the one place where it cannot: a battleground or arena raid has no
+// assigned main tank, so that rule resolves no target and the shield would otherwise go unused.
+class EarthShieldPvpTrigger : public BuffTrigger
+{
+public:
+    EarthShieldPvpTrigger(PlayerbotAI* botAI) : BuffTrigger(botAI, "earth shield") {}
+
+    bool IsActive() override;
+};
+
 // Totem Triggers
 
 class TotemTrigger : public Trigger

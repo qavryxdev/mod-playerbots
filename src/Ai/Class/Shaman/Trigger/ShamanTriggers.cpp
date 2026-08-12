@@ -11,6 +11,7 @@
 #include "TotemsShamanStrategy.h"
 #include "InstanceScript.h"
 #include "Creature.h"
+#include "PvpTactics.h"
 #include "Unit.h"
 #include <ctime>
 
@@ -60,6 +61,11 @@ bool EarthShockExecuteTrigger::IsActive()
         return false;
 
     return true;
+}
+
+bool EarthShieldPvpTrigger::IsActive()
+{
+    return ai::pvp::IsPvpContext(bot) && BuffTrigger::IsActive();
 }
 
 bool TotemTrigger::IsActive()
@@ -316,6 +322,15 @@ bool NoEarthTotemTrigger::IsActive()
             return false;
     }
 
+    // EXCEPTION: Same for Earthbind. The PvP snare rule drops it into the shared earth slot, so
+    // without this the upkeep totem would overwrite it on the very next tick and the two rules would
+    // trade the slot back and forth for every global cooldown of the fight.
+    for (size_t i = 0; i < EARTHBIND_TOTEM_COUNT; ++i)
+    {
+        if (currentSpell == EARTHBIND_TOTEM[i] && totem && totem->GetDistance(bot) <= 30.0f)
+            return false;
+    }
+
     // If no relevant strategy, only care if the slot is empty or totem is too far away
     if (!requiredSpell)
         return guid.IsEmpty() || !totem || totem->GetDistance(bot) > 30.0f;
@@ -427,13 +442,23 @@ bool NoAirTotemTrigger::IsActive()
         }
     }
 
-    // Define supported air totem strategies for this slot:
-    static const char* names[] = {"wrath of air", "windfury", "nature resistance", "grounding totem"};
+    // Define supported air totem strategies for this slot ("grounding" is the strategy name, see
+    // GroundingTotemStrategy::getName):
+    static const char* names[] = {"wrath of air", "windfury", "nature resistance", "grounding"};
     static const uint32* spells[] = {WRATH_OF_AIR_TOTEM, WINDFURY_TOTEM, NATURE_RESISTANCE_TOTEM, GROUNDING_TOTEM};
     static const size_t counts[] = {WRATH_OF_AIR_TOTEM_COUNT, WINDFURY_TOTEM_COUNT, NATURE_RESISTANCE_TOTEM_COUNT,
                                     GROUNDING_TOTEM_COUNT};
 
-    uint32 requiredSpell = GetRequiredTotemSpellId(botAI, names, spells, counts, 3);
+    uint32 requiredSpell = GetRequiredTotemSpellId(botAI, names, spells, counts, 4);
+
+    // EXCEPTION: If Grounding Totem is out and in range, consider the slot "occupied" (do not fire the
+    // trigger). It is dropped to eat a single incoming cast and only lives a few seconds, so the air
+    // upkeep totem must not overwrite it before that cast lands.
+    for (size_t i = 0; i < GROUNDING_TOTEM_COUNT; ++i)
+    {
+        if (currentSpell == GROUNDING_TOTEM[i] && totem && totem->GetDistance(bot) <= 30.0f)
+            return false;
+    }
 
     // If no relevant strategy, only care if the slot is empty or totem is too far away
     if (!requiredSpell)

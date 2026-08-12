@@ -6,6 +6,8 @@
 #include "DpsTargetValue.h"
 
 #include "Battleground.h"
+#include "BattlegroundEY.h"
+#include "BattlegroundWS.h"
 #include "ObjectGuid.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
@@ -28,6 +30,17 @@ namespace
     using ai::pvp::IsCastingHelpfulSpell;
     using ai::pvp::IsEnemyPlayerOrOwnedUnit;
     using ai::pvp::IsNearObjective;
+
+    Player* GetControllingPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        return unit->GetCharmerOrOwnerPlayerOrPlayerItself();
+    }
 
     bool IsPvpTargetingContext(Player* bot)
     {
@@ -146,8 +159,15 @@ public:
 
         bool const isHighPriority = IsHighPriority(target);
         bool const isEnemyPlayerUnit = IsEnemyPlayerOrOwnedUnit(botAI, target);
+        // A battleground NPC fighting any teammate is a legitimate target, not just one fighting the
+        // bot or a friendly healer. The narrower test made bots walk away from objective NPCs the
+        // moment any enemy player came into range.
+        Unit* const npcVictim = target->GetVictim();
+        Player* const npcVictimPlayer = npcVictim ? GetControllingPlayer(npcVictim) : nullptr;
         bool const isNpcCombatTarget =
-            allowNpcCombatTarget && !isEnemyPlayerUnit && (target->GetVictim() == bot || IsAttackingFriendlyHealer(botAI, target));
+            allowNpcCombatTarget && !isEnemyPlayerUnit &&
+            (npcVictim == bot || IsAttackingFriendlyHealer(botAI, target) ||
+             (npcVictimPlayer && !botAI->IsOpposing(npcVictimPlayer)));
         if (!isEnemyPlayerUnit && !isHighPriority && !isNpcCombatTarget)
             return;
 
@@ -175,6 +195,13 @@ public:
 
         if (isEnemyPlayerUnit)
             score += 220;
+
+        // The enemy flag carrier is the single most valuable kill in Warsong Gulch and Eye of the
+        // Storm, but nothing in the scorer knew about him - he was ranked like any other enemy.
+        if (playerTarget && (playerTarget->HasAura(BG_WS_SPELL_WARSONG_FLAG) ||
+                             playerTarget->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
+                             playerTarget->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL)))
+            score += 1500;
 
         if (isEnemyHealer)
             score += 520;
@@ -547,7 +574,21 @@ Unit* DpsTargetValue::Calculate()
         if (Unit* enemyPlayer = botAI->GetAiObjectContext()->GetValue<Unit*>("enemy player target")->Get())
             checkGuid(enemyPlayer->GetGUID());
 
+        // "possible targets" is an unordered list out to the full sight range, so truncating it at a
+        // fixed count threw away the nearby enemies and kept whatever happened to be listed first.
+        // Sort by distance before applying the cap.
         GuidVector possibleTargets = botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets")->Get();
+        std::sort(possibleTargets.begin(), possibleTargets.end(),
+                  [&](ObjectGuid const& left, ObjectGuid const& right)
+                  {
+                      Unit* leftUnit = botAI->GetUnit(left);
+                      Unit* rightUnit = botAI->GetUnit(right);
+                      if (!leftUnit || !rightUnit)
+                          return leftUnit != nullptr;
+
+                      return bot->GetExactDist2d(leftUnit) < bot->GetExactDist2d(rightUnit);
+                  });
+
         uint8 scanned = 0;
         for (ObjectGuid const& guid : possibleTargets)
         {
