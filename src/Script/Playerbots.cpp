@@ -879,7 +879,14 @@ public:
     {
         BGStrategyData data;
 
-        switch (bg->GetBgTypeID())
+        // A battleground created from the random queue keeps BATTLEGROUND_RB as its real type id and
+        // carries the rolled map in the random type id, so without resolving it every random-queue
+        // match would fall through to the default and run with the plain default strategy pair.
+        BattlegroundTypeId bgType = bg->GetBgTypeID();
+        if (bgType == BATTLEGROUND_RB)
+            bgType = bg->GetBgTypeID(true);
+
+        switch (bgType)
         {
             case BATTLEGROUND_WS:
                 data.allianceStrategy = urand(0, WS_STRATEGY_MAX - 1);
@@ -904,7 +911,13 @@ public:
         bgStrategies[bg->GetInstanceID()] = data;
     }
 
-    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override { bgStrategies.erase(bg->GetInstanceID()); }
+    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override
+    {
+        bgStrategies.erase(bg->GetInstanceID());
+        // Instance ids are reused, so per-instance Alliance tactic state that outlives the match
+        // would be read back as if it belonged to the next one.
+        BGTactics::OnBattlegroundEnd(bg->GetInstanceID());
+    }
 };
 
 // Workaround for missing InitEnabledHooksIfNeeded for new BattlefieldScript in ScriptMgr

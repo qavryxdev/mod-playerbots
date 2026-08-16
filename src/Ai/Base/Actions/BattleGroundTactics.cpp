@@ -1738,10 +1738,11 @@ static bool IsAllianceNodeUnderHordePressure(BattlegroundAV* av, uint8 nodeId)
     if (node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE && node.PrevOwnerId == TEAM_ALLIANCE)
         return true;
 
-    if (IsAllianceHomeGraveyard(nodeId) && node.State == POINT_CONTROLLED && node.OwnerId == TEAM_HORDE)
-        return true;
-
-    return IsAllianceDefensiveTower(nodeId) && node.State == POINT_DESTROYED;
+    // A destroyed bunker is gone for the rest of the match, so it is a settled loss rather than a
+    // node under pressure. Counting it kept the defensive-pressure total permanently above zero
+    // from the first bunker that burned, which in turn made "the north is quiet" unreachable and
+    // pinned the whole northern reserve in place for the remainder of the game.
+    return IsAllianceHomeGraveyard(nodeId) && node.State == POINT_CONTROLLED && node.OwnerId == TEAM_HORDE;
 }
 
 static bool AllianceHasDunBaldarCorePressure(BattlegroundAV* av)
@@ -2070,10 +2071,9 @@ static bool AsyncAVAllianceNodeUnderHordePressure(std::array<AsyncAVNodeSnapshot
     if (node.state == POINT_ASSAULTED && node.ownerId == TEAM_HORDE && node.prevOwnerId == TEAM_ALLIANCE)
         return true;
 
-    if (IsAllianceHomeGraveyard(nodeId) && node.state == POINT_CONTROLLED && node.ownerId == TEAM_HORDE)
-        return true;
-
-    return IsAllianceDefensiveTower(nodeId) && node.state == POINT_DESTROYED;
+    // Kept in step with the synchronous predicate: a destroyed bunker is a settled loss, not
+    // pressure, so it must not hold the pressure total above zero for the rest of the match.
+    return IsAllianceHomeGraveyard(nodeId) && node.state == POINT_CONTROLLED && node.ownerId == TEAM_HORDE;
 }
 
 static bool AsyncAVHordeTowerAssaultedNearCompletion(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
@@ -2192,11 +2192,12 @@ static bool AsyncAVAllianceHasFinalDrekWindow(std::array<AsyncAVNodeSnapshot, BG
            result.allianceSouth >= 12;
 }
 
-static uint8 AllianceAVDrekFinisherRoleFloor(uint32 towersDown)
+static uint8 AllianceAVDrekFinisherRoleFloor(uint32 /*towersDown*/)
 {
-    // Keep a larger execution group while the fourth tower is still burning. Once all marshals are gone, a smaller
-    // group can finish Drek while the recalled bots reinforce the north.
-    return towersDown >= 4 ? 7 : 6;
+    // One floor for the whole final window. Raising it as the last tower died revoked the finisher
+    // status of every role-6 bot already standing in Drek's room at the exact moment the kill became
+    // possible, and sent them back across the map into a northern assignment they cannot serve.
+    return 6;
 }
 
 static bool AsyncAVAllianceHasCommittedFrostwolfFoothold(
@@ -2662,11 +2663,28 @@ static bool AsyncAVAllianceBunkerRecapperEligible(AsyncAVPlayerSnapshot const& p
     return player.guid && player.isBot && player.teamId == TEAM_ALLIANCE && player.alive && player.role < 9;
 }
 
-static float AsyncAVAllianceBunkerRecapScore(AsyncAVPlayerSnapshot const& player, Position const& bunkerPosition)
+static float AsyncAVAllianceBunkerRecapDistanceSq(AsyncAVPlayerSnapshot const& player, Position const& bunkerPosition)
 {
     float const dx = player.x - bunkerPosition.GetPositionX();
     float const dy = player.y - bunkerPosition.GetPositionY();
-    float score = dx * dx + dy * dy;
+    return dx * dx + dy * dy;
+}
+
+// How far a recapper can still be and arrive in time. Bunkers are only contested during a full
+// recall, when the northern bots are dead and the nearest live candidate can be standing at
+// Frostwolf - eighteen hundred yards and several minutes away from a timer that runs out in four.
+// Walking that bot across the map takes it out of the match for nothing, so cap the reach at what
+// the remaining timer can actually cover and leave the bunker unassigned when nobody is in range.
+static float AsyncAVAllianceBunkerRecapReachSq(uint32 remainingMs)
+{
+    float const reachable = remainingMs ? (static_cast<float>(remainingMs) / 1000.0f) * 7.0f : 600.0f;
+    float const reach = std::min(600.0f, reachable);
+    return reach * reach;
+}
+
+static float AsyncAVAllianceBunkerRecapScore(AsyncAVPlayerSnapshot const& player, Position const& bunkerPosition)
+{
+    float score = AsyncAVAllianceBunkerRecapDistanceSq(player, bunkerPosition);
 
     // Prefer a bot approaching from the south. A bot already far north of the bunker should not turn around unless
     // there is no returning candidate, and combat is a preference penalty rather than a hard exclusion.
@@ -2706,12 +2724,16 @@ static void AsyncAVBuildAllianceBunkerRecapAssignments(AsyncAVStrategyJob const&
             continue;
 
         Position const& bunkerPosition = positionItr->second.pos;
+        float const reachSq = AsyncAVAllianceBunkerRecapReachSq(job.nodes[nodeId].timer);
         AsyncAVPlayerSnapshot const* best = nullptr;
         float bestScore = FLT_MAX;
         for (AsyncAVPlayerSnapshot const& player : job.players)
         {
             if (!AsyncAVAllianceBunkerRecapperEligible(player) ||
                 std::find(assignedBots.begin(), assignedBots.end(), player.guid) != assignedBots.end())
+                continue;
+
+            if (AsyncAVAllianceBunkerRecapDistanceSq(player, bunkerPosition) > reachSq)
                 continue;
 
             float const score = AsyncAVAllianceBunkerRecapScore(player, bunkerPosition);
@@ -2732,7 +2754,11 @@ static void AsyncAVBuildAllianceBunkerRecapAssignments(AsyncAVStrategyJob const&
                 continue;
 
             previous = AsyncAVFindPlayerSnapshot(job, guid);
-            if (!previous || !AsyncAVAllianceBunkerRecapperEligible(*previous))
+            // The reach test is re-run every cycle against the shrinking timer, so a recapper that
+            // can no longer make it is handed back to the normal objective chain instead of walking
+            // out the rest of the match.
+            if (!previous || !AsyncAVAllianceBunkerRecapperEligible(*previous) ||
+                AsyncAVAllianceBunkerRecapDistanceSq(*previous, bunkerPosition) > reachSq)
                 previous = nullptr;
             break;
         }
@@ -2871,7 +2897,7 @@ public:
                      static_cast<uint32>(sample.allianceBunkerRecapNodes.size()),
                      GetAllianceAVBattlefieldModeName(static_cast<AllianceAVBattlefieldMode>(sample.allianceMode)),
                      GetAllianceAVThreatLevelName(static_cast<AllianceAVThreatLevel>(sample.allianceThreat)),
-                     static_cast<uint32>(sample.allianceDefenderLimit), static_cast<uint32>(_workers.size()));
+                     static_cast<uint32>(sample.allianceDefenderLimit), _workerCount.load());
         }
     }
 
@@ -2998,17 +3024,44 @@ public:
         return false;
     }
 
+    // Drops everything the cache still holds for a finished battleground so the tables do not grow
+    // for the whole server uptime.
+    void Forget(uint32 instanceId)
+    {
+        {
+            std::lock_guard<std::mutex> lock(_requestMutex);
+            _lastRequestMs.erase(instanceId);
+        }
+
+        std::lock_guard<std::mutex> lock(_resultWriteMutex);
+        std::shared_ptr<AsyncAVStrategyResultMap const> current =
+            std::atomic_load_explicit(&_results, std::memory_order_acquire);
+        if (!current || current->find(instanceId) == current->end())
+            return;
+
+        std::shared_ptr<AsyncAVStrategyResultMap> next = std::make_shared<AsyncAVStrategyResultMap>(*current);
+        next->erase(instanceId);
+
+        std::shared_ptr<AsyncAVStrategyResultMap const> published = next;
+        std::atomic_store_explicit(&_results, published, std::memory_order_release);
+    }
+
 private:
+    // Request() runs per bot on the parallel map threads while Update() runs on the world thread, so
+    // both can reach the worker set at the same time. Without this lock two battlegrounds starting
+    // together could each spawn a full worker set, and a config flip could join and clear the vector
+    // underneath a map thread that is still inside EnsureStarted().
     void EnsureStarted()
     {
         uint32 threadCount = sPlayerbotAIConfig.asyncAVStrategyCacheThreads;
         if (!threadCount)
             threadCount = std::max<uint32>(1u, std::thread::hardware_concurrency());
 
+        std::lock_guard<std::mutex> lock(_lifecycleMutex);
         if (!_workers.empty() && _workers.size() == threadCount)
             return;
 
-        Stop();
+        StopLocked();
 
         _stopping.store(false);
         _running.store(true);
@@ -3016,10 +3069,17 @@ private:
         for (uint32 i = 0; i < threadCount; ++i)
             _workers.emplace_back(&AsyncAVStrategyCache::WorkerLoop, this);
 
+        _workerCount.store(static_cast<uint32>(_workers.size()));
         LOG_INFO("playerbots", "AsyncAVStrategyCache started with {} worker thread(s)", threadCount);
     }
 
     void Stop()
+    {
+        std::lock_guard<std::mutex> lock(_lifecycleMutex);
+        StopLocked();
+    }
+
+    void StopLocked()
     {
         if (_workers.empty())
             return;
@@ -3037,6 +3097,7 @@ private:
                 worker.join();
 
         _workers.clear();
+        _workerCount.store(0);
         _stopping.store(false);
 
         {
@@ -3156,7 +3217,9 @@ private:
         std::atomic_store_explicit(&_results, published, std::memory_order_release);
     }
 
+    std::mutex _lifecycleMutex;
     std::vector<std::thread> _workers;
+    std::atomic<uint32> _workerCount{0};
     std::mutex _jobMutex;
     std::condition_variable _jobCondition;
     std::deque<std::shared_ptr<AsyncAVStrategyJob>> _jobs;
@@ -3169,7 +3232,8 @@ private:
     std::mutex _requestMutex;
     std::unordered_map<uint32, uint32> _lastRequestMs;
 
-    uint32 _nextGeneration = 0;
+    // Stamped from every map thread that queues a job.
+    std::atomic<uint32> _nextGeneration{0};
     uint32 _logTimer = 0;
     uint32 _lastLoggedGeneration = 0;
 };
@@ -3193,6 +3257,40 @@ static bool TryGetAsyncAVPlayersNear(Battleground* bg, TeamId teamId, float x, f
 }  // namespace
 
 void BGTactics::UpdateAsyncAVStrategyCache(uint32 diff) { AsyncAVStrategyCache::Instance().Update(diff); }
+
+void BGTactics::OnBattlegroundEnd(uint32 instanceId)
+{
+    // Every table below is keyed by the battleground instance and nothing else ever removes an
+    // entry, so without this each finished match leaves its tactical state behind until the server
+    // restarts. The per-bot stall samples carry the instance in their key for the same reason.
+    {
+        std::lock_guard<std::mutex> guard(avAllianceModeStatesMutex);
+        avAllianceModeStates.erase(instanceId);
+    }
+
+    {
+        std::lock_guard<std::mutex> guard(avAllianceIcebloodBeachheadStatesMutex);
+        avAllianceIcebloodBeachheadStates.erase(instanceId);
+    }
+
+    {
+        std::lock_guard<std::mutex> guard(avAllianceDebugLogTimersMutex);
+        avAllianceDebugLogTimers.erase(instanceId);
+    }
+
+    {
+        std::lock_guard<std::mutex> guard(avAllianceObjectiveStallStatesMutex);
+        for (auto itr = avAllianceObjectiveStallStates.begin(); itr != avAllianceObjectiveStallStates.end();)
+        {
+            if (static_cast<uint32>(itr->first >> 32) == instanceId)
+                itr = avAllianceObjectiveStallStates.erase(itr);
+            else
+                ++itr;
+        }
+    }
+
+    AsyncAVStrategyCache::Instance().Forget(instanceId);
+}
 
 static AllianceAVRushInfo GetAllianceAVRushInfo(Battleground* bg, AVBotStrategy hordeStrategy)
 {
@@ -3604,9 +3702,9 @@ static AllianceAVBattlefieldMode ApplyAllianceAVModeHysteresis(Battleground* bg,
     return proposed;
 }
 
-static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(Battleground* bg, BattlegroundAV* av,
-                                                              AllianceAVRushInfo const& rushInfo,
-                                                              AllianceAVThreatLevel threat)
+static AllianceAVBattlefieldMode ProposeAllianceAVBattlefieldMode(Battleground* bg, BattlegroundAV* av,
+                                                                  AllianceAVRushInfo const& rushInfo,
+                                                                  AllianceAVThreatLevel threat)
 {
     if (!av)
         return AV_MODE_OPENING_CONTROL;
@@ -3621,13 +3719,13 @@ static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(Battleground* bg, 
          AllianceAVNodeControlledBy(av, BG_AV_NODES_FIRSTAID_STATION, TEAM_HORDE));
 
     if (dbEmergency)
-        return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_DUN_BALDAR_EMERGENCY);
+        return AV_MODE_DUN_BALDAR_EMERGENCY;
 
     if (threat >= AV_THREAT_HIGH)
-        return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_NORTH_DEFENSE);
+        return AV_MODE_NORTH_DEFENSE;
 
     if (finalDrekWindow && !AllianceDunBaldarBaseActuallyLost(av))
-        return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_DREK_PUSH);
+        return AV_MODE_DREK_PUSH;
 
     bool const ownsForwardGY = AllianceHasForwardDrekRespawn(av);
     bool const committedFrostwolf = AllianceHasCommittedFrostwolfFoothold(av, rushInfo, threat);
@@ -3639,35 +3737,65 @@ static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(Battleground* bg, 
     if (!icebloodControlled)
     {
         if (committedFrostwolf)
-            return ApplyAllianceAVModeHysteresis(bg, av, threat,
-                                                 towerProgress >= 2 ? AV_MODE_DREK_SETUP : AV_MODE_FROSTWOLF_LOCK);
+            return towerProgress >= 2 ? AV_MODE_DREK_SETUP : AV_MODE_FROSTWOLF_LOCK;
 
         if (AllianceHordeCaptainAlive(av))
-            return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_GALVANGAR_STRIKE);
+            return AV_MODE_GALVANGAR_STRIKE;
 
         if (AllianceAVNeedsIcebloodBreakthrough(av, rushInfo, threat, hordeStrategy))
-            return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_IBGY_BREAKTHROUGH);
+            return AV_MODE_IBGY_BREAKTHROUGH;
 
         if (icebloodAssaulted)
-            return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_IBGY_GUARD);
+            return AV_MODE_IBGY_GUARD;
 
-        return ApplyAllianceAVModeHysteresis(bg, av, threat,
-                                             rushInfo.elapsedMs < 90 * 1000 ? AV_MODE_OPENING_CONTROL : AV_MODE_IBGY_PUSH);
+        return rushInfo.elapsedMs < 90 * 1000 ? AV_MODE_OPENING_CONTROL : AV_MODE_IBGY_PUSH;
     }
 
     if (finalDrekWindow || (!AllianceHordeCaptainAlive(av) && ownsForwardGY && towersDown >= 3 && rushInfo.allianceSouth >= 12))
-        return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_DREK_PUSH);
+        return AV_MODE_DREK_PUSH;
 
     if (AllianceHasDrekSetupWindow(av, rushInfo, threat, towerProgress))
-        return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_DREK_SETUP);
+        return AV_MODE_DREK_SETUP;
 
     if (AllianceNeedsFrostwolfLock(av, rushInfo, threat))
-        return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_FROSTWOLF_LOCK);
+        return AV_MODE_FROSTWOLF_LOCK;
 
     if (AllianceHordeCaptainAlive(av) && rushInfo.elapsedMs >= 3 * 60 * 1000)
-        return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_GALVANGAR_STRIKE);
+        return AV_MODE_GALVANGAR_STRIKE;
 
-    return ApplyAllianceAVModeHysteresis(bg, av, threat, AV_MODE_SOUTH_TOWER_SPLIT);
+    return AV_MODE_SOUTH_TOWER_SPLIT;
+}
+
+static AllianceAVBattlefieldMode GetAllianceAVBattlefieldMode(Battleground* bg, BattlegroundAV* av,
+                                                              AllianceAVRushInfo const& rushInfo,
+                                                              AllianceAVThreatLevel threat)
+{
+    return ApplyAllianceAVModeHysteresis(bg, av, threat,
+                                         ProposeAllianceAVBattlefieldMode(bg, av, rushInfo, threat));
+}
+
+// The latch is shared by the whole battleground, so anything that only wants to read the current
+// plan must not push a proposal of its own into it. Two writers per tick disagree at every mode
+// boundary, and because the sticky branch hands back the held mode without refreshing its
+// timestamp, that disagreement re-latches the sticky mode a minute at a time for the whole match.
+static AllianceAVBattlefieldMode PeekAllianceAVModeLatch(Battleground* bg, AllianceAVBattlefieldMode fallback)
+{
+    if (!bg)
+        return fallback;
+
+    std::lock_guard<std::mutex> modeGuard(avAllianceModeStatesMutex);
+    auto const itr = avAllianceModeStates.find(bg->GetInstanceID());
+    if (itr == avAllianceModeStates.end() || itr->second.sinceMs == 0)
+        return fallback;
+
+    return static_cast<AllianceAVBattlefieldMode>(itr->second.mode);
+}
+
+static AllianceAVBattlefieldMode PeekAllianceAVBattlefieldMode(Battleground* bg, BattlegroundAV* av,
+                                                               AllianceAVRushInfo const& rushInfo,
+                                                               AllianceAVThreatLevel threat)
+{
+    return PeekAllianceAVModeLatch(bg, ProposeAllianceAVBattlefieldMode(bg, av, rushInfo, threat));
 }
 
 struct AllianceAVCachedTactics
@@ -3687,7 +3815,10 @@ struct AllianceAVCachedTactics
     bool needsIcebloodMainForce = false;
 };
 
-static bool TryGetAsyncAllianceAVTactics(Battleground* bg, BattlegroundAV* av, AllianceAVCachedTactics& tactics)
+// latchMode = false for read-only callers such as the debug logger, which must observe the mode the
+// team is running without becoming a second producer of it.
+static bool TryGetAsyncAllianceAVTactics(Battleground* bg, BattlegroundAV* av, AllianceAVCachedTactics& tactics,
+                                         bool latchMode = true)
 {
     if (!sPlayerbotAIConfig.asyncAVTacticalOrders || !bg || !av)
         return false;
@@ -3710,8 +3841,9 @@ static bool TryGetAsyncAllianceAVTactics(Battleground* bg, BattlegroundAV* av, A
     tactics.rushInfo.allianceSouth = cached.allianceSouth;
     tactics.rushInfo.level = static_cast<AllianceAVRushLevel>(cached.allianceRushLevel);
     tactics.threat = static_cast<AllianceAVThreatLevel>(cached.allianceThreat);
-    tactics.mode = ApplyAllianceAVModeHysteresis(bg, av, tactics.threat,
-                                                 static_cast<AllianceAVBattlefieldMode>(cached.allianceMode));
+    AllianceAVBattlefieldMode const cachedMode = static_cast<AllianceAVBattlefieldMode>(cached.allianceMode);
+    tactics.mode = latchMode ? ApplyAllianceAVModeHysteresis(bg, av, tactics.threat, cachedMode)
+                             : PeekAllianceAVModeLatch(bg, cachedMode);
     tactics.towersDown = cached.hordeTowersDown;
     tactics.towerProgress = cached.hordeTowerProgress;
     tactics.defensivePressure = cached.allianceDefensivePressure;
@@ -3863,7 +3995,7 @@ static bool AllianceAVCanUseNearbyFlagDuringControlTempo(Player* bot, Battlegrou
     AVBotStrategy const hordeStrategy = static_cast<AVBotStrategy>(BGTactics::GetBotStrategyForTeam(bg, TEAM_HORDE));
     AllianceAVRushInfo const rushInfo = GetAllianceAVRushInfo(bg, hordeStrategy);
     AllianceAVThreatLevel const threat = GetAllianceAVThreatLevel(av, rushInfo);
-    AllianceAVBattlefieldMode const mode = GetAllianceAVBattlefieldMode(bg, av, rushInfo, threat);
+    AllianceAVBattlefieldMode const mode = PeekAllianceAVBattlefieldMode(bg, av, rushInfo, threat);
     bool const holdIcebloodBeachhead = AllianceAVShouldHoldIcebloodBeachhead(bg, av, threat, hordeStrategy);
     bool const icebloodBeachheadPlan = AllianceAVShouldUseIcebloodBeachheadPlan(bg, av, threat, hordeStrategy);
     bool const icebloodBreakthrough = AllianceAVNeedsIcebloodBreakthrough(av, rushInfo, threat, hordeStrategy);
@@ -3889,20 +4021,30 @@ static bool AllianceAVCanUseNearbyFlagDuringControlTempo(Player* bot, Battlegrou
     return true;
 }
 
+// The sample is kept per battleground as well as per bot: the clock comes from the battleground and
+// restarts near zero in the next match, so an entry left over from an earlier one would sit in the
+// future and switch the detector off until the new match caught up with it.
+static uint64 AllianceAVObjectiveStallKey(Battleground* bg, Player* bot)
+{
+    return (static_cast<uint64>(bg->GetInstanceID()) << 32) | static_cast<uint64>(bot->GetGUID().GetCounter());
+}
+
 static bool AllianceAVShouldResetStalledObjective(Player* bot, Battleground* bg, PositionInfo const& objectivePos)
 {
-    if (!bot || !bg || !objectivePos.valueSet || bot->isMoving() || bot->IsInCombat() ||
+    // Combat is not an exemption: a bot wedged at a contested tower is normally in combat, which is
+    // exactly the state this is meant to notice.
+    if (!bot || !bg || !objectivePos.valueSet || bot->isMoving() ||
         PlayerHasFlag::IsCapturingFlag(bot) || AllianceAVIsCastingAnySpell(bot))
         return false;
 
+    uint64 const botId = AllianceAVObjectiveStallKey(bg, bot);
     if (bot->GetDistance(objectivePos.x, objectivePos.y, objectivePos.z) < 8.0f)
     {
         std::lock_guard<std::mutex> guard(avAllianceObjectiveStallStatesMutex);
-        avAllianceObjectiveStallStates.erase(bot->GetGUID().GetCounter());
+        avAllianceObjectiveStallStates.erase(botId);
         return false;
     }
 
-    uint64 const botId = bot->GetGUID().GetCounter();
     uint32 const now = bg->GetStartTime();
     float const botX = bot->GetPositionX();
     float const botY = bot->GetPositionY();
@@ -3915,7 +4057,7 @@ static bool AllianceAVShouldResetStalledObjective(Player* bot, Battleground* bg,
     float const objectiveMovedX = objectivePos.x - state.objectiveX;
     float const objectiveMovedY = objectivePos.y - state.objectiveY;
 
-    bool const changed = state.sinceMs == 0 ||
+    bool const changed = state.sinceMs == 0 || now < state.sinceMs ||
         movedX * movedX + movedY * movedY > 9.0f ||
         objectiveMovedX * objectiveMovedX + objectiveMovedY * objectiveMovedY > 25.0f;
 
@@ -3940,6 +4082,13 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
     if (!bot || !bg || !av || !objectivePos.valueSet || bot->GetTeamId() != TEAM_ALLIANCE ||
         PlayerHasFlag::IsCapturingFlag(bot) || AllianceAVIsCastingAnySpell(bot))
         return false;
+
+    // First, not last. Every rule below is allowed to end the evaluation early, and the contested
+    // defence rule in particular covers the assaulted bunkers and towers whose access path is the
+    // one that actually fails - so as the final statement this never ran for the objectives that
+    // need it, and the sample it keeps was never advanced either.
+    if (AllianceAVShouldResetStalledObjective(bot, bg, objectivePos))
+        return true;
 
     bool const fullRecall = AllianceAVShouldFullRecallNorth(av, threat);
     bool const contestedAllianceDefenseObjective =
@@ -4028,7 +4177,7 @@ static bool AllianceAVShouldResetCurrentObjective(Player* bot, Battleground* bg,
          threat >= AV_THREAT_HIGH || AllianceHasDunBaldarCorePressure(av)))
         return true;
 
-    return AllianceAVShouldResetStalledObjective(bot, bg, objectivePos);
+    return false;
 }
 
 static uint8 GetAllianceAVRushDefenderLimit(BattlegroundAV* av, AllianceAVRushInfo const& rushInfo,
@@ -4999,24 +5148,54 @@ static GameObject* SelectAllianceAVDefenderObjective(Player* bot, Battleground* 
         float distance = 0.0f;
     };
 
-    std::vector<Candidate> candidates;
-    for (auto const& [nodeId, goId] : AV_DefendObjectives_Alliance)
+    // A node the Horde has just assaulted no longer shows the Alliance banner: the core despawns it
+    // and spawns the contested Horde variant instead. Looking only at the Alliance banner while the
+    // rush filter demands an assaulted node asked for two states that cannot hold at once, so the
+    // candidate list came back empty for every node whenever a rush was running.
+    auto bannerFor = [&](uint8 nodeId, uint32 allianceGoId, BG_AV_NodeInfo const& node) -> GameObject*
     {
-        BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
-        if (node.State == POINT_DESTROYED)
-            continue;
+        if (node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE)
+        {
+            for (auto const& table : {AV_AllianceGraveyardRecapObjectives, AV_AllianceTowerRecapObjectives})
+                for (auto const& [recapNodeId, recapGoId] : table)
+                    if (recapNodeId == nodeId)
+                        if (GameObject* contested = bg->GetBGObject(recapGoId))
+                            if (contested->isSpawned())
+                                return contested;
+        }
 
-        if (rushInfo.IsActive() &&
-            !(node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE && node.PrevOwnerId == TEAM_ALLIANCE))
-            continue;
+        GameObject* go = bg->GetBGObject(allianceGoId);
+        return go && go->isSpawned() ? go : nullptr;
+    };
 
-        GameObject* go = bg->GetBGObject(goId);
-        if (!go || !go->isSpawned())
-            continue;
+    auto collect = [&](bool applyRushFilter, std::vector<Candidate>& out)
+    {
+        for (auto const& [nodeId, goId] : AV_DefendObjectives_Alliance)
+        {
+            BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+            if (node.State == POINT_DESTROYED)
+                continue;
 
-        candidates.push_back({go, GetAllianceAVDefenderPriority(nodeId, node, rushInfo), node.Timer,
-                              bot->GetDistance(go)});
-    }
+            if (applyRushFilter &&
+                !(node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE && node.PrevOwnerId == TEAM_ALLIANCE))
+                continue;
+
+            GameObject* go = bannerFor(nodeId, goId, node);
+            if (!go)
+                continue;
+
+            out.push_back({go, GetAllianceAVDefenderPriority(nodeId, node, rushInfo), node.Timer,
+                           bot->GetDistance(go)});
+        }
+    };
+
+    std::vector<Candidate> candidates;
+    collect(rushInfo.IsActive(), candidates);
+
+    // The rush filter narrows defence to nodes actually under attack. When none qualify it must not
+    // leave the defender with nothing at all - fall back to defending what we still hold.
+    if (candidates.empty() && rushInfo.IsActive())
+        collect(false, candidates);
 
     if (candidates.empty())
         return nullptr;
@@ -5939,10 +6118,49 @@ static WorldObject* SelectAllianceControlTempoObjective(Player* bot, Battlegroun
         return boss;
     }
 
+    // Everything above carries a role floor, and they can all be empty for the same bot at once:
+    // while the captain rule blocks the towers, roles below the guard floors own no southern job at
+    // all. Holding a node the Alliance is capturing is work for any role, so take that first.
+    for (auto const& [nodeId, goId] : AV_AllianceAssaultGuardObjectives)
+    {
+        BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+        if (node.State != POINT_ASSAULTED || node.OwnerId != TEAM_ALLIANCE)
+            continue;
+
+        if (!AllianceHasAnySouthRespawn(av) && IsAllianceForwardGraveyardAttackTarget(nodeId))
+            continue;
+
+        if (GameObject* go = bg->GetBGObject(goId))
+            if (go->isSpawned())
+            {
+                objectiveReason = "control tempo any assaulted node";
+                return go;
+            }
+    }
+
     objectiveReason = "control tempo hold forward";
     if (GameObject* go = bg->GetBGObject(BG_AV_OBJECT_FLAG_A_FROSTWOLF_GRAVE))
         if (go->isSpawned())
             return go;
+
+    // The captain is what blocks the towers for these roles in the first place, so joining that
+    // fight is the one thing that makes their own objectives available again.
+    if (AllianceAVMustKillCaptainBeforeTowers(av))
+    {
+        if (Creature* captain = GetAllianceHordeCaptain(bg, av))
+        {
+            objectiveReason = "control tempo captain fallback";
+            return captain;
+        }
+    }
+
+    // Last stop before handing back nothing: the Iceblood banner exists in some form whenever the
+    // southern push is alive, and standing with the raid beats standing still.
+    if (GameObject* iceblood = SelectAllianceIcebloodGraveyardHoldObjective(bg))
+    {
+        objectiveReason = "control tempo iceblood hold fallback";
+        return iceblood;
+    }
 
     return nullptr;
 }
@@ -6036,7 +6254,7 @@ static void LogAllianceAVMoveDebug(Player* bot, Battleground* bg, PositionInfo c
     AllianceAVThreatLevel threat = AV_THREAT_NONE;
     AllianceAVBattlefieldMode mode = AV_MODE_OPENING_CONTROL;
     AllianceAVCachedTactics cachedAllianceTactics;
-    bool const hasCachedAllianceTactics = TryGetAsyncAllianceAVTactics(bg, av, cachedAllianceTactics);
+    bool const hasCachedAllianceTactics = TryGetAsyncAllianceAVTactics(bg, av, cachedAllianceTactics, false);
     if (hasCachedAllianceTactics)
     {
         rushInfo = cachedAllianceTactics.rushInfo;
@@ -6046,7 +6264,7 @@ static void LogAllianceAVMoveDebug(Player* bot, Battleground* bg, PositionInfo c
     else
     {
         threat = GetAllianceAVThreatLevel(av, rushInfo);
-        mode = GetAllianceAVBattlefieldMode(bg, av, rushInfo, threat);
+        mode = PeekAllianceAVBattlefieldMode(bg, av, rushInfo, threat);
     }
 
     if (defenderLimit == 255)
@@ -6607,7 +6825,10 @@ bool BGTactics::Execute(Event /*event*/)
             case POINT_MOTION_TYPE:
                 break;
             default:
-                return true;
+                // The bot is standing still under a generator this action does not drive, so nothing
+                // was done here. Claiming success would end the tick and suppress every other queued
+                // action as well, and no one on this path ever clears the generator.
+                return false;
         }
 
         if (vFlagIds && atFlag(*vPaths, *vFlagIds))
@@ -6641,7 +6862,7 @@ bool BGTactics::Execute(Event /*event*/)
                 return true;
 
             bool const moved = moveToObjective(true);
-            if (!moved && bg->GetBgTypeID() == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+            if (!moved && bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
             {
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
                 PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
@@ -6651,7 +6872,7 @@ bool BGTactics::Execute(Event /*event*/)
             return moved;
         }
 
-        if (bg->GetBgTypeID() == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
             return true;
 
         // bot with flag should only move to objective
@@ -6662,7 +6883,7 @@ bool BGTactics::Execute(Event /*event*/)
         if (!startNewPathBegin(*vPaths))
         {
             bool const moved = moveToObjective(true);
-            if (!moved && bg->GetBgTypeID() == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+            if (!moved && bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
             {
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
                 PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
@@ -6675,7 +6896,7 @@ bool BGTactics::Execute(Event /*event*/)
         if (!startNewPathFree(*vPaths))
         {
             bool const moved = moveToObjective(true);
-            if (!moved && bg->GetBgTypeID() == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+            if (!moved && bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
             {
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
                 PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
@@ -6714,6 +6935,11 @@ bool BGTactics::moveToStart(bool force)
     if (bgType == BATTLEGROUND_RB)
         bgType = bg->GetBgTypeID(true);
 
+    // Reporting success for a move that was never issued ends the tick with the bot standing still
+    // and no other action allowed to run - and the Eye of the Storm branch below has no body at all,
+    // so it claimed success unconditionally.
+    bool moved = false;
+
     if (bgType == BATTLEGROUND_WS)
     {
         uint32 role = context->GetValue<uint32>("bg role")->Get();
@@ -6722,54 +6948,54 @@ bool BGTactics::moveToStart(bool force)
         if (startSpot == BB_WSG_WAIT_SPOT_RIGHT)
         {
             if (bot->GetTeamId() == TEAM_HORDE)
-                MoveTo(bg->GetMapId(), WS_WAITING_POS_HORDE_1.GetPositionX() + frand(-4.0f, 4.0f),
-                       WS_WAITING_POS_HORDE_1.GetPositionY() + frand(-4.0f, 4.0f),
-                       WS_WAITING_POS_HORDE_1.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), WS_WAITING_POS_HORDE_1.GetPositionX() + frand(-4.0f, 4.0f),
+                               WS_WAITING_POS_HORDE_1.GetPositionY() + frand(-4.0f, 4.0f),
+                               WS_WAITING_POS_HORDE_1.GetPositionZ());
             else
-                MoveTo(bg->GetMapId(), WS_WAITING_POS_ALLIANCE_1.GetPositionX() + frand(-4.0f, 4.0f),
-                       WS_WAITING_POS_ALLIANCE_1.GetPositionY() + frand(-4.0f, 4.0f),
-                       WS_WAITING_POS_ALLIANCE_1.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), WS_WAITING_POS_ALLIANCE_1.GetPositionX() + frand(-4.0f, 4.0f),
+                               WS_WAITING_POS_ALLIANCE_1.GetPositionY() + frand(-4.0f, 4.0f),
+                               WS_WAITING_POS_ALLIANCE_1.GetPositionZ());
         }
         else if (startSpot == BB_WSG_WAIT_SPOT_LEFT)
         {
             if (bot->GetTeamId() == TEAM_HORDE)
-                MoveTo(bg->GetMapId(), WS_WAITING_POS_HORDE_2.GetPositionX() + frand(-4.0f, 4.0f),
-                       WS_WAITING_POS_HORDE_2.GetPositionY() + frand(-4.0f, 4.0f),
-                       WS_WAITING_POS_HORDE_2.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), WS_WAITING_POS_HORDE_2.GetPositionX() + frand(-4.0f, 4.0f),
+                               WS_WAITING_POS_HORDE_2.GetPositionY() + frand(-4.0f, 4.0f),
+                               WS_WAITING_POS_HORDE_2.GetPositionZ());
             else
-                MoveTo(bg->GetMapId(), WS_WAITING_POS_ALLIANCE_2.GetPositionX() + frand(-4.0f, 4.0f),
-                       WS_WAITING_POS_ALLIANCE_2.GetPositionY() + frand(-4.0f, 4.0f),
-                       WS_WAITING_POS_ALLIANCE_2.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), WS_WAITING_POS_ALLIANCE_2.GetPositionX() + frand(-4.0f, 4.0f),
+                               WS_WAITING_POS_ALLIANCE_2.GetPositionY() + frand(-4.0f, 4.0f),
+                               WS_WAITING_POS_ALLIANCE_2.GetPositionZ());
         }
         else  // BB_WSG_WAIT_SPOT_SPAWN
         {
             if (bot->GetTeamId() == TEAM_HORDE)
-                MoveTo(bg->GetMapId(), WS_WAITING_POS_HORDE_3.GetPositionX() + frand(-10.0f, 10.0f),
-                       WS_WAITING_POS_HORDE_3.GetPositionY() + frand(-10.0f, 10.0f),
-                       WS_WAITING_POS_HORDE_3.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), WS_WAITING_POS_HORDE_3.GetPositionX() + frand(-10.0f, 10.0f),
+                               WS_WAITING_POS_HORDE_3.GetPositionY() + frand(-10.0f, 10.0f),
+                               WS_WAITING_POS_HORDE_3.GetPositionZ());
             else
-                MoveTo(bg->GetMapId(), WS_WAITING_POS_ALLIANCE_3.GetPositionX() + frand(-10.0f, 10.0f),
-                       WS_WAITING_POS_ALLIANCE_3.GetPositionY() + frand(-10.0f, 10.0f),
-                       WS_WAITING_POS_ALLIANCE_3.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), WS_WAITING_POS_ALLIANCE_3.GetPositionX() + frand(-10.0f, 10.0f),
+                               WS_WAITING_POS_ALLIANCE_3.GetPositionY() + frand(-10.0f, 10.0f),
+                               WS_WAITING_POS_ALLIANCE_3.GetPositionZ());
         }
     }
     else if (bgType == BATTLEGROUND_AB)
     {
         if (bot->GetTeamId() == TEAM_HORDE)
-            MoveTo(bg->GetMapId(), AB_WAITING_POS_HORDE.GetPositionX() + frand(-7.0f, 7.0f),
-                   AB_WAITING_POS_HORDE.GetPositionY() + frand(-2.0f, 2.0f), AB_WAITING_POS_HORDE.GetPositionZ());
+            moved = MoveTo(bg->GetMapId(), AB_WAITING_POS_HORDE.GetPositionX() + frand(-7.0f, 7.0f),
+                           AB_WAITING_POS_HORDE.GetPositionY() + frand(-2.0f, 2.0f), AB_WAITING_POS_HORDE.GetPositionZ());
         else
-            MoveTo(bg->GetMapId(), AB_WAITING_POS_ALLIANCE.GetPositionX() + frand(-7.0f, 7.0f),
-                   AB_WAITING_POS_ALLIANCE.GetPositionY() + frand(-2.0f, 2.0f), AB_WAITING_POS_ALLIANCE.GetPositionZ());
+            moved = MoveTo(bg->GetMapId(), AB_WAITING_POS_ALLIANCE.GetPositionX() + frand(-7.0f, 7.0f),
+                           AB_WAITING_POS_ALLIANCE.GetPositionY() + frand(-2.0f, 2.0f), AB_WAITING_POS_ALLIANCE.GetPositionZ());
     }
     else if (bgType == BATTLEGROUND_AV)
     {
         if (bot->GetTeamId() == TEAM_HORDE)
-            MoveTo(bg->GetMapId(), AV_WAITING_POS_HORDE.GetPositionX() + frand(-5.0f, 5.0f),
-                   AV_WAITING_POS_HORDE.GetPositionY() + frand(-3.0f, 3.0f), AV_WAITING_POS_HORDE.GetPositionZ());
+            moved = MoveTo(bg->GetMapId(), AV_WAITING_POS_HORDE.GetPositionX() + frand(-5.0f, 5.0f),
+                           AV_WAITING_POS_HORDE.GetPositionY() + frand(-3.0f, 3.0f), AV_WAITING_POS_HORDE.GetPositionZ());
         else
-            MoveTo(bg->GetMapId(), AV_WAITING_POS_ALLIANCE.GetPositionX() + frand(-5.0f, 5.0f),
-                   AV_WAITING_POS_ALLIANCE.GetPositionY() + frand(-3.0f, 3.0f), AV_WAITING_POS_ALLIANCE.GetPositionZ());
+            moved = MoveTo(bg->GetMapId(), AV_WAITING_POS_ALLIANCE.GetPositionX() + frand(-5.0f, 5.0f),
+                           AV_WAITING_POS_ALLIANCE.GetPositionY() + frand(-3.0f, 3.0f), AV_WAITING_POS_ALLIANCE.GetPositionZ());
     }
     else if (bgType == BATTLEGROUND_EY)
     {
@@ -6791,36 +7017,36 @@ bool BGTactics::moveToStart(bool force)
         if (bot->GetTeamId() == TEAM_HORDE)
         {
             if (role == 9)  // refinery
-                MoveTo(bg->GetMapId(), IC_WEST_WAITING_POS_HORDE.GetPositionX() + frand(-5.0f, 5.0f),
-                       IC_WEST_WAITING_POS_HORDE.GetPositionY() + frand(-5.0f, 5.0f),
-                       IC_WEST_WAITING_POS_HORDE.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), IC_WEST_WAITING_POS_HORDE.GetPositionX() + frand(-5.0f, 5.0f),
+                               IC_WEST_WAITING_POS_HORDE.GetPositionY() + frand(-5.0f, 5.0f),
+                               IC_WEST_WAITING_POS_HORDE.GetPositionZ());
             else if (role >= 3 && role < 6)  // hanger
-                MoveTo(bg->GetMapId(), IC_EAST_WAITING_POS_HORDE.GetPositionX() + frand(-5.0f, 5.0f),
-                       IC_EAST_WAITING_POS_HORDE.GetPositionY() + frand(-5.0f, 5.0f),
-                       IC_EAST_WAITING_POS_HORDE.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), IC_EAST_WAITING_POS_HORDE.GetPositionX() + frand(-5.0f, 5.0f),
+                               IC_EAST_WAITING_POS_HORDE.GetPositionY() + frand(-5.0f, 5.0f),
+                               IC_EAST_WAITING_POS_HORDE.GetPositionZ());
             else  // everything else
-                MoveTo(bg->GetMapId(), IC_WAITING_POS_HORDE.GetPositionX() + frand(-5.0f, 5.0f),
-                       IC_WAITING_POS_HORDE.GetPositionY() + frand(-5.0f, 5.0f), IC_WAITING_POS_HORDE.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), IC_WAITING_POS_HORDE.GetPositionX() + frand(-5.0f, 5.0f),
+                               IC_WAITING_POS_HORDE.GetPositionY() + frand(-5.0f, 5.0f), IC_WAITING_POS_HORDE.GetPositionZ());
         }
         else
         {
             if (role < 3)  // docks
-                MoveTo(
+                moved = MoveTo(
                     bg->GetMapId(), IC_WAITING_POS_ALLIANCE.GetPositionX() + frand(-5.0f, 5.0f),
                     IC_WAITING_POS_ALLIANCE.GetPositionY() + frand(-5.0f, 5.0f),
                     IC_WAITING_POS_ALLIANCE.GetPositionZ());  // dont bother using west, there's no paths to use anyway
             else if (role == 9 || (role >= 3 && role < 6))    // quarry and hanger
-                MoveTo(bg->GetMapId(), IC_EAST_WAITING_POS_ALLIANCE.GetPositionX() + frand(-5.0f, 5.0f),
-                       IC_EAST_WAITING_POS_ALLIANCE.GetPositionY() + frand(-5.0f, 5.0f),
-                       IC_EAST_WAITING_POS_ALLIANCE.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), IC_EAST_WAITING_POS_ALLIANCE.GetPositionX() + frand(-5.0f, 5.0f),
+                               IC_EAST_WAITING_POS_ALLIANCE.GetPositionY() + frand(-5.0f, 5.0f),
+                               IC_EAST_WAITING_POS_ALLIANCE.GetPositionZ());
             else  // everything else
-                MoveTo(bg->GetMapId(), IC_WAITING_POS_ALLIANCE.GetPositionX() + frand(-5.0f, 5.0f),
-                       IC_WAITING_POS_ALLIANCE.GetPositionY() + frand(-5.0f, 5.0f),
-                       IC_WAITING_POS_ALLIANCE.GetPositionZ());
+                moved = MoveTo(bg->GetMapId(), IC_WAITING_POS_ALLIANCE.GetPositionX() + frand(-5.0f, 5.0f),
+                               IC_WAITING_POS_ALLIANCE.GetPositionY() + frand(-5.0f, 5.0f),
+                               IC_WAITING_POS_ALLIANCE.GetPositionZ());
         }
     }
 
-    return true;
+    return moved;
 }
 
 bool BGTactics::selectObjective(bool reset)
@@ -7382,6 +7608,20 @@ bool BGTactics::selectObjective(bool reset)
                     BgObjective = SelectAllianceAVDefenderObjective(bot, bg, av, allianceRushInfo);
                     if (BgObjective)
                         objectiveReason = "alliance defender weighted objective";
+                    else if (SetAllianceNorthReservePosition(bot, posMap, pos, role, objectiveReason))
+                    {
+                        // Every Alliance node can be destroyed, held by us and quiet, or simply out
+                        // of banner range at once, and a defender caught out in the Field of Strife
+                        // during a rush reaches this point with its southern objective already
+                        // stripped. The anti-rush rally is a real place to walk to, which is what
+                        // the defender needs; returning nothing leaves it standing where it froze.
+                        LOG_DEBUG("playerbots",
+                                  "AV objective bot={} role={} strategy={} enemyStrategy={} reason={} node={} state={} owner={} prevOwner={} timer={} distance={:.1f}",
+                                  bot->GetName(), static_cast<uint32>(role), static_cast<uint32>(strategy),
+                                  static_cast<uint32>(enemyStrategy), objectiveReason, 255, 255, 255, 255, 0,
+                                  ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y));
+                        return true;
+                    }
                 }
                 else
                 {
@@ -7635,6 +7875,24 @@ bool BGTactics::selectObjective(bool reset)
                 }
 
                 return true;
+            }
+
+            // Terminal fallback. The three generic last resorts above - captain, enemy boss and the
+            // attacker block that holds the only unconditional posMap write - are all gated on
+            // "not Alliance CONTROL_TEMPO", and Alterac Valley is the one battleground whose
+            // Alliance strategy is fixed rather than rolled (Playerbots.cpp sets it to
+            // CONTROL_TEMPO unconditionally). That makes the gate permanent, so without something
+            // here the Alliance branch can only fall through to `return false` with no position
+            // set - and nothing downstream can move a bot that has no destination, so it stands
+            // still for the rest of the match. Horde never had this hole.
+            if (team == TEAM_ALLIANCE && !pos.isSet())
+            {
+                if (SetAllianceNorthReservePosition(bot, posMap, pos, role, objectiveReason))
+                {
+                    LogAllianceAVMoveDebug(bot, bg, pos, "select_objective_terminal_fallback", role,
+                                           defendersProhab, isDefender, AI_VALUE(Unit*, "enemy player target"));
+                    return true;
+                }
             }
 
             if (team == TEAM_ALLIANCE)
@@ -8683,15 +8941,25 @@ bool BGTactics::moveToObjective(bool ignoreDist)
     if (!pos.isSet())
     {
         bool const selected = selectObjective();
-        if (!selected && bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        if (!selected)
         {
-            uint8 const role = context->GetValue<uint32>("bg role")->Get();
-            LogAllianceAVMoveDebug(bot, bg, pos, "no_objective_select_failed", role, 255, false,
-                                   AI_VALUE(Unit*, "enemy player target"));
+            if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+            {
+                uint8 const role = context->GetValue<uint32>("bg role")->Get();
+                LogAllianceAVMoveDebug(bot, bg, pos, "no_objective_select_failed", role, 255, false,
+                                       AI_VALUE(Unit*, "enemy player target"));
+            }
+            return false;
         }
-        return selected;
+
+        // Choosing a destination is not moving to it. Returning straight after the choice spent the
+        // whole tick deciding and issued no movement, so the bot visibly stalled every time it had
+        // to re-pick - and a bot that re-picks often enough never moves at all.
+        pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+        if (!pos.isSet())
+            return true;
     }
-    else
+
     {
         if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
         {
@@ -8912,10 +9180,8 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         // get bots out of cave when they respawn there (otherwise path selection happens while they're deep within cave
         // and the results arent good)
         Position const caveSpawn = bot->GetTeamId() == TEAM_ALLIANCE ? AV_CAVE_SPAWN_ALLIANCE : AV_CAVE_SPAWN_HORDE;
-        if (bot->GetDistance(caveSpawn) < 16.0f)
-        {
-            return moveToStart(true);
-        }
+        if (bot->GetDistance(caveSpawn) < 16.0f && moveToStart(true))
+            return true;
 
         PositionInfo const botPos(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
         if (bot->GetTeamId() == TEAM_ALLIANCE)
@@ -9005,6 +9271,13 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
     bool chosenPathReverse = false;
     float nearestPathDistance = FLT_MAX;
 
+    // Best path that only failed the "too far from the bot" test, kept so that a bot standing off
+    // every path still gets a route instead of nothing.
+    float farPathScore = FLT_MAX;
+    BattleBotPath* farPath = nullptr;
+    uint32 farPathPoint = 0;
+    bool farPathReverse = false;
+
     float botDistanceLimit = 50.0f;         // limit for how far path can be from bot
     float botDistanceScoreSubtract = 8.0f;  // path score modifier - lower = less likely to chose a further path (it's
                                             // basically the distance from bot that's ignored)
@@ -9081,11 +9354,16 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
             nearestPathDistance = closestPointDistToBot;
 
         // don't pick path where bot is already closest to the paths closest point to target (it means path cant lead it
-        // anywhere) don't pick path where closest point is too far away
+        // anywhere)
         uint32 const terminalPathPoint = reverse ? 0u : static_cast<uint32>(path->size() - 1);
-        if (closestPointIndex < 0 || static_cast<uint32>(closestPointIndex) == terminalPathPoint ||
-            closestPointDistToBot > botDistanceLimit)
+        if (closestPointIndex < 0 || static_cast<uint32>(closestPointIndex) == terminalPathPoint)
             continue;
+
+        // don't pick path where closest point is too far away. closestPointDistToBot is the square
+        // root of a real distance (see the TODO above) while the limit is in yards, so squaring it
+        // back is what puts the two in the same space - compared directly, an 80 yard cap really
+        // asked for 6400 yards and never rejected anything.
+        bool const beyondBotDistanceLimit = closestPointDistToBot * closestPointDistToBot > botDistanceLimit;
 
         // creates a score based on dist-to-bot and dist-to-destination, where lower is better, and dist-to-bot is more
         // important (when its beyond a certain distance) dist-to-bot is more important because otherwise they cant
@@ -9100,6 +9378,18 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         // LOG_INFO("playerbots", "bot={}\t{:6.1f}\t{:4.1f}\t{:4.1f}\t{}", bot->GetName(), pathScore,
         // closestPointDistToBot, distToDestination, vPaths_AB_name[pathNum]);
 
+        if (beyondBotDistanceLimit)
+        {
+            if (farPathScore > pathScore)
+            {
+                farPathScore = pathScore;
+                farPath = path;
+                farPathPoint = closestPointIndex;
+                farPathReverse = reverse;
+            }
+            continue;
+        }
+
         if (chosenPathScore > pathScore)
         {
             chosenPathScore = pathScore;
@@ -9108,6 +9398,15 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
             chosenPathReverse = reverse;
             // chosenPathIndex = index;
         }
+    }
+
+    // The distance cap is a preference, not a veto: when the bot is off every path the best distant
+    // one still leads somewhere, and refusing it would leave this tick with no movement at all.
+    if (!chosenPath && farPath)
+    {
+        chosenPath = farPath;
+        chosenPathPoint = farPathPoint;
+        chosenPathReverse = farPathReverse;
     }
 
     if (!chosenPath)
@@ -9148,7 +9447,7 @@ bool BGTactics::resetObjective()
     if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
     {
         std::lock_guard<std::mutex> guard(avAllianceObjectiveStallStatesMutex);
-        avAllianceObjectiveStallStates.erase(bot->GetGUID().GetCounter());
+        avAllianceObjectiveStallStates.erase(AllianceAVObjectiveStallKey(bg, bot));
     }
 
     bool isCarryingFlag =
@@ -9162,11 +9461,35 @@ bool BGTactics::resetObjective()
 
     // Reset objective position
     PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
-    PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+    PositionInfo const previous = posMap["bg objective"];
+    PositionInfo pos = previous;
     pos.Reset();
     posMap["bg objective"] = pos;
 
-    return selectObjective(true);
+    if (selectObjective(true))
+        return true;
+
+    // Alterac Valley deliberately never re-rolls the role, because roles come from the shared team
+    // assignment and re-rolling would fight it. But a role whose work has run out leaves the bot
+    // with nothing to do and no way out of that role, so allow exactly one re-roll once selection
+    // has already failed outright.
+    if (bgType == BATTLEGROUND_AV && !isCarryingFlag)
+    {
+        context->GetValue<uint32>("bg role")->Set(urand(0, 9));
+        if (selectObjective(true))
+            return true;
+    }
+
+    // Nothing better was found. Handing the previous destination back beats leaving the bot with
+    // none at all - otherwise the reset, whose whole job is to unstick the bot, is itself what
+    // strands it.
+    if (previous.isSet())
+    {
+        posMap["bg objective"] = previous;
+        return true;
+    }
+
+    return false;
 }
 
 bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 currentPoint, bool reverse)

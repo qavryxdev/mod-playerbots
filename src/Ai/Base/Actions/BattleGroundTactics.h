@@ -109,6 +109,9 @@ public:
     static bool HandleConsoleCommand(ChatHandler* handler, char const* args);
     uint8 static GetBotStrategyForTeam(Battleground* bg, TeamId teamId);
     static void UpdateAsyncAVStrategyCache(uint32 diff);
+    // Call from the battleground-end hook: the Alliance AV tables are keyed by instance id and have
+    // no other owner, so they only shrink when the match that filled them tells them to.
+    static void OnBattlegroundEnd(uint32 instanceId);
 
     BGTactics(PlayerbotAI* botAI, std::string const name = "bg tactics") : MovementAction(botAI, name) {}
 

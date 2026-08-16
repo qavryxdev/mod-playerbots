@@ -15,13 +15,29 @@
 #include "BattlegroundAV.h"
 #include "BattlegroundEY.h"
 
+namespace
+{
+    // A battleground entered through the random queue keeps BATTLEGROUND_RB as its real type id and
+    // stores the rolled map in the random type id; Player::GetBattlegroundTypeId() carries the same
+    // queued alias. Comparing either of those raw values against a map id silently misses every
+    // random-queue match, which leaves the map specific triggers below permanently inactive there.
+    BattlegroundTypeId GetRealBattlegroundTypeId(Battleground* bg)
+    {
+        if (!bg)
+            return BATTLEGROUND_TYPE_NONE;
+
+        BattlegroundTypeId const bgType = bg->GetBgTypeID();
+        return bgType == BATTLEGROUND_RB ? bg->GetBgTypeID(true) : bgType;
+    }
+}
+
 bool EnemyPlayerNear::IsActive() { return AI_VALUE(Unit*, "enemy player target"); }
 
 bool PlayerHasNoFlag::IsActive()
 {
     if (botAI->GetBot()->InBattleground())
     {
-        if (botAI->GetBot()->GetBattlegroundTypeId() == BattlegroundTypeId::BATTLEGROUND_WS)
+        if (GetRealBattlegroundTypeId(botAI->GetBot()->GetBattleground()) == BattlegroundTypeId::BATTLEGROUND_WS)
         {
             BattlegroundWS* bg = (BattlegroundWS*)botAI->GetBot()->GetBattleground();
             if (!(bg->GetFlagState(bg->GetOtherTeamId(bot->GetTeamId())) == BG_WS_FLAG_STATE_ON_PLAYER))
@@ -101,7 +117,7 @@ bool PlayerIsInBattlegroundWithoutFlag::IsActive()
 {
     if (botAI->GetBot()->InBattleground())
     {
-        if (botAI->GetBot()->GetBattlegroundTypeId() == BattlegroundTypeId::BATTLEGROUND_WS)
+        if (GetRealBattlegroundTypeId(botAI->GetBot()->GetBattleground()) == BattlegroundTypeId::BATTLEGROUND_WS)
         {
             BattlegroundWS* bg = (BattlegroundWS*)botAI->GetBot()->GetBattleground();
             if (!(bg->GetFlagState(bg->GetOtherTeamId(bot->GetTeamId())) == BG_WS_FLAG_STATE_ON_PLAYER))
@@ -129,7 +145,9 @@ bool PlayerHasFlag::IsCapturingFlag(Player* bot)
 {
     if (bot->InBattleground())
     {
-        if (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS)
+        BattlegroundTypeId const bgType = GetRealBattlegroundTypeId(bot->GetBattleground());
+
+        if (bgType == BATTLEGROUND_WS)
         {
             BattlegroundWS* bg = (BattlegroundWS*)bot->GetBattleground();
             // bot is horde and has ally flag
@@ -163,7 +181,7 @@ bool PlayerHasFlag::IsCapturingFlag(Player* bot)
             return false;  // bot doesn't have flag
         }
 
-        if (bot->GetBattlegroundTypeId() == BATTLEGROUND_EY)
+        if (bgType == BATTLEGROUND_EY)
         {
             BattlegroundEY* bg = (BattlegroundEY*)bot->GetBattleground();
 
@@ -198,7 +216,7 @@ bool TeamHasFlag::IsActive()
     if (!botAI->GetBot()->InBattleground())
         return false;
 
-    if (botAI->GetBot()->GetBattlegroundTypeId() != BattlegroundTypeId::BATTLEGROUND_WS)
+    if (GetRealBattlegroundTypeId(botAI->GetBot()->GetBattleground()) != BattlegroundTypeId::BATTLEGROUND_WS)
         return false;
 
     BattlegroundWS* bg = (BattlegroundWS*)botAI->GetBot()->GetBattleground();
@@ -222,7 +240,7 @@ bool EnemyTeamHasFlag::IsActive()
 {
     if (botAI->GetBot()->InBattleground())
     {
-        if (botAI->GetBot()->GetBattlegroundTypeId() == BattlegroundTypeId::BATTLEGROUND_WS)
+        if (GetRealBattlegroundTypeId(botAI->GetBot()->GetBattleground()) == BattlegroundTypeId::BATTLEGROUND_WS)
         {
             BattlegroundWS* bg = (BattlegroundWS*)botAI->GetBot()->GetBattleground();
 
@@ -269,7 +287,7 @@ bool EnemyFlagCarrierNear::IsActive()
 
 bool TeamFlagCarrierNear::IsActive()
 {
-    if (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS)
+    if (GetRealBattlegroundTypeId(bot->GetBattleground()) == BATTLEGROUND_WS)
     {
         BattlegroundWS* bg = dynamic_cast<BattlegroundWS*>(bot->GetBattleground());
         if (bg)
@@ -317,15 +335,17 @@ bool AllianceNoSnowfallGY::IsActive()
     if (!bot || bot->GetTeamId() != TEAM_ALLIANCE)
         return false;
 
+    // No battlefield-plan restriction here: this is the only movement the alterac strategy brings of
+    // its own, and a northern bot that is standing still needs it under every Alliance plan. The move
+    // action still declines while the bot is moving or in combat, so raising its priority only takes
+    // effect on a tick the bot would otherwise spend idle.
     Battleground* bg = bot->GetBattleground();
-    if (bg && BGTactics::GetBotStrategyForTeam(bg, TEAM_ALLIANCE) != AV_STRATEGY_BALANCED)
-        return false;
 
     float botX = bot->GetPositionX();
     if (botX <= -562.0f)
         return false;
 
-    if (bot->GetBattlegroundTypeId() != BATTLEGROUND_AV)
+    if (GetRealBattlegroundTypeId(bg) != BATTLEGROUND_AV)
         return false;
 
     if (BattlegroundAV* av = dynamic_cast<BattlegroundAV*>(bg))

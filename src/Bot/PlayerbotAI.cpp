@@ -5799,8 +5799,15 @@ Player* PlayerbotAI::FindNewMaster()
         if ((!memberBotAI || memberBotAI->IsRealPlayer()) && !bot->InBattleground())
             return member;
 
-        if (bot->InBattleground() && bot->GetBattleground() &&
-            bot->GetBattleground()->GetBgTypeID() == BATTLEGROUND_AV && !GET_PLAYERBOT_AI(member) &&
+        // A battleground entered from the random queue reports BATTLEGROUND_RB, so the real type has
+        // to be resolved before comparing - otherwise this whole branch silently never runs for the
+        // majority of Alterac Valley matches.
+        Battleground* memberBg = bot->InBattleground() ? bot->GetBattleground() : nullptr;
+        BattlegroundTypeId memberBgType = memberBg ? memberBg->GetBgTypeID() : BATTLEGROUND_TYPE_NONE;
+        if (memberBgType == BATTLEGROUND_RB && memberBg)
+            memberBgType = memberBg->GetBgTypeID(true);
+
+        if (memberBg && memberBgType == BATTLEGROUND_AV && !GET_PLAYERBOT_AI(member) &&
             member->InBattleground() && bot->GetMapId() == member->GetMapId())
         {
             // Skip if same BG but same subgroup or lower level
