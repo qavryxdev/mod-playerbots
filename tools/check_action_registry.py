@@ -125,7 +125,10 @@ def main() -> int:
     referenced_triggers: dict[str, list[str]] = defaultdict(list)
 
     for entry in scanned:
-        rel = os.path.relpath(entry["path"], args.src)
+        # Normalise the separator: a baseline generated on Windows must still match on the
+        # Linux build host, otherwise every entry looks new and the check fails permanently
+        # exactly where it is meant to run.
+        rel = os.path.relpath(entry["path"], args.src).replace(os.sep, "/")
         for kind, name, line in entry["creators"]:
             table = registered_triggers if kind == "trigger" else registered_actions
             table.setdefault(name, f"{rel}:{line}")

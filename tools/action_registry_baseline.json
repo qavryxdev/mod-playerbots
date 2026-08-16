@@ -2,2071 +2,2046 @@
  [
   "MISSING-ACTION",
   "TODO",
-  "Ai\\Dungeon\\AzjolNerub\\Strategy\\AzjolNerubStrategy.cpp:22"
+  "Ai/Dungeon/AzjolNerub/Strategy/AzjolNerubStrategy.cpp:22"
  ],
  [
   "MISSING-ACTION",
   "akil'zon main tank position boss",
-  "Ai\\Raid\\ZulAman\\Strategy\\RaidZulAmanStrategy.cpp:20"
+  "Ai/Raid/ZulAman/Strategy/RaidZulAmanStrategy.cpp:20"
  ],
  [
   "MISSING-ACTION",
   "avoid energize cores",
-  "Ai\\Dungeon\\Oculus\\Strategy\\OculusStrategy.cpp:24"
+  "Ai/Dungeon/Oculus/Strategy/OculusStrategy.cpp:24"
  ],
  [
   "MISSING-ACTION",
   "finish ready check",
-  "Ai\\Base\\Strategy\\WorldPacketHandlerStrategy.cpp:46"
+  "Ai/Base/Strategy/WorldPacketHandlerStrategy.cpp:46"
  ],
  [
   "MISSING-ACTION",
   "heroic throw taunt",
-  "Ai\\Class\\Warrior\\Strategy\\TankWarriorStrategy.cpp:102"
+  "Ai/Class/Warrior/Strategy/TankWarriorStrategy.cpp:102"
  ],
  [
   "MISSING-ACTION",
   "jan'alai main tank position boss",
-  "Ai\\Raid\\ZulAman\\Strategy\\RaidZulAmanStrategy.cpp:46"
+  "Ai/Raid/ZulAman/Strategy/RaidZulAmanStrategy.cpp:46"
  ],
  [
   "MISSING-ACTION",
   "quest confirm",
-  "Ai\\Base\\Strategy\\WorldPacketHandlerStrategy.cpp:67"
+  "Ai/Base/Strategy/WorldPacketHandlerStrategy.cpp:67"
  ],
  [
   "MISSING-ACTION",
   "reset",
-  "Ai\\Base\\Strategy\\CombatStrategy.cpp:41"
+  "Ai/Base/Strategy/CombatStrategy.cpp:41"
  ],
  [
   "MISSING-ACTION",
   "say::aoe",
-  "Ai\\Base\\Strategy\\SayStrategy.cpp:19"
+  "Ai/Base/Strategy/SayStrategy.cpp:19"
  ],
  [
   "MISSING-ACTION",
   "say::critical health",
-  "Ai\\Base\\Strategy\\SayStrategy.cpp:13"
+  "Ai/Base/Strategy/SayStrategy.cpp:13"
  ],
  [
   "MISSING-ACTION",
   "say::low ammo",
-  "Ai\\Class\\Hunter\\Strategy\\GenericHunterNonCombatStrategy.cpp:21"
+  "Ai/Class/Hunter/Strategy/GenericHunterNonCombatStrategy.cpp:21"
  ],
  [
   "MISSING-ACTION",
   "say::low health",
-  "Ai\\Base\\Strategy\\SayStrategy.cpp:15"
+  "Ai/Base/Strategy/SayStrategy.cpp:15"
  ],
  [
   "MISSING-ACTION",
   "say::low mana",
-  "Ai\\Base\\Strategy\\SayStrategy.cpp:17"
+  "Ai/Base/Strategy/SayStrategy.cpp:17"
  ],
  [
   "MISSING-ACTION",
   "say::taunt",
-  "Ai\\Base\\Strategy\\SayStrategy.cpp:18"
+  "Ai/Base/Strategy/SayStrategy.cpp:18"
  ],
  [
   "MISSING-ACTION",
   "stay line",
-  "Bot\\Engine\\Strategy\\Strategy.cpp:74"
+  "Bot/Engine/Strategy/Strategy.cpp:74"
  ],
  [
   "MISSING-ACTION",
   "taunt spell",
-  "Ai\\Raid\\Icecrown\\Strategy\\RaidIccStrategy.cpp:43"
+  "Ai/Raid/Icecrown/Strategy/RaidIccStrategy.cpp:43"
  ],
  [
   "MISSING-ACTION",
   "thorim fall from floor action",
-  "Ai\\Raid\\Ulduar\\Strategy\\RaidUlduarStrategy.cpp:182"
+  "Ai/Raid/Ulduar/Strategy/RaidUlduarStrategy.cpp:182"
  ],
  [
   "MISSING-ACTION",
   "zul'jin main tank position boss",
-  "Ai\\Raid\\ZulAman\\Strategy\\RaidZulAmanStrategy.cpp:91"
+  "Ai/Raid/ZulAman/Strategy/RaidZulAmanStrategy.cpp:91"
  ],
  [
   "MISSING-TRIGGER",
   "akil'zon boss engaged by main tank",
-  "Ai\\Raid\\ZulAman\\Strategy\\RaidZulAmanStrategy.cpp:19"
+  "Ai/Raid/ZulAman/Strategy/RaidZulAmanStrategy.cpp:19"
  ],
  [
   "MISSING-TRIGGER",
   "blessing of might",
-  "Ai\\Class\\Paladin\\Strategy\\OffhealRetPaladinStrategy.cpp:177"
+  "Ai/Class/Paladin/Strategy/OffhealRetPaladinStrategy.cpp:177"
  ],
  [
   "MISSING-TRIGGER",
   "boost",
-  "Ai\\Class\\Priest\\Strategy\\GenericPriestStrategy.cpp:83"
+  "Ai/Class/Priest/Strategy/GenericPriestStrategy.cpp:83"
  ],
  [
   "MISSING-TRIGGER",
   "bwl",
-  "Ai\\Base\\Strategy\\ChatCommandHandlerStrategy.cpp:95"
- ],
- [
-  "MISSING-TRIGGER",
-  "chaos bolt",
-  "Ai\\Class\\Warlock\\Strategy\\DestructionWarlockStrategy.cpp:91"
- ],
- [
-  "MISSING-TRIGGER",
-  "conflagrate",
-  "Ai\\Class\\Warlock\\Strategy\\DestructionWarlockStrategy.cpp:83"
+  "Ai/Base/Strategy/ChatCommandHandlerStrategy.cpp:95"
  ],
  [
   "MISSING-TRIGGER",
   "jan'alai boss engaged by main tank",
-  "Ai\\Raid\\ZulAman\\Strategy\\RaidZulAmanStrategy.cpp:45"
+  "Ai/Raid/ZulAman/Strategy/RaidZulAmanStrategy.cpp:45"
  ],
  [
   "MISSING-TRIGGER",
   "location stuck",
-  "Ai\\Base\\Strategy\\DeadStrategy.cpp:27"
+  "Ai/Base/Strategy/DeadStrategy.cpp:27"
  ],
  [
   "MISSING-TRIGGER",
   "master loot roll",
-  "Ai\\Base\\Strategy\\WorldPacketHandlerStrategy.cpp:64"
+  "Ai/Base/Strategy/WorldPacketHandlerStrategy.cpp:64"
  ],
  [
   "MISSING-TRIGGER",
   "naxx",
-  "Ai\\Base\\Strategy\\ChatCommandHandlerStrategy.cpp:93"
+  "Ai/Base/Strategy/ChatCommandHandlerStrategy.cpp:93"
  ],
  [
   "MISSING-TRIGGER",
   "quest confirm",
-  "Ai\\Base\\Strategy\\WorldPacketHandlerStrategy.cpp:67"
+  "Ai/Base/Strategy/WorldPacketHandlerStrategy.cpp:67"
  ],
  [
   "MISSING-TRIGGER",
   "tank aoe",
-  "Ai\\Base\\Strategy\\SayStrategy.cpp:18"
+  "Ai/Base/Strategy/SayStrategy.cpp:18"
  ],
  [
   "MISSING-TRIGGER",
   "yogg-saron shadow resistance trigger",
-  "Ai\\Raid\\Ulduar\\Strategy\\RaidUlduarStrategy.cpp:253"
+  "Ai/Raid/Ulduar/Strategy/RaidUlduarStrategy.cpp:253"
  ],
  [
   "MISSING-TRIGGER",
   "zul'jin boss engaged by main tank",
-  "Ai\\Raid\\ZulAman\\Strategy\\RaidZulAmanStrategy.cpp:90"
+  "Ai/Raid/ZulAman/Strategy/RaidZulAmanStrategy.cpp:90"
  ],
  [
   "DEAD-ACTION",
   "akil'zon tanks position boss",
-  "Ai\\Raid\\ZulAman\\RaidZulAmanActionContext.h:25"
+  "Ai/Raid/ZulAman/RaidZulAmanActionContext.h:25"
  ],
  [
   "DEAD-ACTION",
   "anub'rekhan choose target",
-  "Ai\\Raid\\Naxxramas\\RaidNaxxActionContext.h:43"
+  "Ai/Raid/Naxxramas/RaidNaxxActionContext.h:43"
  ],
  [
   "DEAD-ACTION",
   "apply poison",
-  "Ai\\Base\\ActionContext.h:166"
+  "Ai/Base/ActionContext.h:166"
  ],
  [
   "DEAD-ACTION",
   "aquatic form",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:185"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:189"
  ],
  [
   "DEAD-ACTION",
   "attack",
-  "Ai\\Base\\ActionContext.h:90"
+  "Ai/Base/ActionContext.h:90"
  ],
  [
   "DEAD-ACTION",
   "attack least hp target",
-  "Ai\\Base\\ActionContext.h:140"
+  "Ai/Base/ActionContext.h:140"
  ],
  [
   "DEAD-ACTION",
   "aura",
-  "Ai\\Base\\ChatActionContext.h:110"
+  "Ai/Base/ChatActionContext.h:110"
  ],
  [
   "DEAD-ACTION",
   "auto talents",
-  "Ai\\Base\\ActionContext.h:179"
+  "Ai/Base/ActionContext.h:179"
  ],
  [
   "DEAD-ACTION",
   "autogear",
-  "Ai\\Base\\ChatActionContext.h:141"
+  "Ai/Base/ChatActionContext.h:141"
  ],
  [
   "DEAD-ACTION",
   "bank",
-  "Ai\\Base\\ChatActionContext.h:153"
+  "Ai/Base/ChatActionContext.h:153"
  ],
  [
   "DEAD-ACTION",
   "battle shout taunt",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:210"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:210"
  ],
  [
   "DEAD-ACTION",
   "bg attack fc",
-  "Ai\\Base\\ActionContext.h:222"
+  "Ai/Base/ActionContext.h:222"
  ],
  [
   "DEAD-ACTION",
   "bg leave",
-  "Ai\\Base\\WorldPacketActionContext.h:104"
+  "Ai/Base/WorldPacketActionContext.h:104"
  ],
  [
   "DEAD-ACTION",
   "bg select objective",
-  "Ai\\Base\\ActionContext.h:220"
+  "Ai/Base/ActionContext.h:220"
  ],
  [
   "DEAD-ACTION",
   "bg tactics",
-  "Ai\\Base\\ActionContext.h:216"
+  "Ai/Base/ActionContext.h:216"
  ],
  [
   "DEAD-ACTION",
   "boost",
-  "Ai\\Class\\Hunter\\HunterAiObjectContext.cpp:175"
+  "Ai/Class/Hunter/HunterAiObjectContext.cpp:175"
  ],
  [
   "DEAD-ACTION",
   "buff",
-  "Ai\\Base\\ChatActionContext.h:150"
+  "Ai/Base/ChatActionContext.h:150"
  ],
  [
   "DEAD-ACTION",
   "buy petition",
-  "Ai\\Base\\ActionContext.h:200"
+  "Ai/Base/ActionContext.h:200"
  ],
  [
   "DEAD-ACTION",
   "calc",
-  "Ai\\Base\\ChatActionContext.h:201"
+  "Ai/Base/ChatActionContext.h:201"
  ],
  [
   "DEAD-ACTION",
   "cancel aquatic form",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:193"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:197"
  ],
  [
   "DEAD-ACTION",
   "cancel bear form",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:189"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:193"
  ],
  [
   "DEAD-ACTION",
   "cancel cat form",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:191"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:195"
  ],
  [
   "DEAD-ACTION",
   "cancel dire bear form",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:190"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:194"
  ],
  [
   "DEAD-ACTION",
   "cancel moonkin form",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:192"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:196"
  ],
  [
   "DEAD-ACTION",
   "cancel travel form",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:188"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:192"
  ],
  [
   "DEAD-ACTION",
   "cast random spell",
-  "Ai\\Base\\ActionContext.h:191"
+  "Ai/Base/ActionContext.h:191"
  ],
  [
   "DEAD-ACTION",
   "cdebug",
-  "Ai\\Base\\ChatActionContext.h:182"
+  "Ai/Base/ChatActionContext.h:182"
  ],
  [
   "DEAD-ACTION",
   "chastise",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:235"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:235"
  ],
  [
   "DEAD-ACTION",
   "chat",
-  "Ai\\Base\\ChatActionContext.h:146"
+  "Ai/Base/ChatActionContext.h:146"
  ],
  [
   "DEAD-ACTION",
   "cheat",
-  "Ai\\Base\\ChatActionContext.h:189"
+  "Ai/Base/ChatActionContext.h:189"
  ],
  [
   "DEAD-ACTION",
   "check values",
-  "Ai\\Base\\ActionContext.h:164"
+  "Ai/Base/ActionContext.h:164"
  ],
  [
   "DEAD-ACTION",
   "co",
-  "Ai\\Base\\ChatActionContext.h:135"
+  "Ai/Base/ChatActionContext.h:135"
  ],
  [
   "DEAD-ACTION",
   "confirm quest",
-  "Ai\\Base\\WorldPacketActionContext.h:80"
+  "Ai/Base/WorldPacketActionContext.h:80"
  ],
  [
   "DEAD-ACTION",
   "consume magic",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:234"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:234"
  ],
  [
   "DEAD-ACTION",
   "craft",
-  "Ai\\Base\\ChatActionContext.h:186"
+  "Ai/Base/ChatActionContext.h:186"
  ],
  [
   "DEAD-ACTION",
   "craft random item",
-  "Ai\\Base\\ActionContext.h:195"
+  "Ai/Base/ActionContext.h:195"
  ],
  [
   "DEAD-ACTION",
   "crpg",
-  "Ai\\Base\\ActionContext.h:82"
+  "Ai/Base/ActionContext.h:82"
  ],
  [
   "DEAD-ACTION",
   "cs",
-  "Ai\\Base\\ChatActionContext.h:183"
+  "Ai/Base/ChatActionContext.h:183"
  ],
  [
   "DEAD-ACTION",
   "de",
-  "Ai\\Base\\ChatActionContext.h:137"
+  "Ai/Base/ChatActionContext.h:137"
  ],
  [
   "DEAD-ACTION",
   "death rune mastery",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:219"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:221"
  ],
  [
   "DEAD-ACTION",
   "deathchill",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:198"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:200"
  ],
  [
   "DEAD-ACTION",
   "debug",
-  "Ai\\Base\\ChatActionContext.h:181"
+  "Ai/Base/ChatActionContext.h:181"
  ],
  [
   "DEAD-ACTION",
   "destroy",
-  "Ai\\Base\\ChatActionContext.h:148"
+  "Ai/Base/ChatActionContext.h:148"
  ],
  [
   "DEAD-ACTION",
   "distracting shot",
-  "Ai\\Class\\Hunter\\HunterAiObjectContext.cpp:156"
+  "Ai/Class/Hunter/HunterAiObjectContext.cpp:156"
  ],
  [
   "DEAD-ACTION",
   "divine protection on party",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:279"
- ],
- [
-  "DEAD-ACTION",
-  "drain life",
-  "Ai\\Class\\Warlock\\WarlockAiObjectContext.cpp:276"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:279"
  ],
  [
   "DEAD-ACTION",
   "drain mana",
-  "Ai\\Class\\Warlock\\WarlockAiObjectContext.cpp:275"
+  "Ai/Class/Warlock/WarlockAiObjectContext.cpp:281"
  ],
  [
   "DEAD-ACTION",
   "drop",
-  "Ai\\Base\\ChatActionContext.h:111"
+  "Ai/Base/ChatActionContext.h:111"
  ],
  [
   "DEAD-ACTION",
   "earth shield on party",
-  "Ai\\Class\\Shaman\\ShamanAiObjectContext.cpp:284"
+  "Ai/Class/Shaman/ShamanAiObjectContext.cpp:284"
  ],
  [
   "DEAD-ACTION",
   "elune's grace",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:231"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:231"
  ],
  [
   "DEAD-ACTION",
   "end pull",
-  "Ai\\Base\\ActionContext.h:116"
+  "Ai/Base/ActionContext.h:116"
  ],
  [
   "DEAD-ACTION",
   "equip upgrade",
-  "Ai\\Base\\ChatActionContext.h:142"
+  "Ai/Base/ChatActionContext.h:142"
  ],
  [
   "DEAD-ACTION",
   "explosive shot base",
-  "Ai\\Class\\Hunter\\HunterAiObjectContext.cpp:206"
+  "Ai/Class/Hunter/HunterAiObjectContext.cpp:206"
  ],
  [
   "DEAD-ACTION",
   "feedback",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:232"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:232"
  ],
  [
   "DEAD-ACTION",
   "flag",
-  "Ai\\Base\\ChatActionContext.h:187"
+  "Ai/Base/ChatActionContext.h:187"
  ],
  [
   "DEAD-ACTION",
   "flee to group leader",
-  "Ai\\Base\\ActionContext.h:134"
+  "Ai/Base/ActionContext.h:134"
  ],
  [
   "DEAD-ACTION",
   "formation",
-  "Ai\\Base\\ChatActionContext.h:176"
+  "Ai/Base/ChatActionContext.h:176"
  ],
  [
   "DEAD-ACTION",
   "free bg join",
-  "Ai\\Base\\ActionContext.h:192"
+  "Ai/Base/ActionContext.h:192"
  ],
  [
   "DEAD-ACTION",
   "gb",
-  "Ai\\Base\\ChatActionContext.h:152"
+  "Ai/Base/ChatActionContext.h:152"
+ ],
+ [
+  "DEAD-ACTION",
+  "ghost wolf",
+  "Ai/Class/Shaman/ShamanAiObjectContext.cpp:296"
  ],
  [
   "DEAD-ACTION",
   "ginvite",
-  "Ai\\Base\\ChatActionContext.h:190"
+  "Ai/Base/ChatActionContext.h:190"
  ],
  [
   "DEAD-ACTION",
   "give food",
-  "Ai\\Base\\ActionContext.h:170"
+  "Ai/Base/ActionContext.h:170"
  ],
  [
   "DEAD-ACTION",
   "give leader",
-  "Ai\\Base\\ChatActionContext.h:188"
+  "Ai/Base/ChatActionContext.h:188"
  ],
  [
   "DEAD-ACTION",
   "give water",
-  "Ai\\Base\\ActionContext.h:171"
+  "Ai/Base/ActionContext.h:171"
  ],
  [
   "DEAD-ACTION",
   "go",
-  "Ai\\Base\\ChatActionContext.h:180"
- ],
- [
-  "DEAD-ACTION",
-  "gouge",
-  "Ai\\Class\\Rogue\\RogueAiObjectContext.cpp:116"
+  "Ai/Base/ChatActionContext.h:180"
  ],
  [
   "DEAD-ACTION",
   "guild demote",
-  "Ai\\Base\\ChatActionContext.h:192"
+  "Ai/Base/ChatActionContext.h:192"
  ],
  [
   "DEAD-ACTION",
   "guild promote",
-  "Ai\\Base\\ChatActionContext.h:191"
+  "Ai/Base/ChatActionContext.h:191"
  ],
  [
   "DEAD-ACTION",
   "guild remove",
-  "Ai\\Base\\ChatActionContext.h:193"
+  "Ai/Base/ChatActionContext.h:193"
  ],
  [
   "DEAD-ACTION",
   "healing wave",
-  "Ai\\Class\\Shaman\\ShamanAiObjectContext.cpp:279"
+  "Ai/Class/Shaman/ShamanAiObjectContext.cpp:279"
  ],
  [
   "DEAD-ACTION",
   "hearthstone",
-  "Ai\\Base\\ActionContext.h:190"
- ],
- [
-  "DEAD-ACTION",
-  "hellfire",
-  "Ai\\Class\\Warlock\\WarlockAiObjectContext.cpp:286"
+  "Ai/Base/ActionContext.h:190"
  ],
  [
   "DEAD-ACTION",
   "help",
-  "Ai\\Base\\ChatActionContext.h:151"
+  "Ai/Base/ChatActionContext.h:151"
  ],
  [
   "DEAD-ACTION",
   "hex of weakness",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:225"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:225"
  ],
  [
   "DEAD-ACTION",
   "hire",
-  "Ai\\Base\\ChatActionContext.h:185"
+  "Ai/Base/ChatActionContext.h:185"
  ],
  [
   "DEAD-ACTION",
   "home",
-  "Ai\\Base\\ChatActionContext.h:147"
+  "Ai/Base/ChatActionContext.h:147"
  ],
  [
   "DEAD-ACTION",
   "icy clutch",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:194"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:196"
  ],
  [
   "DEAD-ACTION",
   "icy touch on attacker",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:188"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:190"
  ],
  [
   "DEAD-ACTION",
   "ingvar get behind",
-  "Ai\\Dungeon\\UtgardeKeep\\UtgardeKeepActionContext.h:15"
+  "Ai/Dungeon/UtgardeKeep/UtgardeKeepActionContext.h:15"
  ],
  [
   "DEAD-ACTION",
   "inventory change failure",
-  "Ai\\Base\\WorldPacketActionContext.h:99"
+  "Ai/Base/WorldPacketActionContext.h:99"
  ],
  [
   "DEAD-ACTION",
   "invite",
-  "Ai\\Base\\ChatActionContext.h:164"
+  "Ai/Base/ChatActionContext.h:164"
  ],
  [
   "DEAD-ACTION",
   "jan'alai tanks position boss",
-  "Ai\\Raid\\ZulAman\\RaidZulAmanActionContext.h:51"
+  "Ai/Raid/ZulAman/RaidZulAmanActionContext.h:51"
  ],
  [
   "DEAD-ACTION",
   "join",
-  "Ai\\Base\\ChatActionContext.h:199"
+  "Ai/Base/ChatActionContext.h:199"
  ],
  [
   "DEAD-ACTION",
   "kill power spark",
-  "Ai\\Raid\\EyeOfEternity\\RaidEoEActionContext.h:16"
+  "Ai/Raid/EyeOfEternity/RaidEoEActionContext.h:16"
  ],
  [
   "DEAD-ACTION",
   "leave",
-  "Ai\\Base\\ChatActionContext.h:103"
+  "Ai/Base/ChatActionContext.h:103"
  ],
  [
   "DEAD-ACTION",
   "lesser healing wave",
-  "Ai\\Class\\Shaman\\ShamanAiObjectContext.cpp:280"
+  "Ai/Class/Shaman/ShamanAiObjectContext.cpp:280"
  ],
  [
   "DEAD-ACTION",
   "levitate",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:220"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:220"
  ],
  [
   "DEAD-ACTION",
   "lfg",
-  "Ai\\Base\\ChatActionContext.h:200"
+  "Ai/Base/ChatActionContext.h:200"
  ],
  [
   "DEAD-ACTION",
   "lfg role check",
-  "Ai\\Base\\WorldPacketActionContext.h:109"
+  "Ai/Base/WorldPacketActionContext.h:109"
  ],
  [
   "DEAD-ACTION",
   "lfg teleport",
-  "Ai\\Base\\WorldPacketActionContext.h:111"
+  "Ai/Base/WorldPacketActionContext.h:111"
  ],
  [
   "DEAD-ACTION",
   "lightwell",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:222"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:222"
  ],
  [
   "DEAD-ACTION",
   "ll",
-  "Ai\\Base\\ChatActionContext.h:116"
+  "Ai/Base/ChatActionContext.h:116"
  ],
  [
   "DEAD-ACTION",
   "log",
-  "Ai\\Base\\ChatActionContext.h:106"
+  "Ai/Base/ChatActionContext.h:106"
  ],
  [
   "DEAD-ACTION",
   "los",
-  "Ai\\Base\\ChatActionContext.h:107"
+  "Ai/Base/ChatActionContext.h:107"
  ],
  [
   "DEAD-ACTION",
   "mail",
-  "Ai\\Base\\ChatActionContext.h:179"
+  "Ai/Base/ChatActionContext.h:179"
  ],
  [
   "DEAD-ACTION",
   "maintenance",
-  "Ai\\Base\\ChatActionContext.h:139"
+  "Ai/Base/ChatActionContext.h:139"
  ],
  [
   "DEAD-ACTION",
   "mind soothe",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:223"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:223"
  ],
  [
   "DEAD-ACTION",
   "mount",
-  "Ai\\Base\\ActionContext.h:172"
+  "Ai/Base/ActionContext.h:172"
  ],
  [
   "DEAD-ACTION",
   "move from dark portal",
-  "Ai\\Base\\ActionContext.h:187"
+  "Ai/Base/ActionContext.h:187"
  ],
  [
   "DEAD-ACTION",
   "move out of enemy contact",
-  "Ai\\Base\\ActionContext.h:152"
+  "Ai/Base/ActionContext.h:152"
  ],
  [
   "DEAD-ACTION",
   "move to dark portal",
-  "Ai\\Base\\ActionContext.h:186"
+  "Ai/Base/ActionContext.h:186"
  ],
  [
   "DEAD-ACTION",
   "nc",
-  "Ai\\Base\\ChatActionContext.h:136"
+  "Ai/Base/ChatActionContext.h:136"
  ],
  [
   "DEAD-ACTION",
   "offer petition",
-  "Ai\\Base\\ActionContext.h:201"
+  "Ai/Base/ActionContext.h:201"
  ],
  [
   "DEAD-ACTION",
   "outfit",
-  "Ai\\Base\\ActionContext.h:160"
+  "Ai/Base/ActionContext.h:160"
  ],
  [
   "DEAD-ACTION",
   "party command",
-  "Ai\\Base\\WorldPacketActionContext.h:91"
+  "Ai/Base/WorldPacketActionContext.h:91"
  ],
  [
   "DEAD-ACTION",
   "plague strike on attacker",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:171"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:173"
  ],
  [
   "DEAD-ACTION",
   "position",
-  "Ai\\Base\\ChatActionContext.h:168"
+  "Ai/Base/ChatActionContext.h:168"
  ],
  [
   "DEAD-ACTION",
   "power infusion on party",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:216"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:216"
  ],
  [
   "DEAD-ACTION",
   "power word: shield on almost full health below",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:182"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:182"
  ],
  [
   "DEAD-ACTION",
   "pull power spark",
-  "Ai\\Raid\\EyeOfEternity\\RaidEoEActionContext.h:15"
+  "Ai/Raid/EyeOfEternity/RaidEoEActionContext.h:15"
  ],
  [
   "DEAD-ACTION",
   "quest update add item",
-  "Ai\\Base\\WorldPacketActionContext.h:84"
+  "Ai/Base/WorldPacketActionContext.h:84"
  ],
  [
   "DEAD-ACTION",
   "quest update add kill",
-  "Ai\\Base\\WorldPacketActionContext.h:83"
+  "Ai/Base/WorldPacketActionContext.h:83"
  ],
  [
   "DEAD-ACTION",
   "quest update complete",
-  "Ai\\Base\\WorldPacketActionContext.h:87"
+  "Ai/Base/WorldPacketActionContext.h:87"
  ],
  [
   "DEAD-ACTION",
   "quest update failed",
-  "Ai\\Base\\WorldPacketActionContext.h:85"
+  "Ai/Base/WorldPacketActionContext.h:85"
  ],
  [
   "DEAD-ACTION",
   "quest update failed timer",
-  "Ai\\Base\\WorldPacketActionContext.h:86"
+  "Ai/Base/WorldPacketActionContext.h:86"
  ],
  [
   "DEAD-ACTION",
   "quests",
-  "Ai\\Base\\ChatActionContext.h:102"
+  "Ai/Base/ChatActionContext.h:102"
  ],
  [
   "DEAD-ACTION",
   "ra",
-  "Ai\\Base\\ActionContext.h:165"
+  "Ai/Base/ActionContext.h:165"
  ],
  [
   "DEAD-ACTION",
   "rampage",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:235"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:235"
  ],
  [
   "DEAD-ACTION",
   "random bot update",
-  "Ai\\Base\\ActionContext.h:161"
+  "Ai/Base/ActionContext.h:161"
  ],
  [
   "DEAD-ACTION",
   "range",
-  "Ai\\Base\\ChatActionContext.h:100"
+  "Ai/Base/ChatActionContext.h:100"
  ],
  [
   "DEAD-ACTION",
   "ready check finished",
-  "Ai\\Base\\WorldPacketActionContext.h:95"
+  "Ai/Base/WorldPacketActionContext.h:95"
  ],
  [
   "DEAD-ACTION",
   "release loot",
-  "Ai\\Base\\ActionContext.h:130"
+  "Ai/Base/ActionContext.h:130"
  ],
  [
   "DEAD-ACTION",
   "remove glyph",
-  "Ai\\Base\\ChatActionContext.h:140"
+  "Ai/Base/ChatActionContext.h:140"
  ],
  [
   "DEAD-ACTION",
   "repair",
-  "Ai\\Base\\ChatActionContext.h:123"
+  "Ai/Base/ChatActionContext.h:123"
  ],
  [
   "DEAD-ACTION",
   "riposte",
-  "Ai\\Class\\Rogue\\RogueAiObjectContext.cpp:113"
+  "Ai/Class/Rogue/RogueAiObjectContext.cpp:113"
  ],
  [
   "DEAD-ACTION",
   "riptide",
-  "Ai\\Class\\Shaman\\ShamanAiObjectContext.cpp:286"
+  "Ai/Class/Shaman/ShamanAiObjectContext.cpp:286"
  ],
  [
   "DEAD-ACTION",
   "rpg craft",
-  "Ai\\Base\\ActionContext.h:261"
+  "Ai/Base/ActionContext.h:261"
  ],
  [
   "DEAD-ACTION",
   "rpg do quest",
-  "Ai\\Base\\ChatActionContext.h:109"
+  "Ai/Base/ChatActionContext.h:109"
  ],
  [
   "DEAD-ACTION",
   "rpg duel",
-  "Ai\\Base\\ActionContext.h:263"
+  "Ai/Base/ActionContext.h:263"
  ],
  [
   "DEAD-ACTION",
   "rpg queue bg",
-  "Ai\\Base\\ActionContext.h:257"
+  "Ai/Base/ActionContext.h:257"
  ],
  [
   "DEAD-ACTION",
   "rpg sell",
-  "Ai\\Base\\ActionContext.h:252"
+  "Ai/Base/ActionContext.h:252"
  ],
  [
   "DEAD-ACTION",
   "rpg spell",
-  "Ai\\Base\\ActionContext.h:260"
+  "Ai/Base/ActionContext.h:260"
  ],
  [
   "DEAD-ACTION",
   "rpg status",
-  "Ai\\Base\\ChatActionContext.h:108"
+  "Ai/Base/ChatActionContext.h:108"
  ],
  [
   "DEAD-ACTION",
   "rpg taxi",
-  "Ai\\Base\\ActionContext.h:247"
+  "Ai/Base/ActionContext.h:247"
  ],
  [
   "DEAD-ACTION",
   "rpg trade useful",
-  "Ai\\Base\\ActionContext.h:262"
+  "Ai/Base/ActionContext.h:262"
  ],
  [
   "DEAD-ACTION",
   "rpg train",
-  "Ai\\Base\\ActionContext.h:254"
+  "Ai/Base/ActionContext.h:254"
  ],
  [
   "DEAD-ACTION",
   "rti",
-  "Ai\\Base\\ChatActionContext.h:166"
+  "Ai/Base/ChatActionContext.h:166"
  ],
  [
   "DEAD-ACTION",
   "rtsc",
-  "Ai\\Base\\ChatActionContext.h:195"
+  "Ai/Base/ChatActionContext.h:195"
  ],
  [
   "DEAD-ACTION",
   "save mana",
-  "Ai\\Base\\ChatActionContext.h:172"
+  "Ai/Base/ChatActionContext.h:172"
  ],
  [
   "DEAD-ACTION",
   "say",
-  "Ai\\Base\\ActionContext.h:158"
+  "Ai/Base/ActionContext.h:158"
  ],
  [
   "DEAD-ACTION",
   "scare beast",
-  "Ai\\Class\\Hunter\\HunterAiObjectContext.cpp:193"
+  "Ai/Class/Hunter/HunterAiObjectContext.cpp:193"
  ],
  [
   "DEAD-ACTION",
   "sendmail",
-  "Ai\\Base\\ChatActionContext.h:178"
+  "Ai/Base/ChatActionContext.h:178"
  ],
  [
   "DEAD-ACTION",
   "shadowguard",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:226"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:226"
  ],
  [
   "DEAD-ACTION",
   "share",
-  "Ai\\Base\\ChatActionContext.h:113"
+  "Ai/Base/ChatActionContext.h:113"
  ],
  [
   "DEAD-ACTION",
   "spell",
-  "Ai\\Base\\ChatActionContext.h:165"
+  "Ai/Base/ChatActionContext.h:165"
  ],
  [
   "DEAD-ACTION",
   "spells",
-  "Ai\\Base\\ChatActionContext.h:134"
+  "Ai/Base/ChatActionContext.h:134"
  ],
  [
   "DEAD-ACTION",
   "ss",
-  "Ai\\Base\\ChatActionContext.h:117"
+  "Ai/Base/ChatActionContext.h:117"
  ],
  [
   "DEAD-ACTION",
   "stance",
-  "Ai\\Base\\ChatActionContext.h:177"
+  "Ai/Base/ChatActionContext.h:177"
  ],
  [
   "DEAD-ACTION",
   "stats",
-  "Ai\\Base\\ChatActionContext.h:101"
+  "Ai/Base/ChatActionContext.h:101"
  ],
  [
   "DEAD-ACTION",
   "summon",
-  "Ai\\Base\\ChatActionContext.h:170"
+  "Ai/Base/ChatActionContext.h:170"
  ],
  [
   "DEAD-ACTION",
   "switch to melee",
-  "Ai\\Base\\ActionContext.h:92"
+  "Ai/Base/ActionContext.h:92"
  ],
  [
   "DEAD-ACTION",
   "switch to ranged",
-  "Ai\\Base\\ActionContext.h:93"
+  "Ai/Base/ActionContext.h:93"
  ],
  [
   "DEAD-ACTION",
   "symbol of hope",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:233"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:233"
  ],
  [
   "DEAD-ACTION",
   "talents",
-  "Ai\\Base\\ChatActionContext.h:133"
+  "Ai/Base/ChatActionContext.h:133"
  ],
  [
   "DEAD-ACTION",
   "teleport",
-  "Ai\\Base\\ChatActionContext.h:121"
+  "Ai/Base/ChatActionContext.h:121"
  ],
  [
   "DEAD-ACTION",
   "tell cast failed",
-  "Ai\\Base\\WorldPacketActionContext.h:92"
+  "Ai/Base/WorldPacketActionContext.h:92"
  ],
  [
   "DEAD-ACTION",
   "thaddius melee to place",
-  "Ai\\Raid\\Naxxramas\\RaidNaxxActionContext.h:26"
+  "Ai/Raid/Naxxramas/RaidNaxxActionContext.h:26"
  ],
  [
   "DEAD-ACTION",
   "thaddius ranged to place",
-  "Ai\\Raid\\Naxxramas\\RaidNaxxActionContext.h:27"
+  "Ai/Raid/Naxxramas/RaidNaxxActionContext.h:27"
  ],
  [
   "DEAD-ACTION",
   "tharonja taunt",
-  "Ai\\Dungeon\\DraktharonKeep\\DrakTharonKeepActionContext.h:17"
+  "Ai/Dungeon/DraktharonKeep/DrakTharonKeepActionContext.h:17"
  ],
  [
   "DEAD-ACTION",
   "thunder clap on snare target",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:238"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:238"
  ],
  [
   "DEAD-ACTION",
   "touch of weakness",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:224"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:224"
  ],
  [
   "DEAD-ACTION",
   "try emergency",
-  "Ai\\Base\\ActionContext.h:169"
+  "Ai/Base/ActionContext.h:169"
  ],
  [
   "DEAD-ACTION",
   "unholy blight",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:175"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:177"
  ],
  [
   "DEAD-ACTION",
   "use dark portal azeroth",
-  "Ai\\Base\\ActionContext.h:188"
+  "Ai/Base/ActionContext.h:188"
  ],
  [
   "DEAD-ACTION",
   "wait for attack time",
-  "Ai\\Base\\ChatActionContext.h:209"
+  "Ai/Base/ChatActionContext.h:209"
  ],
  [
   "DEAD-ACTION",
   "who",
-  "Ai\\Base\\ChatActionContext.h:171"
+  "Ai/Base/ChatActionContext.h:171"
  ],
  [
   "DEAD-ACTION",
   "wts",
-  "Ai\\Base\\ChatActionContext.h:184"
+  "Ai/Base/ChatActionContext.h:184"
  ],
  [
   "DEAD-ACTION",
   "zul'jin tanks position boss",
-  "Ai\\Raid\\ZulAman\\RaidZulAmanActionContext.h:96"
+  "Ai/Raid/ZulAman/RaidZulAmanActionContext.h:96"
  ],
  [
   "DEAD-TRIGGER",
   "accept quest",
-  "Ai\\Base\\WorldPacketTriggerContext.h:38"
+  "Ai/Base/WorldPacketTriggerContext.h:38"
  ],
  [
   "DEAD-TRIGGER",
   "akil'zon boss engaged by tanks",
-  "Ai\\Raid\\ZulAman\\RaidZulAmanTriggerContext.h:25"
+  "Ai/Raid/ZulAman/RaidZulAmanTriggerContext.h:25"
  ],
  [
   "DEAD-TRIGGER",
   "almost full aoe heal",
-  "Ai\\Base\\TriggerContext.h:166"
+  "Ai/Base/TriggerContext.h:166"
  ],
  [
   "DEAD-TRIGGER",
   "almost full mana",
-  "Ai\\Base\\TriggerContext.h:55"
+  "Ai/Base/TriggerContext.h:55"
  ],
  [
   "DEAD-TRIGGER",
   "arcane blast",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:101"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:101"
  ],
  [
   "DEAD-TRIGGER",
   "arcane blast stack",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:107"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:107"
  ],
  [
   "DEAD-TRIGGER",
   "at dark portal azeroth",
-  "Ai\\Base\\TriggerContext.h:208"
+  "Ai/Base/TriggerContext.h:208"
  ],
  [
   "DEAD-TRIGGER",
   "at dark portal outland",
-  "Ai\\Base\\TriggerContext.h:209"
+  "Ai/Base/TriggerContext.h:209"
  ],
  [
   "DEAD-TRIGGER",
   "aura",
-  "Ai\\Base\\ChatTriggerContext.h:32"
+  "Ai/Base/ChatTriggerContext.h:32"
  ],
  [
   "DEAD-TRIGGER",
   "autogear",
-  "Ai\\Base\\ChatTriggerContext.h:67"
+  "Ai/Base/ChatTriggerContext.h:67"
  ],
  [
   "DEAD-TRIGGER",
   "avenger's shield",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:142"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:142"
  ],
  [
   "DEAD-TRIGGER",
   "backlash",
-  "Ai\\Class\\Warlock\\WarlockAiObjectContext.cpp:162"
+  "Ai/Class/Warlock/WarlockAiObjectContext.cpp:162"
  ],
  [
   "DEAD-TRIGGER",
   "bank",
-  "Ai\\Base\\ChatTriggerContext.h:83"
+  "Ai/Base/ChatTriggerContext.h:83"
  ],
  [
   "DEAD-TRIGGER",
   "berserker rage",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:82"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:82"
  ],
  [
   "DEAD-TRIGGER",
   "blast wave off cd",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:122"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:123"
  ],
  [
   "DEAD-TRIGGER",
   "blessing",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:112"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:112"
  ],
  [
   "DEAD-TRIGGER",
   "blessing on party",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:115"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:115"
  ],
  [
   "DEAD-TRIGGER",
   "blood strike",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:73"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:73"
  ],
  [
   "DEAD-TRIGGER",
   "buff",
-  "Ai\\Base\\ChatTriggerContext.h:79"
+  "Ai/Base/ChatTriggerContext.h:79"
  ],
  [
   "DEAD-TRIGGER",
   "calc",
-  "Ai\\Base\\ChatTriggerContext.h:143"
+  "Ai/Base/ChatTriggerContext.h:143"
  ],
  [
   "DEAD-TRIGGER",
   "can fish",
-  "Ai\\Base\\TriggerContext.h:252"
+  "Ai/Base/TriggerContext.h:252"
  ],
  [
   "DEAD-TRIGGER",
   "cancel aquatic form",
-  "Ai\\Base\\ChatTriggerContext.h:117"
+  "Ai/Base/ChatTriggerContext.h:117"
  ],
  [
   "DEAD-TRIGGER",
   "cancel bear form",
-  "Ai\\Base\\ChatTriggerContext.h:113"
+  "Ai/Base/ChatTriggerContext.h:113"
  ],
  [
   "DEAD-TRIGGER",
   "cancel cat form",
-  "Ai\\Base\\ChatTriggerContext.h:115"
+  "Ai/Base/ChatTriggerContext.h:115"
  ],
  [
   "DEAD-TRIGGER",
   "cancel dire bear form",
-  "Ai\\Base\\ChatTriggerContext.h:114"
+  "Ai/Base/ChatTriggerContext.h:114"
  ],
  [
   "DEAD-TRIGGER",
   "cancel moonkin form",
-  "Ai\\Base\\ChatTriggerContext.h:116"
+  "Ai/Base/ChatTriggerContext.h:116"
  ],
  [
   "DEAD-TRIGGER",
   "cancel travel form",
-  "Ai\\Base\\ChatTriggerContext.h:112"
+  "Ai/Base/ChatTriggerContext.h:112"
  ],
  [
   "DEAD-TRIGGER",
   "cancel tree form",
-  "Ai\\Base\\ChatTriggerContext.h:111"
+  "Ai/Base/ChatTriggerContext.h:111"
  ],
  [
   "DEAD-TRIGGER",
   "cast failed",
-  "Ai\\Base\\WorldPacketTriggerContext.h:52"
+  "Ai/Base/WorldPacketTriggerContext.h:52"
  ],
  [
   "DEAD-TRIGGER",
   "cdebug",
-  "Ai\\Base\\ChatTriggerContext.h:124"
+  "Ai/Base/ChatTriggerContext.h:124"
  ],
  [
   "DEAD-TRIGGER",
   "chastise",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:106"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:106"
  ],
  [
   "DEAD-TRIGGER",
   "chat",
-  "Ai\\Base\\ChatTriggerContext.h:73"
+  "Ai/Base/ChatTriggerContext.h:73"
  ],
  [
   "DEAD-TRIGGER",
   "cheat",
-  "Ai\\Base\\ChatTriggerContext.h:133"
+  "Ai/Base/ChatTriggerContext.h:133"
  ],
  [
   "DEAD-TRIGGER",
   "check mount state",
-  "Ai\\Base\\WorldPacketTriggerContext.h:29"
+  "Ai/Base/WorldPacketTriggerContext.h:29"
  ],
  [
   "DEAD-TRIGGER",
   "co",
-  "Ai\\Base\\ChatTriggerContext.h:61"
+  "Ai/Base/ChatTriggerContext.h:61"
  ],
  [
   "DEAD-TRIGGER",
   "combat long stuck",
-  "Ai\\Base\\TriggerContext.h:220"
+  "Ai/Base/TriggerContext.h:220"
  ],
  [
   "DEAD-TRIGGER",
   "combo points 3 available",
-  "Ai\\Base\\TriggerContext.h:125"
+  "Ai/Base/TriggerContext.h:125"
  ],
  [
   "DEAD-TRIGGER",
   "confirm quest",
-  "Ai\\Base\\WorldPacketTriggerContext.h:39"
+  "Ai/Base/WorldPacketTriggerContext.h:39"
  ],
  [
   "DEAD-TRIGGER",
   "consecration",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:143"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:143"
  ],
  [
   "DEAD-TRIGGER",
   "craft",
-  "Ai\\Base\\ChatTriggerContext.h:128"
+  "Ai/Base/ChatTriggerContext.h:128"
  ],
  [
   "DEAD-TRIGGER",
   "critical aoe heal",
-  "Ai\\Base\\TriggerContext.h:163"
+  "Ai/Base/TriggerContext.h:163"
  ],
  [
   "DEAD-TRIGGER",
   "crystal handler",
-  "Ai\\Dungeon\\DraktharonKeep\\DrakTharonKeepTriggerContext.h:15"
+  "Ai/Dungeon/DraktharonKeep/DrakTharonKeepTriggerContext.h:15"
  ],
  [
   "DEAD-TRIGGER",
   "cs",
-  "Ai\\Base\\ChatTriggerContext.h:125"
+  "Ai/Base/ChatTriggerContext.h:125"
  ],
  [
   "DEAD-TRIGGER",
   "cure poison",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:104"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:104"
  ],
  [
   "DEAD-TRIGGER",
   "de",
-  "Ai\\Base\\ChatTriggerContext.h:63"
+  "Ai/Base/ChatTriggerContext.h:63"
  ],
  [
   "DEAD-TRIGGER",
   "death coil",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:81"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:82"
  ],
  [
   "DEAD-TRIGGER",
   "debug",
-  "Ai\\Base\\ChatTriggerContext.h:123"
+  "Ai/Base/ChatTriggerContext.h:123"
  ],
  [
   "DEAD-TRIGGER",
   "deep freeze on cd",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:119"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:120"
  ],
  [
   "DEAD-TRIGGER",
   "destroy",
-  "Ai\\Base\\ChatTriggerContext.h:77"
+  "Ai/Base/ChatTriggerContext.h:77"
  ],
  [
   "DEAD-TRIGGER",
   "divine spirit",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:84"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:84"
  ],
  [
   "DEAD-TRIGGER",
   "drink",
-  "Ai\\Base\\ChatTriggerContext.h:140"
+  "Ai/Base/ChatTriggerContext.h:140"
  ],
  [
   "DEAD-TRIGGER",
   "drop",
-  "Ai\\Base\\ChatTriggerContext.h:33"
+  "Ai/Base/ChatTriggerContext.h:33"
  ],
  [
   "DEAD-TRIGGER",
   "emote",
-  "Ai\\Base\\ChatTriggerContext.h:78"
+  "Ai/Base/ChatTriggerContext.h:78"
  ],
  [
   "DEAD-TRIGGER",
   "enemy team has flag",
-  "Ai\\Base\\TriggerContext.h:196"
+  "Ai/Base/TriggerContext.h:196"
  ],
  [
   "DEAD-TRIGGER",
   "enemy too close for melee",
-  "Ai\\Base\\TriggerContext.h:118"
+  "Ai/Base/TriggerContext.h:118"
  ],
  [
   "DEAD-TRIGGER",
   "enemy too close for shoot",
-  "Ai\\Base\\TriggerContext.h:116"
+  "Ai/Base/TriggerContext.h:116"
  ],
  [
   "DEAD-TRIGGER",
   "equip",
-  "Ai\\Base\\ChatTriggerContext.h:52"
+  "Ai/Base/ChatTriggerContext.h:52"
  ],
  [
   "DEAD-TRIGGER",
   "equip upgrade",
-  "Ai\\Base\\ChatTriggerContext.h:68"
+  "Ai/Base/ChatTriggerContext.h:68"
  ],
  [
   "DEAD-TRIGGER",
   "falling",
-  "Ai\\Base\\TriggerContext.h:215"
+  "Ai/Base/TriggerContext.h:215"
  ],
  [
   "DEAD-TRIGGER",
   "far from master",
-  "Ai\\Base\\TriggerContext.h:157"
+  "Ai/Base/TriggerContext.h:157"
  ],
  [
   "DEAD-TRIGGER",
   "feedback",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:104"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:104"
  ],
  [
   "DEAD-TRIGGER",
   "fireball",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:81"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:81"
  ],
  [
   "DEAD-TRIGGER",
   "flag",
-  "Ai\\Base\\ChatTriggerContext.h:129"
+  "Ai/Base/ChatTriggerContext.h:129"
  ],
  [
   "DEAD-TRIGGER",
   "flamestrike nearby",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:115"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:116"
  ],
  [
   "DEAD-TRIGGER",
   "formation",
-  "Ai\\Base\\ChatTriggerContext.h:109"
+  "Ai/Base/ChatTriggerContext.h:109"
  ],
  [
   "DEAD-TRIGGER",
   "frostfire bolt",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:112"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:113"
  ],
  [
   "DEAD-TRIGGER",
   "gb",
-  "Ai\\Base\\ChatTriggerContext.h:81"
+  "Ai/Base/ChatTriggerContext.h:81"
  ],
  [
   "DEAD-TRIGGER",
   "gbank",
-  "Ai\\Base\\ChatTriggerContext.h:82"
+  "Ai/Base/ChatTriggerContext.h:82"
  ],
  [
   "DEAD-TRIGGER",
   "ginvite",
-  "Ai\\Base\\ChatTriggerContext.h:134"
+  "Ai/Base/ChatTriggerContext.h:134"
  ],
  [
   "DEAD-TRIGGER",
   "give food",
-  "Ai\\Base\\TriggerContext.h:186"
+  "Ai/Base/TriggerContext.h:186"
  ],
  [
   "DEAD-TRIGGER",
   "give leader",
-  "Ai\\Base\\ChatTriggerContext.h:132"
+  "Ai/Base/ChatTriggerContext.h:132"
  ],
  [
   "DEAD-TRIGGER",
   "give water",
-  "Ai\\Base\\TriggerContext.h:187"
+  "Ai/Base/TriggerContext.h:187"
  ],
  [
   "DEAD-TRIGGER",
   "go",
-  "Ai\\Base\\ChatTriggerContext.h:121"
+  "Ai/Base/ChatTriggerContext.h:121"
  ],
  [
   "DEAD-TRIGGER",
   "guild demote",
-  "Ai\\Base\\ChatTriggerContext.h:136"
+  "Ai/Base/ChatTriggerContext.h:136"
  ],
  [
   "DEAD-TRIGGER",
   "guild leave",
-  "Ai\\Base\\ChatTriggerContext.h:138"
+  "Ai/Base/ChatTriggerContext.h:138"
  ],
  [
   "DEAD-TRIGGER",
   "guild promote",
-  "Ai\\Base\\ChatTriggerContext.h:135"
+  "Ai/Base/ChatTriggerContext.h:135"
  ],
  [
   "DEAD-TRIGGER",
   "guild remove",
-  "Ai\\Base\\ChatTriggerContext.h:137"
+  "Ai/Base/ChatTriggerContext.h:137"
  ],
  [
   "DEAD-TRIGGER",
   "hammer of justice snare",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:124"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:124"
  ],
  [
   "DEAD-TRIGGER",
   "has ammo",
-  "Ai\\Class\\Hunter\\HunterAiObjectContext.cpp:86"
+  "Ai/Class/Hunter/HunterAiObjectContext.cpp:86"
  ],
  [
   "DEAD-TRIGGER",
   "has area debuff",
-  "Ai\\Base\\TriggerContext.h:111"
+  "Ai/Base/TriggerContext.h:111"
  ],
  [
   "DEAD-TRIGGER",
   "has attackers",
-  "Ai\\Base\\TriggerContext.h:142"
+  "Ai/Base/TriggerContext.h:142"
  ],
  [
   "DEAD-TRIGGER",
   "help",
-  "Ai\\Base\\ChatTriggerContext.h:80"
+  "Ai/Base/ChatTriggerContext.h:80"
  ],
  [
   "DEAD-TRIGGER",
   "hex of weakness",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:100"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:100"
  ],
  [
   "DEAD-TRIGGER",
   "hire",
-  "Ai\\Base\\ChatTriggerContext.h:127"
+  "Ai/Base/ChatTriggerContext.h:127"
  ],
  [
   "DEAD-TRIGGER",
   "holy shield",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:133"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:133"
  ],
  [
   "DEAD-TRIGGER",
   "home",
-  "Ai\\Base\\ChatTriggerContext.h:75"
+  "Ai/Base/ChatTriggerContext.h:75"
  ],
  [
   "DEAD-TRIGGER",
   "ice barrier",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:88"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:88"
  ],
  [
   "DEAD-TRIGGER",
   "icy touch 3s",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:79"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:80"
  ],
  [
   "DEAD-TRIGGER",
   "icy touch on attacker",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:82"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:83"
  ],
  [
   "DEAD-TRIGGER",
   "icy veins on cd",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:118"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:119"
  ],
  [
   "DEAD-TRIGGER",
   "immolation aura active",
-  "Ai\\Class\\Warlock\\WarlockAiObjectContext.cpp:176"
+  "Ai/Class/Warlock/WarlockAiObjectContext.cpp:176"
  ],
  [
   "DEAD-TRIGGER",
   "improved icy talons",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:83"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:84"
  ],
  [
   "DEAD-TRIGGER",
   "in Battleground",
-  "Ai\\Base\\TriggerContext.h:199"
+  "Ai/Base/TriggerContext.h:199"
  ],
  [
   "DEAD-TRIGGER",
   "in Battleground without flag",
-  "Ai\\Base\\TriggerContext.h:200"
- ],
- [
-  "DEAD-TRIGGER",
-  "in stealth",
-  "Ai\\Class\\Rogue\\RogueAiObjectContext.cpp:73"
+  "Ai/Base/TriggerContext.h:200"
  ],
  [
   "DEAD-TRIGGER",
   "inner focus",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:92"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:92"
  ],
  [
   "DEAD-TRIGGER",
   "inside bg",
-  "Ai\\Base\\TriggerContext.h:192"
+  "Ai/Base/TriggerContext.h:192"
  ],
  [
   "DEAD-TRIGGER",
   "intercept",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:86"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:86"
  ],
  [
   "DEAD-TRIGGER",
   "intercept and far enemy",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:99"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:99"
  ],
  [
   "DEAD-TRIGGER",
   "intercept and rage",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:100"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:100"
  ],
  [
   "DEAD-TRIGGER",
   "intercept can cast",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:98"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:98"
  ],
  [
   "DEAD-TRIGGER",
   "inventory",
-  "Ai\\Base\\ChatTriggerContext.h:49"
+  "Ai/Base/ChatTriggerContext.h:49"
  ],
  [
   "DEAD-TRIGGER",
   "inventory change failure",
-  "Ai\\Base\\WorldPacketTriggerContext.h:65"
+  "Ai/Base/WorldPacketTriggerContext.h:65"
  ],
  [
   "DEAD-TRIGGER",
   "invite",
-  "Ai\\Base\\ChatTriggerContext.h:95"
+  "Ai/Base/ChatTriggerContext.h:95"
  ],
  [
   "DEAD-TRIGGER",
   "jan'alai boss engaged by tanks",
-  "Ai\\Raid\\ZulAman\\RaidZulAmanTriggerContext.h:51"
+  "Ai/Raid/ZulAman/RaidZulAmanTriggerContext.h:51"
  ],
  [
   "DEAD-TRIGGER",
   "judgement",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:109"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:109"
  ],
  [
   "DEAD-TRIGGER",
   "judgement of light",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:111"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:111"
  ],
  [
   "DEAD-TRIGGER",
   "judgement of wisdom",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:110"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:110"
  ],
  [
   "DEAD-TRIGGER",
   "leave",
-  "Ai\\Base\\ChatTriggerContext.h:24"
+  "Ai/Base/ChatTriggerContext.h:24"
  ],
  [
   "DEAD-TRIGGER",
   "lfg",
-  "Ai\\Base\\ChatTriggerContext.h:96"
+  "Ai/Base/ChatTriggerContext.h:96"
  ],
  [
   "DEAD-TRIGGER",
   "lfg join",
-  "Ai\\Base\\WorldPacketTriggerContext.h:58"
+  "Ai/Base/WorldPacketTriggerContext.h:58"
  ],
  [
   "DEAD-TRIGGER",
   "lfg leave",
-  "Ai\\Base\\WorldPacketTriggerContext.h:61"
+  "Ai/Base/WorldPacketTriggerContext.h:61"
  ],
  [
   "DEAD-TRIGGER",
   "lfg role check",
-  "Ai\\Base\\WorldPacketTriggerContext.h:60"
+  "Ai/Base/WorldPacketTriggerContext.h:60"
  ],
  [
   "DEAD-TRIGGER",
   "lfg teleport",
-  "Ai\\Base\\WorldPacketTriggerContext.h:64"
+  "Ai/Base/WorldPacketTriggerContext.h:64"
  ],
  [
   "DEAD-TRIGGER",
   "light energy available",
-  "Ai\\Base\\TriggerContext.h:74"
+  "Ai/Base/TriggerContext.h:74"
  ],
  [
   "DEAD-TRIGGER",
   "light rage available",
-  "Ai\\Base\\TriggerContext.h:70"
+  "Ai/Base/TriggerContext.h:70"
  ],
  [
   "DEAD-TRIGGER",
   "ll",
-  "Ai\\Base\\ChatTriggerContext.h:36"
+  "Ai/Base/ChatTriggerContext.h:36"
  ],
  [
   "DEAD-TRIGGER",
   "log",
-  "Ai\\Base\\ChatTriggerContext.h:28"
+  "Ai/Base/ChatTriggerContext.h:28"
  ],
  [
   "DEAD-TRIGGER",
   "loot all",
-  "Ai\\Base\\ChatTriggerContext.h:38"
+  "Ai/Base/ChatTriggerContext.h:38"
  ],
  [
   "DEAD-TRIGGER",
   "loot roll",
-  "Ai\\Base\\WorldPacketTriggerContext.h:25"
+  "Ai/Base/WorldPacketTriggerContext.h:25"
  ],
  [
   "DEAD-TRIGGER",
   "los",
-  "Ai\\Base\\ChatTriggerContext.h:29"
+  "Ai/Base/ChatTriggerContext.h:29"
  ],
  [
   "DEAD-TRIGGER",
   "low aoe heal",
-  "Ai\\Base\\TriggerContext.h:164"
+  "Ai/Base/TriggerContext.h:164"
  ],
  [
   "DEAD-TRIGGER",
   "maelstrom weapon 3",
-  "Ai\\Class\\Shaman\\ShamanAiObjectContext.cpp:164"
+  "Ai/Class/Shaman/ShamanAiObjectContext.cpp:164"
  ],
  [
   "DEAD-TRIGGER",
   "mail",
-  "Ai\\Base\\ChatTriggerContext.h:119"
+  "Ai/Base/ChatTriggerContext.h:119"
  ],
  [
   "DEAD-TRIGGER",
   "maintenance",
-  "Ai\\Base\\ChatTriggerContext.h:65"
+  "Ai/Base/ChatTriggerContext.h:65"
  ],
  [
   "DEAD-TRIGGER",
   "medium aoe heal",
-  "Ai\\Base\\TriggerContext.h:165"
+  "Ai/Base/TriggerContext.h:165"
  ],
  [
   "DEAD-TRIGGER",
   "medium energy available",
-  "Ai\\Base\\TriggerContext.h:75"
+  "Ai/Base/TriggerContext.h:75"
  ],
  [
   "DEAD-TRIGGER",
   "metamorphosis not active",
-  "Ai\\Class\\Warlock\\WarlockAiObjectContext.cpp:177"
+  "Ai/Class/Warlock/WarlockAiObjectContext.cpp:177"
  ],
  [
   "DEAD-TRIGGER",
   "misdirection on main tank",
-  "Ai\\Class\\Hunter\\HunterAiObjectContext.cpp:92"
+  "Ai/Class/Hunter/HunterAiObjectContext.cpp:92"
  ],
  [
   "DEAD-TRIGGER",
   "missile barrage",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:100"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:100"
  ],
  [
   "DEAD-TRIGGER",
   "mocking blow",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:75"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:75"
  ],
  [
   "DEAD-TRIGGER",
   "move long stuck",
-  "Ai\\Base\\TriggerContext.h:218"
+  "Ai/Base/TriggerContext.h:218"
  ],
  [
   "DEAD-TRIGGER",
   "nature's grasp",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:97"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:97"
  ],
  [
   "DEAD-TRIGGER",
   "nc",
-  "Ai\\Base\\ChatTriggerContext.h:62"
+  "Ai/Base/ChatTriggerContext.h:62"
  ],
  [
   "DEAD-TRIGGER",
   "near dark portal",
-  "Ai\\Base\\TriggerContext.h:207"
+  "Ai/Base/TriggerContext.h:207"
  ],
  [
   "DEAD-TRIGGER",
   "near rpg target",
-  "Ai\\Base\\TriggerContext.h:181"
+  "Ai/Base/TriggerContext.h:181"
  ],
  [
   "DEAD-TRIGGER",
   "no desolation",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:101"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:102"
  ],
  [
   "DEAD-TRIGGER",
   "no firestarter strategy",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:124"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:125"
  ],
  [
   "DEAD-TRIGGER",
   "out of react range",
-  "Ai\\Base\\WorldPacketTriggerContext.h:34"
+  "Ai/Base/WorldPacketTriggerContext.h:34"
  ],
  [
   "DEAD-TRIGGER",
   "outfit",
-  "Ai\\Base\\ChatTriggerContext.h:120"
+  "Ai/Base/ChatTriggerContext.h:120"
  ],
  [
   "DEAD-TRIGGER",
   "party command",
-  "Ai\\Base\\WorldPacketTriggerContext.h:50"
+  "Ai/Base/WorldPacketTriggerContext.h:50"
  ],
  [
   "DEAD-TRIGGER",
   "plague strike 3s",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:85"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:86"
  ],
  [
   "DEAD-TRIGGER",
   "plague strike on attacker",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:77"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:78"
  ],
  [
   "DEAD-TRIGGER",
   "player has no flag",
-  "Ai\\Base\\TriggerContext.h:193"
+  "Ai/Base/TriggerContext.h:193"
  ],
  [
   "DEAD-TRIGGER",
   "position",
-  "Ai\\Base\\ChatTriggerContext.h:102"
+  "Ai/Base/ChatTriggerContext.h:102"
  ],
  [
   "DEAD-TRIGGER",
   "power spark",
-  "Ai\\Raid\\EyeOfEternity\\RaidEoETriggerContext.h:13"
+  "Ai/Raid/EyeOfEternity/RaidEoETriggerContext.h:13"
  ],
  [
   "DEAD-TRIGGER",
   "power word: fortitude",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:82"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:82"
  ],
  [
   "DEAD-TRIGGER",
   "pyroblast",
-  "Ai\\Class\\Mage\\MageAiObjectContext.cpp:82"
+  "Ai/Class/Mage/MageAiObjectContext.cpp:82"
  ],
  [
   "DEAD-TRIGGER",
   "quest update add item",
-  "Ai\\Base\\WorldPacketTriggerContext.h:42"
+  "Ai/Base/WorldPacketTriggerContext.h:42"
  ],
  [
   "DEAD-TRIGGER",
   "quest update add kill",
-  "Ai\\Base\\WorldPacketTriggerContext.h:41"
+  "Ai/Base/WorldPacketTriggerContext.h:41"
  ],
  [
   "DEAD-TRIGGER",
   "quest update complete",
-  "Ai\\Base\\WorldPacketTriggerContext.h:45"
+  "Ai/Base/WorldPacketTriggerContext.h:45"
  ],
  [
   "DEAD-TRIGGER",
   "quest update failed",
-  "Ai\\Base\\WorldPacketTriggerContext.h:43"
+  "Ai/Base/WorldPacketTriggerContext.h:43"
  ],
  [
   "DEAD-TRIGGER",
   "quest update failed timer",
-  "Ai\\Base\\WorldPacketTriggerContext.h:44"
+  "Ai/Base/WorldPacketTriggerContext.h:44"
  ],
  [
   "DEAD-TRIGGER",
   "quests",
-  "Ai\\Base\\ChatTriggerContext.h:22"
+  "Ai/Base/ChatTriggerContext.h:22"
  ],
  [
   "DEAD-TRIGGER",
   "ra",
-  "Ai\\Base\\ChatTriggerContext.h:131"
+  "Ai/Base/ChatTriggerContext.h:131"
  ],
  [
   "DEAD-TRIGGER",
   "raise dead",
-  "Ai\\Class\\Dk\\DKAiObjectContext.cpp:93"
+  "Ai/Class/Dk/DKAiObjectContext.cpp:94"
  ],
  [
   "DEAD-TRIGGER",
   "rampage",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:76"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:76"
  ],
  [
   "DEAD-TRIGGER",
   "random bot update",
-  "Ai\\Base\\TriggerContext.h:175"
+  "Ai/Base/TriggerContext.h:175"
  ],
  [
   "DEAD-TRIGGER",
   "range",
-  "Ai\\Base\\ChatTriggerContext.h:130"
+  "Ai/Base/ChatTriggerContext.h:130"
  ],
  [
   "DEAD-TRIGGER",
   "ready check",
-  "Ai\\Base\\WorldPacketTriggerContext.h:54"
+  "Ai/Base/WorldPacketTriggerContext.h:54"
  ],
  [
   "DEAD-TRIGGER",
   "release",
-  "Ai\\Base\\ChatTriggerContext.h:40"
+  "Ai/Base/ChatTriggerContext.h:40"
  ],
  [
   "DEAD-TRIGGER",
   "remove glyph",
-  "Ai\\Base\\ChatTriggerContext.h:66"
+  "Ai/Base/ChatTriggerContext.h:66"
  ],
  [
   "DEAD-TRIGGER",
   "repair",
-  "Ai\\Base\\ChatTriggerContext.h:43"
+  "Ai/Base/ChatTriggerContext.h:43"
  ],
  [
   "DEAD-TRIGGER",
   "reputation",
-  "Ai\\Base\\ChatTriggerContext.h:26"
+  "Ai/Base/ChatTriggerContext.h:26"
  ],
  [
   "DEAD-TRIGGER",
   "reset botAI",
-  "Ai\\Base\\ChatTriggerContext.h:76"
+  "Ai/Base/ChatTriggerContext.h:76"
  ],
  [
   "DEAD-TRIGGER",
   "rpg craft",
-  "Ai\\Base\\TriggerContext.h:241"
+  "Ai/Base/TriggerContext.h:241"
  ],
  [
   "DEAD-TRIGGER",
   "rpg do quest",
-  "Ai\\Base\\ChatTriggerContext.h:31"
+  "Ai/Base/ChatTriggerContext.h:31"
  ],
  [
   "DEAD-TRIGGER",
   "rpg duel",
-  "Ai\\Base\\TriggerContext.h:243"
+  "Ai/Base/TriggerContext.h:243"
  ],
  [
   "DEAD-TRIGGER",
   "rpg queue bg",
-  "Ai\\Base\\TriggerContext.h:237"
+  "Ai/Base/TriggerContext.h:237"
  ],
  [
   "DEAD-TRIGGER",
   "rpg sell",
-  "Ai\\Base\\TriggerContext.h:232"
+  "Ai/Base/TriggerContext.h:232"
  ],
  [
   "DEAD-TRIGGER",
   "rpg spell",
-  "Ai\\Base\\TriggerContext.h:240"
+  "Ai/Base/TriggerContext.h:240"
  ],
  [
   "DEAD-TRIGGER",
   "rpg status",
-  "Ai\\Base\\ChatTriggerContext.h:30"
+  "Ai/Base/ChatTriggerContext.h:30"
  ],
  [
   "DEAD-TRIGGER",
   "rpg taxi",
-  "Ai\\Base\\TriggerContext.h:227"
+  "Ai/Base/TriggerContext.h:227"
  ],
  [
   "DEAD-TRIGGER",
   "rpg trade useful",
-  "Ai\\Base\\TriggerContext.h:242"
+  "Ai/Base/TriggerContext.h:242"
  ],
  [
   "DEAD-TRIGGER",
   "rpg train",
-  "Ai\\Base\\TriggerContext.h:234"
+  "Ai/Base/TriggerContext.h:234"
  ],
  [
   "DEAD-TRIGGER",
   "rti",
-  "Ai\\Base\\ChatTriggerContext.h:98"
+  "Ai/Base/ChatTriggerContext.h:98"
  ],
  [
   "DEAD-TRIGGER",
   "rtsc",
-  "Ai\\Base\\ChatTriggerContext.h:139"
+  "Ai/Base/ChatTriggerContext.h:139"
  ],
  [
   "DEAD-TRIGGER",
   "rupture",
-  "Ai\\Class\\Rogue\\RogueAiObjectContext.cpp:65"
+  "Ai/Class/Rogue/RogueAiObjectContext.cpp:65"
  ],
  [
   "DEAD-TRIGGER",
   "sanctity aura",
-  "Ai\\Class\\Paladin\\PaladinAiObjectContext.cpp:119"
+  "Ai/Class/Paladin/PaladinAiObjectContext.cpp:119"
  ],
  [
   "DEAD-TRIGGER",
   "save mana",
-  "Ai\\Base\\ChatTriggerContext.h:105"
+  "Ai/Base/ChatTriggerContext.h:105"
  ],
  [
   "DEAD-TRIGGER",
   "sendmail",
-  "Ai\\Base\\ChatTriggerContext.h:118"
+  "Ai/Base/ChatTriggerContext.h:118"
  ],
  [
   "DEAD-TRIGGER",
   "shadowguard",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:101"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:101"
  ],
  [
   "DEAD-TRIGGER",
   "share",
-  "Ai\\Base\\ChatTriggerContext.h:34"
+  "Ai/Base/ChatTriggerContext.h:34"
  ],
  [
   "DEAD-TRIGGER",
   "shock",
-  "Ai\\Class\\Shaman\\ShamanAiObjectContext.cpp:156"
+  "Ai/Class/Shaman/ShamanAiObjectContext.cpp:156"
  ],
  [
   "DEAD-TRIGGER",
   "shockwave",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:93"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:93"
  ],
  [
   "DEAD-TRIGGER",
   "slam",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:101"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:101"
  ],
  [
   "DEAD-TRIGGER",
   "spell",
-  "Ai\\Base\\ChatTriggerContext.h:97"
+  "Ai/Base/ChatTriggerContext.h:97"
  ],
  [
   "DEAD-TRIGGER",
   "spells",
-  "Ai\\Base\\ChatTriggerContext.h:60"
+  "Ai/Base/ChatTriggerContext.h:60"
  ],
  [
   "DEAD-TRIGGER",
   "ss",
-  "Ai\\Base\\ChatTriggerContext.h:37"
+  "Ai/Base/ChatTriggerContext.h:37"
  ],
  [
   "DEAD-TRIGGER",
   "stance",
-  "Ai\\Base\\ChatTriggerContext.h:110"
+  "Ai/Base/ChatTriggerContext.h:110"
  ],
  [
   "DEAD-TRIGGER",
   "stats",
-  "Ai\\Base\\ChatTriggerContext.h:23"
+  "Ai/Base/ChatTriggerContext.h:23"
  ],
  [
   "DEAD-TRIGGER",
   "summon",
-  "Ai\\Base\\ChatTriggerContext.h:103"
+  "Ai/Base/ChatTriggerContext.h:103"
  ],
  [
   "DEAD-TRIGGER",
   "swimming",
-  "Ai\\Base\\TriggerContext.h:160"
+  "Ai/Base/TriggerContext.h:160"
  ],
  [
   "DEAD-TRIGGER",
   "switch to melee",
-  "Ai\\Class\\Hunter\\HunterAiObjectContext.cpp:87"
+  "Ai/Class/Hunter/HunterAiObjectContext.cpp:87"
  ],
  [
   "DEAD-TRIGGER",
   "switch to ranged",
-  "Ai\\Class\\Hunter\\HunterAiObjectContext.cpp:88"
+  "Ai/Class/Hunter/HunterAiObjectContext.cpp:88"
  ],
  [
   "DEAD-TRIGGER",
   "talents",
-  "Ai\\Base\\ChatTriggerContext.h:59"
+  "Ai/Base/ChatTriggerContext.h:59"
  ],
  [
   "DEAD-TRIGGER",
   "target in sight",
-  "Ai\\Base\\TriggerContext.h:82"
+  "Ai/Base/TriggerContext.h:82"
  ],
  [
   "DEAD-TRIGGER",
   "taxi",
-  "Ai\\Base\\ChatTriggerContext.h:42"
+  "Ai/Base/ChatTriggerContext.h:42"
  ],
  [
   "DEAD-TRIGGER",
   "team has flag",
-  "Ai\\Base\\TriggerContext.h:195"
+  "Ai/Base/TriggerContext.h:195"
  ],
  [
   "DEAD-TRIGGER",
   "teleport",
-  "Ai\\Base\\ChatTriggerContext.h:41"
+  "Ai/Base/ChatTriggerContext.h:41"
  ],
  [
   "DEAD-TRIGGER",
   "thorns on party",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:87"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:87"
  ],
  [
   "DEAD-TRIGGER",
   "thunder clap",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:79"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:79"
  ],
  [
   "DEAD-TRIGGER",
   "thunder clap on snare target",
-  "Ai\\Class\\Warrior\\WarriorAiObjectContext.cpp:78"
+  "Ai/Class/Warrior/WarriorAiObjectContext.cpp:78"
  ],
  [
   "DEAD-TRIGGER",
   "touch of weakness",
-  "Ai\\Class\\Priest\\PriestAiObjectContext.cpp:99"
+  "Ai/Class/Priest/PriestAiObjectContext.cpp:99"
  ],
  [
   "DEAD-TRIGGER",
   "trainer",
-  "Ai\\Base\\ChatTriggerContext.h:64"
+  "Ai/Base/ChatTriggerContext.h:64"
  ],
  [
   "DEAD-TRIGGER",
   "tree form",
-  "Ai\\Class\\Druid\\DruidAiObjectContext.cpp:112"
+  "Ai/Class/Druid/DruidAiObjectContext.cpp:112"
  ],
  [
   "DEAD-TRIGGER",
   "tricks of the trade on main tank",
-  "Ai\\Class\\Rogue\\RogueAiObjectContext.cpp:79"
+  "Ai/Class/Rogue/RogueAiObjectContext.cpp:79"
  ],
  [
   "DEAD-TRIGGER",
   "use",
-  "Ai\\Base\\ChatTriggerContext.h:46"
+  "Ai/Base/ChatTriggerContext.h:46"
  ],
  [
   "DEAD-TRIGGER",
   "vehicle near",
-  "Ai\\Base\\TriggerContext.h:211"
+  "Ai/Base/TriggerContext.h:211"
  ],
  [
   "DEAD-TRIGGER",
   "wait for attack time",
-  "Ai\\Base\\ChatTriggerContext.h:152"
+  "Ai/Base/ChatTriggerContext.h:152"
  ],
  [
   "DEAD-TRIGGER",
   "wants in bg",
-  "Ai\\Base\\TriggerContext.h:201"
+  "Ai/Base/TriggerContext.h:201"
  ],
  [
   "DEAD-TRIGGER",
   "who",
-  "Ai\\Base\\ChatTriggerContext.h:104"
+  "Ai/Base/ChatTriggerContext.h:104"
  ],
  [
   "DEAD-TRIGGER",
   "wts",
-  "Ai\\Base\\ChatTriggerContext.h:126"
+  "Ai/Base/ChatTriggerContext.h:126"
  ],
  [
   "DEAD-TRIGGER",
   "yogg-saron shadow resistance triggerr",
-  "Ai\\Raid\\Ulduar\\RaidUlduarTriggerContext.h:71"
+  "Ai/Raid/Ulduar/RaidUlduarTriggerContext.h:71"
  ],
  [
   "DEAD-TRIGGER",
   "zul'jin boss engaged by tanks",
-  "Ai\\Raid\\ZulAman\\RaidZulAmanTriggerContext.h:98"
+  "Ai/Raid/ZulAman/RaidZulAmanTriggerContext.h:98"
  ]
 ]
