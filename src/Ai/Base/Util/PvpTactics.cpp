@@ -1296,6 +1296,30 @@ namespace ai::pvp
         }
     }
 
+    // Any opposing player close enough to the bot to be worth fighting.
+    static bool HasOpposingPlayerNear(PlayerbotAI* botAI, Player* bot, float radius)
+    {
+        if (!botAI || !bot)
+            return false;
+
+        uint8 scanned = 0;
+        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest enemy players")->Get())
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            Player* enemy = unit ? unit->ToPlayer() : nullptr;
+            if (!enemy || !enemy->IsAlive() || !enemy->IsInWorld() || enemy->GetMapId() != bot->GetMapId())
+                continue;
+
+            if (bot->GetExactDist2d(enemy) <= radius)
+                return true;
+
+            if (++scanned >= 24)
+                break;
+        }
+
+        return false;
+    }
+
     static bool ComputeShouldPrioritizeBattlegroundCapture(PlayerbotAI* botAI, Player* bot, bool hasObjective)
     {
         if (!hasObjective || HasSelfDefenseAttacker(bot))
@@ -1310,6 +1334,14 @@ namespace ai::pvp
 
         float const commitRadius = IsInAlteracValley(bot) ? 75.0f : 55.0f;
         if (!IsNearObjective(bot, objective, commitRadius))
+            return false;
+
+        // Holding a position must never blind the bot to a fight happening around it. The threat
+        // scan below only looks for enemies standing on the objective itself, so a defender posted a
+        // little way off - which is exactly where a rally point puts him - kept holding while the
+        // enemy ran past him into the graveyard he was there to guard. If anyone worth fighting is
+        // within reach, fight; the objective is not going anywhere.
+        if (HasOpposingPlayerNear(botAI, bot, 45.0f))
             return false;
 
         return !ScanCaptureObjectiveThreat(botAI);
