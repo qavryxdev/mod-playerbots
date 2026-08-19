@@ -2879,6 +2879,10 @@ void PlayerbotAI::DoNextAction(bool min)
         return;
     }
 
+    // Sampled here rather than inside any one subsystem: this is the single per-bot tick that every
+    // context goes through, which is what makes the watchdog universal instead of a battleground patch.
+    ai::stall::Sample(this, minimal || min);
+
     currentEngine->DoNextAction(nullptr, 0, (minimal || min));
 
     if (minimal)
@@ -5800,7 +5804,7 @@ Player* PlayerbotAI::FindNewMaster()
             return member;
 
         if (bot->InBattleground() && bot->GetBattleground() &&
-            bot->GetBattleground()->GetBgTypeID() == BATTLEGROUND_AV && !GET_PLAYERBOT_AI(member) &&
+            bot->GetBattleground()->GetBgTypeID(true) == BATTLEGROUND_AV && !GET_PLAYERBOT_AI(member) &&
             member->InBattleground() && bot->GetMapId() == member->GetMapId())
         {
             // Skip if same BG but same subgroup or lower level

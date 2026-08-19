@@ -109,6 +109,9 @@ public:
     static bool HandleConsoleCommand(ChatHandler* handler, char const* args);
     uint8 static GetBotStrategyForTeam(Battleground* bg, TeamId teamId);
     static void UpdateAsyncAVStrategyCache(uint32 diff);
+    // Instance ids are reused, so per-instance state has to be dropped when the match ends or the next
+    // battleground on the same id inherits the previous one's latched mode.
+    static void ClearBattlegroundInstanceState(uint32 instanceId);
 
     BGTactics(PlayerbotAI* botAI, std::string const name = "bg tactics") : MovementAction(botAI, name) {}
 
@@ -118,7 +121,8 @@ private:
     static std::string const HandleConsoleCommandPrivate(WorldSession* session, char const* args);
     bool moveToStart(bool force = false);
     bool selectObjective(bool reset = false);
-    bool moveToObjective(bool ignoreDist);
+    // replanDepth bounds how many times one tick may re-decide before it is required to actually move.
+    bool moveToObjective(bool ignoreDist, uint8 replanDepth = 0);
     bool selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths);
     bool moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 currentPoint, bool reverse = false);
     bool startNewPathBegin(std::vector<BattleBotPath*> const& vPaths);

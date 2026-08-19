@@ -15,13 +15,13 @@ class PlayerbotAI;
 class PositionInfo
 {
 public:
-    PositionInfo() : x(0), y(0), z(0), mapId(0), valueSet(false) {}
+    PositionInfo() : x(0), y(0), z(0), mapId(0), valueSet(false), rally(false) {}
     PositionInfo(float x, float y, float z, uint32 mapId, bool valueSet = true)
-        : x(x), y(y), z(z), mapId(mapId), valueSet(valueSet)
+        : x(x), y(y), z(z), mapId(mapId), valueSet(valueSet), rally(false)
     {
     }
     PositionInfo(PositionInfo const& other)
-        : x(other.x), y(other.y), z(other.z), mapId(other.mapId), valueSet(other.valueSet)
+        : x(other.x), y(other.y), z(other.z), mapId(other.mapId), valueSet(other.valueSet), rally(other.rally)
     {
     }
     PositionInfo& operator=(PositionInfo const& other) = default;
@@ -33,17 +33,33 @@ public:
         z = newZ;
         mapId = newMapId;
         valueSet = true;
+        rally = false;
     }
 
-    void Reset() { valueSet = false; }
+    // A rally is somewhere to stand while there is no real work, not an objective. Systems that treat
+    // "the bot holds an objective" as a reason to change its combat behaviour must ignore these, or a
+    // bot parked on a staging point stops defending itself and everything around it.
+    void SetRally(float newX, float newY, float newZ, uint32 newMapId)
+    {
+        Set(newX, newY, newZ, newMapId);
+        rally = true;
+    }
+
+    void Reset()
+    {
+        valueSet = false;
+        rally = false;
+    }
 
     bool isSet() const { return valueSet; }
+    bool isRally() const { return valueSet && rally; }
 
     float x;
     float y;
     float z;
     uint32 mapId;
     bool valueSet;
+    bool rally;
 };
 
 typedef std::map<std::string, PositionInfo> PositionMap;

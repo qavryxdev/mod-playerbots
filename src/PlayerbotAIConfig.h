@@ -306,6 +306,14 @@ public:
     uint32 fastReactInWorldCombatMultiplier, fastReactInWorldActiveDelayMin, fastReactInWorldActiveDelayMax;
     bool allianceAVMoveDebug;
 
+    // Anti-stall watchdog. stallWatchMaxStep is the highest escalation step that may run: 0 is
+    // observe-only (counters move, behaviour does not), 5 lets the whole ladder run.
+    bool stallWatchEnabled;
+    bool stallWatchTeleport;
+    uint32 stallWatchSampleMs;
+    uint32 stallWatchSamples;
+    uint32 stallWatchMaxStep;
+
     bool randombotsWalkingRPG;
     bool randombotsWalkingRPGInDoors;
     uint32 minEnchantingBotLevel;

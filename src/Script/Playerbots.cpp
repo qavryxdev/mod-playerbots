@@ -879,7 +879,10 @@ public:
     {
         BGStrategyData data;
 
-        switch (bg->GetBgTypeID())
+        // GetBgTypeID() is the queue the match came from, so it is BATTLEGROUND_RB for anything entered
+        // from the random queue and the switch below would fall through to default, leaving every team on
+        // strategy 0. GetBgTypeID(true) is the map that was actually created.
+        switch (bg->GetBgTypeID(true))
         {
             case BATTLEGROUND_WS:
                 data.allianceStrategy = urand(0, WS_STRATEGY_MAX - 1);
@@ -904,7 +907,11 @@ public:
         bgStrategies[bg->GetInstanceID()] = data;
     }
 
-    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override { bgStrategies.erase(bg->GetInstanceID()); }
+    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override
+    {
+        bgStrategies.erase(bg->GetInstanceID());
+        BGTactics::ClearBattlegroundInstanceState(bg->GetInstanceID());
+    }
 };
 
 // Workaround for missing InitEnabledHooksIfNeeded for new BattlefieldScript in ScriptMgr

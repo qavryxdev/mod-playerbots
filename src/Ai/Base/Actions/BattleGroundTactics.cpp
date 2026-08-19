@@ -1741,7 +1741,12 @@ static bool IsAllianceNodeUnderHordePressure(BattlegroundAV* av, uint8 nodeId)
     if (IsAllianceHomeGraveyard(nodeId) && node.State == POINT_CONTROLLED && node.OwnerId == TEAM_HORDE)
         return true;
 
-    return IsAllianceDefensiveTower(nodeId) && node.State == POINT_DESTROYED;
+    // A destroyed tower is a permanent loss, not ongoing pressure. POINT_DESTROYED is terminal in the
+    // core, so counting it here latched defensive pressure above zero for the rest of the match, the
+    // north could never be "quiet" again, and the one fallback position an Alliance defender has was
+    // switched off from the moment the first bunker fell. Live enemy presence is carried by the threat
+    // level and the rush flag, which is where it belongs.
+    return false;
 }
 
 static bool AllianceHasDunBaldarCorePressure(BattlegroundAV* av)
@@ -2073,7 +2078,8 @@ static bool AsyncAVAllianceNodeUnderHordePressure(std::array<AsyncAVNodeSnapshot
     if (IsAllianceHomeGraveyard(nodeId) && node.state == POINT_CONTROLLED && node.ownerId == TEAM_HORDE)
         return true;
 
-    return IsAllianceDefensiveTower(nodeId) && node.state == POINT_DESTROYED;
+    // Mirrors IsAllianceNodeUnderHordePressure - a destroyed tower is a permanent loss, not pressure.
+    return false;
 }
 
 static bool AsyncAVHordeTowerAssaultedNearCompletion(std::array<AsyncAVNodeSnapshot, BG_AV_NODES_MAX> const& nodes,
@@ -3193,6 +3199,22 @@ static bool TryGetAsyncAVPlayersNear(Battleground* bg, TeamId teamId, float x, f
 }  // namespace
 
 void BGTactics::UpdateAsyncAVStrategyCache(uint32 diff) { AsyncAVStrategyCache::Instance().Update(diff); }
+
+void BGTactics::ClearBattlegroundInstanceState(uint32 instanceId)
+{
+    {
+        std::lock_guard<std::mutex> guard(avAllianceModeStatesMutex);
+        avAllianceModeStates.erase(instanceId);
+    }
+    {
+        std::lock_guard<std::mutex> guard(avAllianceIcebloodBeachheadStatesMutex);
+        avAllianceIcebloodBeachheadStates.erase(instanceId);
+    }
+    {
+        std::lock_guard<std::mutex> guard(avAllianceDebugLogTimersMutex);
+        avAllianceDebugLogTimers.erase(instanceId);
+    }
+}
 
 static AllianceAVRushInfo GetAllianceAVRushInfo(Battleground* bg, AVBotStrategy hordeStrategy)
 {
@@ -4985,6 +5007,30 @@ static uint8 GetAllianceAVDefenderPriority(uint8 nodeId, BG_AV_NodeInfo const& n
     return 5;
 }
 
+// AV_DefendObjectives_Alliance stores BG_AV_OBJECT_FLAG_A_* - the banner that exists while the Alliance
+// holds the node. The moment the Horde assaults it, EventPlayerAssaultsPoint despawns that banner and
+// spawns the contested Horde variant in its place, so a scan that wants an assaulted node AND a spawned
+// Alliance banner is asking for two states that cannot hold at once. Resolve whichever one exists.
+static GameObject* SelectAllianceDefendNodeObject(Battleground* bg, uint8 nodeId, uint32 allianceGoId,
+                                                  bool hordeAssaulted)
+{
+    if (!bg)
+        return nullptr;
+
+    if (!hordeAssaulted)
+        return bg->GetBGObject(allianceGoId);
+
+    for (auto const& [candidateNodeId, goId] : AV_AllianceGraveyardRecapObjectives)
+        if (candidateNodeId == nodeId)
+            return bg->GetBGObject(goId);
+
+    for (auto const& [candidateNodeId, goId] : AV_AllianceTowerRecapObjectives)
+        if (candidateNodeId == nodeId)
+            return bg->GetBGObject(goId);
+
+    return nullptr;
+}
+
 static GameObject* SelectAllianceAVDefenderObjective(Player* bot, Battleground* bg, BattlegroundAV* av,
                                                      AllianceAVRushInfo const& rushInfo)
 {
@@ -5000,17 +5046,23 @@ static GameObject* SelectAllianceAVDefenderObjective(Player* bot, Battleground* 
     };
 
     std::vector<Candidate> candidates;
+
+    // Returning nullptr during a rush that has not captured anything yet is deliberate, not a hole: the
+    // caller falls through to SelectAllianceNorthRushEnemy and the defender goes to meet the incoming
+    // Horde instead of standing on a banner nobody is contesting. Handing back a node here suppresses
+    // that interception, because the enemy selector is gated on the objective still being empty.
     for (auto const& [nodeId, goId] : AV_DefendObjectives_Alliance)
     {
         BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
         if (node.State == POINT_DESTROYED)
             continue;
 
-        if (rushInfo.IsActive() &&
-            !(node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE && node.PrevOwnerId == TEAM_ALLIANCE))
+        bool const hordeAssaulted = node.State == POINT_ASSAULTED && node.OwnerId == TEAM_HORDE &&
+                                    node.PrevOwnerId == TEAM_ALLIANCE;
+        if (rushInfo.IsActive() && !hordeAssaulted)
             continue;
 
-        GameObject* go = bg->GetBGObject(goId);
+        GameObject* go = SelectAllianceDefendNodeObject(bg, nodeId, goId, hordeAssaulted);
         if (!go || !go->isSpawned())
             continue;
 
@@ -5496,33 +5548,39 @@ static bool SetAllianceIcebloodBeachheadPosition(Player* bot, Battleground* bg, 
 }
 
 static bool SetAllianceNorthReservePosition(Player* bot, PositionMap& posMap, PositionInfo& pos, uint8 role,
-                                            char const*& objectiveReason)
+                                            char const*& objectiveReason, bool nearestToBot = false)
 {
     if (!bot)
         return false;
 
-    Position const* target = &AV_ALLIANCE_ANTIRUSH_STONEHEARTH_ROAD;
-    switch (role % 4)
+    Position const* const roads[4] = {&AV_ALLIANCE_ANTIRUSH_STONEHEARTH_ROAD, &AV_ALLIANCE_ANTIRUSH_ICEWING_ROAD,
+                                      &AV_ALLIANCE_ANTIRUSH_STORMPIKE_ROAD, &AV_ALLIANCE_ANTIRUSH_DUNBALDAR_ROAD};
+
+    // The screen spreads bots along the corridor by role. A bot falling back here from somewhere else on
+    // the map wants the closest one instead, so it does not walk the length of the valley to stand still.
+    Position const* target = roads[role % 4];
+    if (nearestToBot)
     {
-        case 0:
-            target = &AV_ALLIANCE_ANTIRUSH_STONEHEARTH_ROAD;
-            break;
-        case 1:
-            target = &AV_ALLIANCE_ANTIRUSH_ICEWING_ROAD;
-            break;
-        case 2:
-            target = &AV_ALLIANCE_ANTIRUSH_STORMPIKE_ROAD;
-            break;
-        default:
-            target = &AV_ALLIANCE_ANTIRUSH_DUNBALDAR_ROAD;
-            break;
+        float best = FLT_MAX;
+        for (Position const* road : roads)
+        {
+            float const distance = bot->GetDistance2d(road->GetPositionX(), road->GetPositionY());
+            if (distance < best)
+            {
+                best = distance;
+                target = road;
+            }
+        }
     }
 
     float rx, ry, rz;
     bot->GetRandomPoint(*target, 10.0f, rx, ry, rz);
     ResolveBattleGroundGroundZ(bot, rx, ry, rz);
 
-    pos.Set(rx, ry, rz, bot->GetMapId());
+    // The anti-rush roads are staging, not capture points, and one of them sits inside the 45 yard
+    // radius of the Stormpike banner. Written as an ordinary objective it makes the capture gate treat
+    // a bot waiting on a road as a bot holding a node, which stops it defending itself.
+    pos.SetRally(rx, ry, rz, bot->GetMapId());
     posMap["bg objective"] = pos;
     objectiveReason = "alliance north reserve screen";
     return true;
@@ -6641,7 +6699,7 @@ bool BGTactics::Execute(Event /*event*/)
                 return true;
 
             bool const moved = moveToObjective(true);
-            if (!moved && bg->GetBgTypeID() == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+            if (!moved && bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
             {
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
                 PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
@@ -6651,7 +6709,7 @@ bool BGTactics::Execute(Event /*event*/)
             return moved;
         }
 
-        if (bg->GetBgTypeID() == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
             return true;
 
         // bot with flag should only move to objective
@@ -6662,7 +6720,7 @@ bool BGTactics::Execute(Event /*event*/)
         if (!startNewPathBegin(*vPaths))
         {
             bool const moved = moveToObjective(true);
-            if (!moved && bg->GetBgTypeID() == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+            if (!moved && bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
             {
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
                 PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
@@ -6675,7 +6733,7 @@ bool BGTactics::Execute(Event /*event*/)
         if (!startNewPathFree(*vPaths))
         {
             bool const moved = moveToObjective(true);
-            if (!moved && bg->GetBgTypeID() == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+            if (!moved && bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
             {
                 uint8 const role = context->GetValue<uint32>("bg role")->Get();
                 PositionInfo const objectivePos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
@@ -7638,8 +7696,21 @@ bool BGTactics::selectObjective(bool reset)
             }
 
             if (team == TEAM_ALLIANCE)
+            {
                 LogAllianceAVMoveDebug(bot, bg, pos, "select_objective_none", role, defendersProhab, isDefender,
                                        AI_VALUE(Unit*, "enemy player target"));
+
+                // Alterac Valley is the one battleground whose Alliance strategy is fixed rather than
+                // rolled, and every generic last resort below is gated on "not Alliance CONTROL_TEMPO",
+                // so the Alliance branch is the only one that can leave this switch with no destination.
+                // A bot with no destination stops moving and the next tick fails identically, so this
+                // has to succeed. It writes a rally rather than an objective: see PositionInfo::SetRally.
+                if (SetAllianceNorthReservePosition(bot, posMap, pos, role, objectiveReason, true))
+                {
+                    objectiveReason = "alliance terminal rally";
+                    return true;
+                }
+            }
 
             break;
         }
@@ -8669,7 +8740,7 @@ bool BGTactics::selectObjective(bool reset)
     return false;
 }
 
-bool BGTactics::moveToObjective(bool ignoreDist)
+bool BGTactics::moveToObjective(bool ignoreDist, uint8 replanDepth)
 {
     Battleground* bg = bot->GetBattleground();
     if (!bg)
@@ -8683,13 +8754,24 @@ bool BGTactics::moveToObjective(bool ignoreDist)
     if (!pos.isSet())
     {
         bool const selected = selectObjective();
-        if (!selected && bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+        if (!selected)
         {
-            uint8 const role = context->GetValue<uint32>("bg role")->Get();
-            LogAllianceAVMoveDebug(bot, bg, pos, "no_objective_select_failed", role, 255, false,
-                                   AI_VALUE(Unit*, "enemy player target"));
+            if (bgType == BATTLEGROUND_AV && bot->GetTeamId() == TEAM_ALLIANCE)
+            {
+                uint8 const role = context->GetValue<uint32>("bg role")->Get();
+                LogAllianceAVMoveDebug(bot, bg, pos, "no_objective_select_failed", role, 255, false,
+                                       AI_VALUE(Unit*, "enemy player target"));
+            }
+            return false;
         }
-        return selected;
+
+        // Choosing a destination is not moving to it. Returning here spent the whole tick on the
+        // decision, so the bot stood still on every tick that re-planned. Bounded so that a selector
+        // that reports success without writing a destination cannot recurse.
+        if (replanDepth >= 1)
+            return false;
+
+        return moveToObjective(ignoreDist, replanDepth + 1);
     }
     else
     {
@@ -8759,36 +8841,50 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                     isDefender = false;
             }
 
-            if (AllianceAVShouldResetCurrentObjective(bot, bg, av, pos, role, isDefender, effectiveRushInfo, threat,
-                                                       mode, committedDrekFinisher))
+            // These re-plan tests are allowed to disagree with what selectObjective would hand back, and
+            // when they do the bot re-decides forever without ever moving - the full-recall test rejects
+            // any objective west of x=250 while the defender selector legitimately returns Stonehearth at
+            // x=76. Bounding the depth means a tick may re-plan, but it must move before it ends.
+            if (replanDepth < 1)
             {
-                LogAllianceAVMoveDebug(bot, bg, pos, "reset_current_objective", role, defenderLimit, isDefender,
-                                       AI_VALUE(Unit*, "enemy player target"));
-                return resetObjective();
-            }
-
-            bool const canResetForMapState = !PlayerHasFlag::IsCapturingFlag(bot) && !AllianceAVIsCastingAnySpell(bot);
-            if (!committedDrekFinisher && canResetForMapState &&
-                (isDefender || (fullRecall && role < 9)) && effectiveRushInfo.IsActive() &&
-                pos.x < -180.0f && !AllianceAVPositionIsSnowfallRun(bg, pos))
-            {
-                LogAllianceAVMoveDebug(bot, bg, pos, "reset_map_state_rush", role, defenderLimit, isDefender,
-                                       AI_VALUE(Unit*, "enemy player target"));
-                return resetObjective();
-            }
-
-            if (!committedDrekFinisher && !assignedBunkerRecapper)
-            {
-                if (GameObject* emergency = SelectAllianceAVEmergencyDefenseObjective(
-                        bot, bg, av, role, isDefender, strategy, defenderLimit, effectiveRushInfo, threat))
+                if (AllianceAVShouldResetCurrentObjective(bot, bg, av, pos, role, isDefender, effectiveRushInfo,
+                                                          threat, mode, committedDrekFinisher))
                 {
-                    float const dx = emergency->GetPositionX() - pos.x;
-                    float const dy = emergency->GetPositionY() - pos.y;
-                    if (AllianceAVPositionIsAntiRushRally(pos) || (dx * dx + dy * dy) > 1600.0f)
+                    LogAllianceAVMoveDebug(bot, bg, pos, "reset_current_objective", role, defenderLimit, isDefender,
+                                           AI_VALUE(Unit*, "enemy player target"));
+                    if (resetObjective())
+                        return moveToObjective(ignoreDist, replanDepth + 1);
+                    return false;
+                }
+
+                bool const canResetForMapState =
+                    !PlayerHasFlag::IsCapturingFlag(bot) && !AllianceAVIsCastingAnySpell(bot);
+                if (!committedDrekFinisher && canResetForMapState &&
+                    (isDefender || (fullRecall && role < 9)) && effectiveRushInfo.IsActive() &&
+                    pos.x < -180.0f && !AllianceAVPositionIsSnowfallRun(bg, pos))
+                {
+                    LogAllianceAVMoveDebug(bot, bg, pos, "reset_map_state_rush", role, defenderLimit, isDefender,
+                                           AI_VALUE(Unit*, "enemy player target"));
+                    if (resetObjective())
+                        return moveToObjective(ignoreDist, replanDepth + 1);
+                    return false;
+                }
+
+                if (!committedDrekFinisher && !assignedBunkerRecapper)
+                {
+                    if (GameObject* emergency = SelectAllianceAVEmergencyDefenseObjective(
+                            bot, bg, av, role, isDefender, strategy, defenderLimit, effectiveRushInfo, threat))
                     {
-                        LogAllianceAVMoveDebug(bot, bg, pos, "reset_emergency_defense", role, defenderLimit,
-                                               isDefender, AI_VALUE(Unit*, "enemy player target"));
-                        return resetObjective();
+                        float const dx = emergency->GetPositionX() - pos.x;
+                        float const dy = emergency->GetPositionY() - pos.y;
+                        if (AllianceAVPositionIsAntiRushRally(pos) || (dx * dx + dy * dy) > 1600.0f)
+                        {
+                            LogAllianceAVMoveDebug(bot, bg, pos, "reset_emergency_defense", role, defenderLimit,
+                                                   isDefender, AI_VALUE(Unit*, "enemy player target"));
+                            if (resetObjective())
+                                return moveToObjective(ignoreDist, replanDepth + 1);
+                            return false;
+                        }
                     }
                 }
             }
@@ -8847,7 +8943,17 @@ bool BGTactics::moveToObjective(bool ignoreDist)
                 LogAllianceAVMoveDebug(bot, bg, pos, "move_tower_direct_blocked", role, 255, false,
                                        AI_VALUE(Unit*, "enemy player target"));
             }
-            return false;
+
+            // No access waypoint resolves while the objective is far away, so refusing here left the bot
+            // with an unchanged destination and no movement, and the forced retry took the same branch.
+            // Close in the refusal is the point - a direct move would path through the building - but on
+            // the forced retry from a distance, approaching the tower beats standing still.
+            bool const forcedApproachFromAfar =
+                ignoreDist &&
+                ServerFacade::instance().IsDistanceGreaterThan(
+                    ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y), 40.0f);
+            if (!forcedApproachFromAfar)
+                return false;
         }
 
         if (!ignoreDist && ServerFacade::instance().IsDistanceGreaterThan(ServerFacade::instance().GetDistance2d(bot, pos.x, pos.y), directMoveLimit))
@@ -9137,6 +9243,8 @@ bool BGTactics::resetObjective()
     // Adjust role-change chance based on battleground type
     uint32 oddsToChangeRole = 1;  // default low
     BattlegroundTypeId bgType = bg->GetBgTypeID();
+    if (bgType == BATTLEGROUND_RB)
+        bgType = bg->GetBgTypeID(true);
 
     if (bgType == BATTLEGROUND_WS)
         oddsToChangeRole = 2;
@@ -9160,13 +9268,33 @@ bool BGTactics::resetObjective()
     if (urand(0, 99) < oddsToChangeRole && !isCarryingFlag)
         context->GetValue<uint32>("bg role")->Set(urand(0, 9));
 
-    // Reset objective position
+    // Reset objective position. selectObjective(true) is allowed to fail, so the old destination is kept
+    // until a replacement exists - clearing first meant a failed re-selection was itself what stranded
+    // the bot, and it is driven by the "often" trigger, so it happens on a routine cadence.
     PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
-    PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+    PositionInfo const previous = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+    PositionInfo pos = previous;
     pos.Reset();
     posMap["bg objective"] = pos;
 
-    return selectObjective(true);
+    if (selectObjective(true))
+        return true;
+
+    // selectObjective has branches that deliberately write a destination and then fall through to its
+    // terminal "return false" - the Arathi enemy-graveyard camp and the Alterac Valley boss wait both do
+    // it. Restoring over those would throw away a fresh decision in favour of the one being abandoned.
+    if (posMap["bg objective"].isSet())
+        return true;
+
+    if (previous.isSet())
+    {
+        // Keeping the old destination beats stranding the bot, but this is not a success: reporting one
+        // would let "bg check objective" claim the tick ahead of "bg move to objective" and the bot
+        // would stand still for it.
+        posMap["bg objective"] = previous;
+    }
+
+    return false;
 }
 
 bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 currentPoint, bool reverse)

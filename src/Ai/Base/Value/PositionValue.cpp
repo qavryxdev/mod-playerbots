@@ -20,7 +20,9 @@ std::string const PositionValue::Save()
     {
         std::string const name = i->first;
         PositionInfo pos = i->second;
-        if (pos.isSet())
+        // Rally points are transient staging, and the saved form has no room for the flag - reloading one
+        // as an ordinary position would hand it to the capture system as if it were an objective.
+        if (pos.isSet() && !pos.isRally())
         {
             if (!first)
                 out << "^";

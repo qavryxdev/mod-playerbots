@@ -55,7 +55,9 @@ static bool AllianceAVBotIsInIcebloodAssaultArea(Player* bot)
 
 static bool AllianceAVPositionIsIcebloodAssaultObjective(PositionInfo const& pos)
 {
-    if (!pos.valueSet)
+    // A rally is somewhere to wait, not an assault objective, and treating it as one would suppress
+    // target selection for a bot that is standing around precisely because it has no objective.
+    if (!pos.valueSet || pos.isRally())
         return false;
 
     if (pos.x <= -520.0f && pos.x >= -630.0f && pos.y <= -245.0f && pos.y >= -345.0f)

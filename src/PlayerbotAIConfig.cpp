@@ -199,6 +199,17 @@ bool PlayerbotAIConfig::Initialize()
         pvpProhibitedAreaIds);
     fastReactInBG = sConfigMgr->GetOption<bool>("AiPlayerbot.FastReactInBG", true);
     allianceAVMoveDebug = sConfigMgr->GetOption<bool>("AiPlayerbot.AllianceAVMoveDebug", false);
+    stallWatchEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.StallWatchEnabled", true);
+    stallWatchTeleport = sConfigMgr->GetOption<bool>("AiPlayerbot.StallWatchTeleport", false);
+    stallWatchSampleMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.StallWatchSampleMs", 4000);
+    if (stallWatchSampleMs < 1000)
+        stallWatchSampleMs = 1000;
+    stallWatchSamples = sConfigMgr->GetOption<uint32>("AiPlayerbot.StallWatchSamples", 3);
+    if (stallWatchSamples < 1)
+        stallWatchSamples = 1;
+    stallWatchMaxStep = sConfigMgr->GetOption<uint32>("AiPlayerbot.StallWatchMaxStep", 0);
+    if (stallWatchMaxStep > 5)
+        stallWatchMaxStep = 5;
     LoadList<std::vector<uint32>>(
         sConfigMgr->GetOption<std::string>("AiPlayerbot.RandomBotQuestIds", "3802,5505,6502,7761,7848,10277,10285,11492,"
                                            "13188,13189,24499,24511,24710,24712"),

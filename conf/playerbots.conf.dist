@@ -1417,6 +1417,37 @@ AiPlayerbot.FastReactInBG = 1
 # Default: 0 (disabled)
 AiPlayerbot.AllianceAVMoveDebug = 0
 
+# Anti-stall watchdog. Samples every bot's position and notices when one stops moving without a
+# reason (crowd control, casting, waiting for the battleground gates, guarding a point it chose,
+# melee combat and a pending movement order all count as reasons).
+# Once a minute it writes a "Stall watch/min:" line to Playerbots.log with the detection count and
+# a breakdown of why samples were rejected.
+# Default: 1 (enabled)
+AiPlayerbot.StallWatchEnabled = 1
+
+# Seconds between position samples, in milliseconds. Lower reacts sooner and costs more.
+# Default: 4000
+AiPlayerbot.StallWatchSampleMs = 4000
+
+# Consecutive samples with no movement before the bot counts as stalled.
+# Default: 3 (so roughly 12 seconds at the default sample interval)
+AiPlayerbot.StallWatchSamples = 3
+
+# Highest recovery step the watchdog may take:
+#   0 = observe only, counters move but nothing is changed
+#   1 = also clear the movement de-duplication gate
+#   2 = also ask the battleground logic to pick a new objective
+#   3 = also clear the movement generator and take one short hop
+#   4 = also teleport to the destination the bot itself chose (never inside a battleground)
+#   5 = also log a warning when nothing worked
+# Raise this one step at a time and compare "detected" against the reject counters first.
+# Default: 0 (observe only)
+AiPlayerbot.StallWatchMaxStep = 0
+
+# Allow step 4 to teleport. Ignored inside battlegrounds and arenas either way.
+# Default: 0 (disabled)
+AiPlayerbot.StallWatchTeleport = 0
+
 #
 #
 #

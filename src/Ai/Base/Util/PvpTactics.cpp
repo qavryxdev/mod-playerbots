@@ -687,6 +687,12 @@ namespace
         if (itr == positions.end() || !itr->second.valueSet)
             return false;
 
+        // A rally point is where the bot waits when it has no objective. Reporting it as one makes the
+        // capture gate below refuse every target that is not already hitting the bot, which is how a
+        // fallback destination turns into a bot that stands on a road and watches the enemy run past.
+        if (itr->second.isRally())
+            return false;
+
         objective = itr->second;
         return true;
     }
@@ -1417,6 +1423,14 @@ namespace ai::pvp
 
         // An enemy carrying a flag is a threat to the objective wherever he is standing.
         if (IsCarryingBattlegroundFlag(playerTarget))
+            return true;
+
+        // An enemy this close to the bot is a threat to whatever the bot is holding, whatever the
+        // distance from the objective's centre happens to be. Requiring him to reach the banner first
+        // meant a defender stood on its graveyard and watched the enemy walk all the way up to it.
+        // Safe against interrupting a real capture: a bot actually channelling the banner keeps
+        // priority earlier in ComputeShouldPrioritizeBattlegroundCapture and never reaches this scan.
+        if (bot->IsWithinDist(target, 40.0f))
             return true;
 
         // Standing on the objective is itself a threat. Requiring the enemy to be channelling the

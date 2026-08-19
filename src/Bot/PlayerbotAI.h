@@ -22,6 +22,7 @@
 #include "PlayerbotSecurity.h"
 #include "PlayerbotTextMgr.h"
 #include "SpellAuras.h"
+#include "StallWatch.h"
 #include "Util.h"
 #include "WorldPacket.h"
 
@@ -608,6 +609,8 @@ public:
     static SpellFamilyNames Class2SpellFamilyName(uint8 cls);
     NewRpgInfo rpgInfo;
     NewRpgStatistic rpgStatistic;
+    // Anti-stall watchdog state. Owned by the map thread that owns this bot; see ai::stall::Sample.
+    ai::stall::StallWatchState stallWatch;
     std::unordered_set<uint32> lowPriorityQuest;
     time_t bgReleaseAttemptTime = 0;
 
