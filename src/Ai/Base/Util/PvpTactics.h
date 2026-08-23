@@ -80,6 +80,9 @@ namespace ai::pvp
     bool IsCarryingOurFlag(PlayerbotAI* botAI, Player* target);
     bool IsObjectiveRelevantEnemy(PlayerbotAI* botAI, Unit* target, bool threatTarget = false,
                                   float botObjectiveRadius = 60.0f, float targetObjectiveRadius = 38.0f);
+    // True while the player is channelling the spell that takes a banner. Exported so target selection
+    // can treat someone mid-capture as worth interrupting.
+    bool HasCaptureBannerCast(Player* bot);
     bool HasActiveBattlegroundCaptureObjective(PlayerbotAI* botAI);
     bool IsSelfDefenseTarget(Player* bot, Unit* target);
     bool HasSelfDefenseAttacker(Player* bot);

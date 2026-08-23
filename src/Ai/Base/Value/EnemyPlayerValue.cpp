@@ -97,6 +97,19 @@ Unit* EnemyPlayerValue::Calculate()
             return pTarget;
     }
 
+    // An enemy channelling a banner is seconds away from taking the objective and the cast breaks the
+    // moment he is hit, so he is worth more than whoever we happen to be trading blows with. Same
+    // reasoning as the flag carrier above, and deliberately below it: a carrier is already holding
+    // something, a capturer is only about to.
+    for (auto const& gTarget : players)
+    {
+        Unit* pUnit = botAI->GetUnit(gTarget);
+        Player* pTarget = pUnit ? dynamic_cast<Player*>(pUnit) : nullptr;
+        if (pTarget && ai::pvp::HasCaptureBannerCast(pTarget) &&
+            isUsableEnemyPlayer(pTarget, maxAggroDistance * 2.0f))
+            return pTarget;
+    }
+
     if (Player* victimPlayer = pVictim ? pVictim->ToPlayer() : nullptr)
     {
         if (isUsableEnemyPlayer(victimPlayer, maxAggroDistance + 10.0f) &&

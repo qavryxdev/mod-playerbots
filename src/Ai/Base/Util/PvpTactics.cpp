@@ -1302,6 +1302,44 @@ namespace ai::pvp
         }
     }
 
+    // Decides, without anyone being told, which bot commits to a capture while a fight is going on around
+    // it: the one standing closest to the objective. Every bot works the answer out for itself from the
+    // same world state, so there is no assignment to share, nothing to keep in sync and nothing that can
+    // go stale - which matters when bot AI runs on a worker pool.
+    static bool IsNearestFriendlyToObjective(PlayerbotAI* botAI, Player* bot, PositionInfo const& objective)
+    {
+        float const contestRadius = 40.0f;
+        float const myDistance = bot->GetDistance(objective.x, objective.y, objective.z);
+        if (myDistance > contestRadius)
+            return false;
+
+        GuidVector friends = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest friendly players")->Get();
+        for (ObjectGuid const& guid : friends)
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            Player* mate = unit ? unit->ToPlayer() : nullptr;
+            if (!mate || mate == bot || !mate->IsAlive() || mate->GetTeamId() != bot->GetTeamId())
+                continue;
+
+            if (mate->GetMapId() != bot->GetMapId())
+                continue;
+
+            float const theirDistance = mate->GetDistance(objective.x, objective.y, objective.z);
+            if (theirDistance > contestRadius)
+                continue;
+
+            if (theirDistance < myDistance)
+                return false;
+
+            // Equal distance has to break somewhere, or two bots both elect themselves and neither of
+            // them ends up being the one that goes.
+            if (theirDistance == myDistance && mate->GetGUID() < bot->GetGUID())
+                return false;
+        }
+
+        return true;
+    }
+
     static bool ComputeShouldPrioritizeBattlegroundCapture(PlayerbotAI* botAI, Player* bot, bool hasObjective)
     {
         if (!hasObjective || HasSelfDefenseAttacker(bot))
@@ -1318,7 +1356,15 @@ namespace ai::pvp
         if (!IsNearObjective(bot, objective, commitRadius))
             return false;
 
-        return !ScanCaptureObjectiveThreat(botAI);
+        // Nothing contesting it: anyone in range can commit, as before.
+        if (!ScanCaptureObjectiveThreat(botAI))
+            return true;
+
+        // Contested. Somebody still has to take the objective or the fight around it decides nothing, so
+        // exactly one bot commits - the closest - and everyone else is free to fight. Refusing the
+        // capture to all of them, which is what a plain "there is a threat" answer does, means a
+        // graveyard nobody ever flips while two teams brawl next to it.
+        return IsNearestFriendlyToObjective(botAI, bot, objective);
     }
 
     // This chain walks every battleground capture object and scans nearby enemies, and it used to run
