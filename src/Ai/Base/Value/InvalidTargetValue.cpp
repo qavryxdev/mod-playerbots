@@ -30,7 +30,12 @@ bool InvalidTargetValue::Calculate()
                target->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE) || target->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE_2) ||
                !target->IsVisible() || !target->IsAlive() || target->IsPolymorphed() || target->IsCharmed() ||
                target->HasUnitState(UNIT_STATE_ISOLATED) || target->IsFriendlyTo(bot) ||
-               !AttackersValue::IsValidTarget(target, bot);
+               // IsPossibleTarget, not IsValidTarget: the difference between the two is a line of
+               // sight test, and a target that stepped behind a tower wall for a moment is not
+               // invalid - it is a target to walk around to. Dropping it costs the bot its whole
+               // combat state and it re-acquires the same unit on the next tick, which the telemetry
+               // caught 45 times in a quarter of an hour in Alterac Valley alone.
+               !AttackersValue::IsPossibleTarget(target, bot);
     }
 
     return !target;
