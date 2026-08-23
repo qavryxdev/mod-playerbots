@@ -15,6 +15,10 @@
 #include "ReputationMgr.h"
 #include "ServerFacade.h"
 
+#include <algorithm>
+#include <limits>
+#include <utility>
+
 static bool AllianceAVUnitIsInIcebloodTowerArea(Unit* unit)
 {
     if (!unit)
@@ -160,6 +164,31 @@ GuidVector AttackersValue::Calculate()
                 result.push_back(unit->GetGUID());
         }
     }
+
+    // Everything above walks std::unordered_set / std::unordered_map, so the order this list came out
+    // in was bucket order - and it is rebuilt from scratch every second, which reshuffles it. That
+    // matters because the consumers break ties by "whichever one I saw first": the grind target is
+    // literally attackers.front(), and the PvE target scorers keep the incumbent when two candidates
+    // score the same. Two equally healthy mobs were therefore picked at random each second, and since
+    // every change of target stops the bot dead (AttackAction::Attack clears its movement), the bot
+    // stood still flipping between them. Sort by distance, GUID breaking the tie, so identical world
+    // state always produces an identical list.
+    std::vector<std::pair<float, ObjectGuid>> ordered;
+    ordered.reserve(result.size());
+    for (ObjectGuid const& guid : result)
+    {
+        Unit* unit = botAI->GetUnit(guid);
+        ordered.emplace_back(unit ? bot->GetExactDist2d(unit) : std::numeric_limits<float>::max(), guid);
+    }
+
+    std::sort(ordered.begin(), ordered.end(),
+              [](std::pair<float, ObjectGuid> const& left, std::pair<float, ObjectGuid> const& right)
+              { return left.first != right.first ? left.first < right.first : left.second < right.second; });
+
+    result.clear();
+    for (std::pair<float, ObjectGuid> const& entry : ordered)
+        if (result.empty() || result.back() != entry.second)  // the duel opponent can already be listed
+            result.push_back(entry.second);
 
     return result;
 }
