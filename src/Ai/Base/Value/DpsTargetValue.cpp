@@ -159,7 +159,19 @@ public:
             return;
 
         if (!target->IsInWorld() || target->GetMapId() != bot->GetMapId() || bot->IsFriendlyTo(target) ||
-            !bot->IsValidAttackTarget(target) || !bot->IsWithinLOSInMap(target))
+            !bot->IsValidAttackTarget(target))
+            return;
+
+        // Line of sight to a bowman on a tower parapet, or to anything around a corner in the mines,
+        // flickers from one tick to the next. Rejecting the current target outright when it does meant
+        // it was never scored at all, so none of the stickiness below could hold it - not even the
+        // 2500 a tower bowman gets - and whichever unit happened to be visible this tick took over.
+        // Then the flicker reversed and handed it straight back. Measured in Alterac Valley as bots
+        // cycling between tower bowmen several times a second, rooted to the spot because every change
+        // of target clears their movement. The current target is scored with a penalty instead, so a
+        // target that has genuinely gone out of reach still loses to any real alternative.
+        bool const hasLineOfSight = bot->IsWithinLOSInMap(target);
+        if (!hasLineOfSight && target != currentTarget)
             return;
 
         if (!ai::pvp::CanEngageDuringBattlegroundCapture(botAI, target))
@@ -281,6 +293,11 @@ public:
             score += 140;
         else
             score -= static_cast<int32>(std::min(distance, 80.0f));
+
+        // Smaller than the stickiness below, so a flicker cannot take the target away, big enough that
+        // a target really stuck behind geometry loses to anything the bot can actually hit.
+        if (!hasLineOfSight)
+            score -= 600;
 
         // The margin a challenger has to clear now lives in the incumbent's score instead of being a
         // threshold measured against whoever happens to be leading the scan. The old form had two
