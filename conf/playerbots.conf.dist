@@ -1417,6 +1417,12 @@ AiPlayerbot.FastReactInBG = 1
 # Default: 0 (disabled)
 AiPlayerbot.AllianceAVMoveDebug = 0
 
+# Report bots that keep changing which target they fight and end up standing still
+# Writes "target-churn" lines to Playerbots.log, at most one per bot per 30 seconds, and only
+# for bots that changed target 5 or more times within 5 seconds
+# Default: 0 (disabled)
+AiPlayerbot.TargetChurnDebug = 0
+
 # Anti-stall watchdog. Samples every bot's position and notices when one stops moving without a
 # reason (crowd control, casting, waiting for the battleground gates, guarding a point it chose,
 # melee combat and a pending movement order all count as reasons).

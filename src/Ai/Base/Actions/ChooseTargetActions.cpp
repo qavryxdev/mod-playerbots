@@ -15,6 +15,7 @@
 #include "PossibleRpgTargetsValue.h"
 #include "PvpTriggers.h"
 #include "ServerFacade.h"
+#include "TargetChurn.h"
 
 bool AttackEnemyPlayerAction::isUseful()
 {
@@ -69,6 +70,9 @@ bool DropTargetAction::Execute(Event /*event*/)
     //     context->GetValue<ObjectGuid>("pull target")->Set(ObjectGuid::Empty);
     // }
 
+    ai::debug::NoteTargetChange(bot, context->GetValue<Unit*>("current target")->Get(), nullptr,
+                                std::string("drop:") + ai::debug::InvalidTargetReason(
+                                    bot, context->GetValue<Unit*>("current target")->Get()));
     context->GetValue<Unit*>("current target")->Set(nullptr);
 
     bot->SetTarget(ObjectGuid::Empty);

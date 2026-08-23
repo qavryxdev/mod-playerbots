@@ -12,6 +12,7 @@
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
+#include "TargetChurn.h"
 #include "SharedDefines.h"
 #include "Unit.h"
 #include "WaitForAttackStrategy.h"
@@ -151,6 +152,7 @@ bool AttackAction::Attack(Unit* target, bool /*with_pet*/ /*true*/)
     ObjectGuid guid = target->GetGUID();
     bot->SetSelection(target->GetGUID());
 
+    ai::debug::NoteTargetChange(bot, oldTarget, target, "attack:" + getName());
     context->GetValue<Unit*>("old target")->Set(oldTarget);
     context->GetValue<Unit*>("current target")->Set(target);
     context->GetValue<LootObjectStack*>("available loot")->Get()->Add(guid);

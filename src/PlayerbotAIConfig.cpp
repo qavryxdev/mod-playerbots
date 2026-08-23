@@ -199,6 +199,7 @@ bool PlayerbotAIConfig::Initialize()
         pvpProhibitedAreaIds);
     fastReactInBG = sConfigMgr->GetOption<bool>("AiPlayerbot.FastReactInBG", true);
     allianceAVMoveDebug = sConfigMgr->GetOption<bool>("AiPlayerbot.AllianceAVMoveDebug", false);
+    targetChurnDebug = sConfigMgr->GetOption<bool>("AiPlayerbot.TargetChurnDebug", false);
     stallWatchEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.StallWatchEnabled", true);
     stallWatchTeleport = sConfigMgr->GetOption<bool>("AiPlayerbot.StallWatchTeleport", false);
     stallWatchSampleMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.StallWatchSampleMs", 4000);

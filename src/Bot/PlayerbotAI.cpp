@@ -60,6 +60,7 @@
 #include "SocialMgr.h"
 #include "SpellAuraEffects.h"
 #include "SpellInfo.h"
+#include "TargetChurn.h"
 #include "Transport.h"
 #include "Unit.h"
 #include "UpdateTime.h"
@@ -2822,6 +2823,7 @@ void PlayerbotAI::DoNextAction(bool min)
         Unit* currentTarget = aiObjectContext->GetValue<Unit*>("current target")->Get();
         if (currentTarget != nullptr)
         {
+            ai::debug::NoteTargetChange(bot, currentTarget, nullptr, "engine-noncombat-wipe");
             aiObjectContext->GetValue<Unit*>("current target")->Set(nullptr);
         }
     }
