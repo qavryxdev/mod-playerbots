@@ -12,6 +12,7 @@
 #include "Player.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "PvpTactics.h"
 #include "Timer.h"
 #include "Unit.h"
 
@@ -90,7 +91,31 @@ namespace
         if (!unit)
             return "none";
 
-        return unit->GetName() + "/" + std::to_string(unit->GetEntry());
+        return unit->GetName() + "/" + std::to_string(unit->GetEntry()) + "#" +
+               std::to_string(unit->GetGUID().GetCounter());
+    }
+
+    std::string DescribeGuid(Player* bot, ObjectGuid const& guid)
+    {
+        if (!guid)
+            return "none";
+
+        return DescribeUnit(ObjectAccessor::GetUnit(*bot, guid));
+    }
+
+    // Everything needed to tell a frozen bot from a busy one, and to see whether the capture gate is
+    // the thing taking the target away this tick.
+    std::string DescribeState(Player* bot)
+    {
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+        uint32 const motionType =
+            bot->GetMotionMaster() ? static_cast<uint32>(bot->GetMotionMaster()->GetCurrentMovementGeneratorType()) : 0;
+
+        return "moving=" + std::to_string(bot->isMoving() ? 1 : 0) + " motion=" + std::to_string(motionType) +
+               " combat=" + std::to_string(bot->IsInCombat() ? 1 : 0) + " engine=" +
+               (botAI && botAI->GetState() == BOT_STATE_COMBAT ? "combat" : "noncombat") +
+               " capturePrio=" + std::to_string(botAI && ai::pvp::ShouldPrioritizeBattlegroundCapture(botAI) ? 1 : 0) +
+               " victim=" + DescribeUnit(bot->GetVictim()) + " zone=" + std::to_string(bot->GetZoneId());
     }
 
     // Walks every shard once a minute and prints the rate plus the worst offenders, then starts a
@@ -258,6 +283,8 @@ namespace ai::debug
 
         uint32 const now = getMSTime();
         ObjectGuid const selection = bot->GetTarget();
+        bool changed = false;
+        ObjectGuid previous;
 
         {
             Shard& shard = GetShard(bot->GetGUID());
@@ -275,9 +302,15 @@ namespace ai::debug
             else if (history.lastSelection != selection)
             {
                 ++history.selectionChanges;
+                previous = history.lastSelection;
                 history.lastSelection = selection;
+                changed = true;
             }
         }
+
+        if (changed && sPlayerbotAIConfig.targetChurnDebug >= 2 && bot->InBattleground())
+            LOG_INFO("playerbots", "target-trace bot={} sel {} -> {} | {}", bot->GetName(),
+                     DescribeGuid(bot, previous), DescribeGuid(bot, selection), DescribeState(bot));
 
         MaybeEmitSummary(now);
     }
@@ -293,6 +326,10 @@ namespace ai::debug
 
         uint32 const now = getMSTime();
         ObjectGuid const botGuid = bot->GetGUID();
+
+        if (sPlayerbotAIConfig.targetChurnDebug >= 2 && bot->InBattleground())
+            LOG_INFO("playerbots", "target-trace bot={} {} {} -> {} | {}", bot->GetName(), source,
+                     DescribeUnit(oldTarget), DescribeUnit(newTarget), DescribeState(bot));
 
         std::string report;
         {

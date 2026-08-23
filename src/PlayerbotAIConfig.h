@@ -305,7 +305,7 @@ public:
     bool fastReactInWorld;
     uint32 fastReactInWorldCombatMultiplier, fastReactInWorldActiveDelayMin, fastReactInWorldActiveDelayMax;
     bool allianceAVMoveDebug;
-    bool targetChurnDebug;
+    uint32 targetChurnDebug;
 
     // Anti-stall watchdog. stallWatchMaxStep is the highest escalation step that may run: 0 is
     // observe-only (counters move, behaviour does not), 5 lets the whole ladder run.

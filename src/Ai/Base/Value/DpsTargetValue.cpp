@@ -631,8 +631,17 @@ Unit* DpsTargetValue::Calculate()
             strategy.CheckCandidate(botAI->GetUnit(guid), threatTarget);
         };
 
+        // Offered as a combat target, not as a bystander. With the default false, CheckCandidate threw
+        // the current target away outright whenever it was an NPC - an NPC reaches the scorer only
+        // through the allowNpcCombatTarget path - and the checked set then stopped the attackers loop
+        // below from ever looking at it again. So the one unit the bot was already fighting was the
+        // one unit that never got scored: every tick some other NPC won by default, the tick after
+        // that the same thing happened to it, and the bot stood still flipping between them until one
+        // of them died, because every change of target clears its movement. Enemy players pass the
+        // filter on isEnemyPlayerUnit regardless of the flag, which is why this only ever showed
+        // against NPCs.
         if (Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
-            checkGuid(currentTarget->GetGUID());
+            checkGuid(currentTarget->GetGUID(), true);
 
         GuidVector attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
         for (ObjectGuid const& guid : attackers)
