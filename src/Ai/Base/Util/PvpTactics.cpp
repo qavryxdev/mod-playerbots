@@ -741,21 +741,6 @@ namespace
         return false;
     }
 
-    bool HasCaptureBannerCast(Player* bot)
-    {
-        if (!bot)
-            return false;
-
-        for (uint8 type = CURRENT_MELEE_SPELL; type <= CURRENT_CHANNELED_SPELL; ++type)
-        {
-            if (Spell* spell = bot->GetCurrentSpell(static_cast<CurrentSpellTypes>(type)))
-                if (spell->m_spellInfo && spell->m_spellInfo->Id == CaptureBannerSpellId)
-                    return true;
-        }
-
-        return false;
-    }
-
     GameObject* GetCaptureBannerTarget(Unit* unit)
     {
         if (!unit)
@@ -1392,6 +1377,21 @@ namespace ai::pvp
         }
 
         return state;
+    }
+
+    bool HasCaptureBannerCast(Player* bot)
+    {
+        if (!bot)
+            return false;
+
+        for (uint8 type = CURRENT_MELEE_SPELL; type <= CURRENT_CHANNELED_SPELL; ++type)
+        {
+            if (Spell* spell = bot->GetCurrentSpell(static_cast<CurrentSpellTypes>(type)))
+                if (spell->m_spellInfo && spell->m_spellInfo->Id == CaptureBannerSpellId)
+                    return true;
+        }
+
+        return false;
     }
 
     bool IsCarryingOurFlag(PlayerbotAI* botAI, Player* target)
