@@ -387,6 +387,19 @@ public:
         BuffOnPartyAction(botAI, "earth shield") {}
 };
 
+// Puts the shield on whoever is actually being hit. Deliberately not a self buff: Earth Shield and
+// Water Shield occupy the same slot on the caster, so a shaman that shields itself loses its mana
+// regeneration and the two spells then overwrite each other every tick.
+class CastEarthShieldOnDamagedAllyAction : public CastBuffSpellAction
+{
+public:
+    CastEarthShieldOnDamagedAllyAction(PlayerbotAI* botAI) :
+        CastBuffSpellAction(botAI, "earth shield") {}
+
+    Value<Unit*>* GetTargetValue() override { return context->GetValue<Unit*>("party member to protect"); }
+    std::string const getName() override { return "earth shield on damaged ally"; }
+};
+
 class CastEarthShieldOnMainTankAction : public BuffOnMainTankAction
 {
 public:

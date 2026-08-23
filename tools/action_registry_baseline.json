@@ -386,6 +386,11 @@
  ],
  [
   "DEAD-ACTION",
+  "earth shield",
+  "Ai/Class/Shaman/ShamanAiObjectContext.cpp:283"
+ ],
+ [
+  "DEAD-ACTION",
   "earth shield on party",
   "Ai/Class/Shaman/ShamanAiObjectContext.cpp:284"
  ],

@@ -160,7 +160,7 @@ public:
         creators["elemental mastery"] = &ShamanATriggerFactoryInternal::elemental_mastery;
         creators["wind shear on enemy healer"] = &ShamanATriggerFactoryInternal::wind_shear_on_enemy_healer;
         creators["earth shield on main tank"] = &ShamanATriggerFactoryInternal::earth_shield_on_main_tank;
-        creators["earth shield pvp"] = &ShamanATriggerFactoryInternal::earth_shield_pvp;
+        creators["earth shield on damaged ally"] = &ShamanATriggerFactoryInternal::earth_shield_on_damaged_ally;
         creators["maelstrom weapon 3"] = &ShamanATriggerFactoryInternal::maelstrom_weapon_3;
         creators["maelstrom weapon 4"] = &ShamanATriggerFactoryInternal::maelstrom_weapon_4;
         creators["maelstrom weapon 5"] = &ShamanATriggerFactoryInternal::maelstrom_weapon_5;
@@ -225,7 +225,7 @@ private:
     static Trigger* frost_shock_snare(PlayerbotAI* botAI) { return new FrostShockSnareTrigger(botAI); }
     static Trigger* wind_shear_on_enemy_healer(PlayerbotAI* botAI) { return new WindShearInterruptEnemyHealerSpellTrigger(botAI); }
     static Trigger* earth_shield_on_main_tank(PlayerbotAI* botAI) { return new EarthShieldOnMainTankTrigger(botAI); }
-    static Trigger* earth_shield_pvp(PlayerbotAI* botAI) { return new EarthShieldPvpTrigger(botAI); }
+    static Trigger* earth_shield_on_damaged_ally(PlayerbotAI* botAI) { return new EarthShieldOnDamagedAllyTrigger(botAI); }
     static Trigger* flame_shock(PlayerbotAI* botAI) { return new FlameShockTrigger(botAI); }
     static Trigger* fire_elemental_totem(PlayerbotAI* botAI) { return new FireElementalTotemTrigger(botAI); }
     static Trigger* earth_shock_execute(PlayerbotAI* botAI) { return new EarthShockExecuteTrigger(botAI); }
@@ -312,6 +312,7 @@ public:
         creators["cure toxins disease on party"] = &ShamanAiObjectContextInternal::cure_toxins_disease_on_party;
         creators["lava burst"] = &ShamanAiObjectContextInternal::lava_burst;
         creators["earth shield on main tank"] = &ShamanAiObjectContextInternal::earth_shield_on_main_tank;
+        creators["earth shield on damaged ally"] = &ShamanAiObjectContextInternal::earth_shield_on_damaged_ally;
         creators["shamanistic rage"] = &ShamanAiObjectContextInternal::shamanistic_rage;
         creators["feral spirit"] = &ShamanAiObjectContextInternal::feral_spirit;
         creators["spirit walk"] = &ShamanAiObjectContextInternal::spirit_walk;
@@ -406,6 +407,7 @@ private:
     static Action* cure_toxins_disease_on_party(PlayerbotAI* botAI) { return new CastCureToxinsDiseaseOnPartyActionSham(botAI); }
     static Action* lava_burst(PlayerbotAI* botAI) { return new CastLavaBurstAction(botAI); }
     static Action* earth_shield_on_main_tank(PlayerbotAI* botAI) { return new CastEarthShieldOnMainTankAction(botAI); }
+    static Action* earth_shield_on_damaged_ally(PlayerbotAI* botAI) { return new CastEarthShieldOnDamagedAllyAction(botAI); }
     static Action* shamanistic_rage(PlayerbotAI* botAI) { return new CastShamanisticRageAction(botAI); }
     static Action* feral_spirit(PlayerbotAI* botAI) { return new CastFeralSpiritAction(botAI); }
     static Action* spirit_walk(PlayerbotAI* botAI) { return new CastSpiritWalkAction(botAI); }

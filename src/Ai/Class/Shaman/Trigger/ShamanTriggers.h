@@ -259,13 +259,16 @@ public:
     EarthShieldOnMainTankTrigger(PlayerbotAI* botAI) : BuffOnMainTankTrigger(botAI, "earth shield", false) {}
 };
 
-// Earth Shield only lives on one target per caster, so self-casting must never compete with the main
-// tank rule. Structured PvP is the one place where it cannot: a battleground or arena raid has no
-// assigned main tank, so that rule resolves no target and the shield would otherwise go unused.
-class EarthShieldPvpTrigger : public BuffTrigger
+// Earth Shield belongs on whoever is being hit, and never on the shaman itself. It shares the caster's
+// shield slot with Water Shield, so self-casting drops the mana regeneration, the Water Shield rule then
+// puts it straight back, and the two spells trade places for the rest of the fight. It also lives on
+// exactly one target per caster, so a shaman that already has one out must leave it where it is instead
+// of moving it around the raid. This trigger covers the case the main tank rule cannot: a battleground
+// raid has no assigned main tank, so that rule resolves no target and the shield would go unused.
+class EarthShieldOnDamagedAllyTrigger : public Trigger
 {
 public:
-    EarthShieldPvpTrigger(PlayerbotAI* botAI) : BuffTrigger(botAI, "earth shield") {}
+    EarthShieldOnDamagedAllyTrigger(PlayerbotAI* botAI) : Trigger(botAI, "earth shield on damaged ally", 2) {}
 
     bool IsActive() override;
 };

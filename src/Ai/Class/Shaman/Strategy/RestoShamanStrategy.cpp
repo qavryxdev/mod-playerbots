@@ -41,7 +41,7 @@ void RestoShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                                                                             NextAction("lesser healing wave on party", 11.0f) }));
 
     triggers.push_back(new TriggerNode("earth shield on main tank", { NextAction("earth shield on main tank", ACTION_HIGH + 7) }));
-    triggers.push_back(new TriggerNode("earth shield pvp", { NextAction("earth shield", ACTION_HIGH + 6) }));
+    triggers.push_back(new TriggerNode("earth shield on damaged ally", { NextAction("earth shield on damaged ally", ACTION_HIGH + 6) }));
 
     // Dispel Triggers
     triggers.push_back(new TriggerNode("party member cleanse spirit poison", { NextAction("cleanse spirit poison on party", ACTION_DISPEL + 2) }));

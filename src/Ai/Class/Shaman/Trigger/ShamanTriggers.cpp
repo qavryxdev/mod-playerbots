@@ -4,6 +4,8 @@
  */
 
 #include "ShamanTriggers.h"
+#include "Group.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "ItemTemplate.h"
@@ -63,9 +65,42 @@ bool EarthShockExecuteTrigger::IsActive()
     return true;
 }
 
-bool EarthShieldPvpTrigger::IsActive()
+// True while this shaman's own Earth Shield is still sitting on someone. Casting a second one silently
+// removes the first, so the answer decides whether there is anything to do at all.
+static bool ShamanHasOwnEarthShieldOut(PlayerbotAI* botAI, Player* bot)
 {
-    return ai::pvp::IsPvpContext(bot) && BuffTrigger::IsActive();
+    if (botAI->HasAura("earth shield", bot, false, true))
+        return true;
+
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    Group::MemberSlotList const& slots = group->GetMemberSlots();
+    for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
+    {
+        Player* member = ObjectAccessor::FindPlayer(i->guid);
+        if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+            continue;
+
+        if (botAI->HasAura("earth shield", member, false, true))
+            return true;
+    }
+
+    return false;
+}
+
+bool EarthShieldOnDamagedAllyTrigger::IsActive()
+{
+    if (ShamanHasOwnEarthShieldOut(botAI, bot))
+        return false;
+
+    Unit* target = AI_VALUE(Unit*, "party member to protect");
+    if (!target || target == bot || !target->IsAlive())
+        return false;
+
+    // Someone else's Earth Shield is already doing the job; a second one would only overwrite it.
+    return !botAI->HasAura("earth shield", target);
 }
 
 bool TotemTrigger::IsActive()
