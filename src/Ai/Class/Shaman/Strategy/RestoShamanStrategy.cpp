@@ -40,8 +40,12 @@ void RestoShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("party member almost full health", { NextAction("riptide on party", 12.0f),
                                                                             NextAction("lesser healing wave on party", 11.0f) }));
 
-    triggers.push_back(new TriggerNode("earth shield on main tank", { NextAction("earth shield on main tank", ACTION_HIGH + 7) }));
-    triggers.push_back(new TriggerNode("earth shield on damaged ally", { NextAction("earth shield on damaged ally", ACTION_HIGH + 6) }));
+    // Below every heal above, deliberately. Earth Shield is maintenance, not a rescue, and its charges
+    // are spent by damage landing on the tank - so it runs out exactly during the heavy incoming damage
+    // when healing matters most. At its old relevance of 27 and 26 it outranked the critical-health
+    // heals at 25/24/23 and cost the raid a global cooldown at the worst possible moment.
+    triggers.push_back(new TriggerNode("earth shield on main tank", { NextAction("earth shield on main tank", 10.0f) }));
+    triggers.push_back(new TriggerNode("earth shield on damaged ally", { NextAction("earth shield on damaged ally", 9.0f) }));
 
     // Dispel Triggers
     triggers.push_back(new TriggerNode("party member cleanse spirit poison", { NextAction("cleanse spirit poison on party", ACTION_DISPEL + 2) }));
