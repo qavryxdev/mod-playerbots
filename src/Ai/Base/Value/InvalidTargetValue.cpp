@@ -18,10 +18,18 @@ bool InvalidTargetValue::Calculate()
 
     if (target && qualifier == "current target")
     {
+        // A feared target is deliberately not listed below. Fear lasts a couple of seconds and the mob
+        // is still the bot kill, but calling it invalid hands the bot to DropTargetAction, which stops
+        // the attack, clears the selection and pushes the bot back to the non-combat engine - and since
+        // the mob is still in combat with it, the very next tick picks the same mob up again. Measured
+        // on the live server that ran at two to three acquire/drop cycles per second, with the bot
+        // rooted to the spot throughout, because both halves of the cycle wipe its movement. The target
+        // scorers already rank breakable crowd control last, so a bot with anything else worth hitting
+        // still switches away on its own, and one with nothing else keeps fighting instead of freezing.
         return target->GetMapId() != bot->GetMapId() || target->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) ||
                target->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE) || target->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE_2) ||
                !target->IsVisible() || !target->IsAlive() || target->IsPolymorphed() || target->IsCharmed() ||
-               target->HasFearAura() || target->HasUnitState(UNIT_STATE_ISOLATED) || target->IsFriendlyTo(bot) ||
+               target->HasUnitState(UNIT_STATE_ISOLATED) || target->IsFriendlyTo(bot) ||
                !AttackersValue::IsValidTarget(target, bot);
     }
 
