@@ -282,17 +282,28 @@ public:
         else
             score -= static_cast<int32>(std::min(distance, 80.0f));
 
-        int32 requiredScore = bestScore;
-        if (result == currentTarget && target != currentTarget && !isHighPriority && target->GetVictim() != bot)
+        // The margin a challenger has to clear now lives in the incumbent's score instead of being a
+        // threshold measured against whoever happens to be leading the scan. The old form had two
+        // holes, and bots in Alterac Valley fell through both: it only applied while the current
+        // target was already the front runner, so a challenger examined first won without clearing
+        // anything, and the "target->GetVictim() != bot" carve-out switched the margin off entirely
+        // whenever the challenger was hitting the bot - which next to a contested graveyard is most of
+        // them. Measured on the live server, bots flipped between a captain and her elemental twice a
+        // second, standing still the whole time because every change of target clears their movement.
+        // Scoring it this way makes the outcome independent of the order candidates are scanned in,
+        // and it also absorbs the bonuses that come and go on their own: an objective NPC gains 520
+        // for the duration of each cast it starts, which on its own used to be enough to take the
+        // target away. High priority (+100000) and flag carriers (+1500) still override it easily.
+        if (target == currentTarget)
         {
-            int32 switchThreshold = 650;
+            int32 stickyBonus = 650;
             if (isProtectingHealer || (isEnemyHealer && isCastingHeal))
-                switchThreshold = 260;
+                stickyBonus = 260;
 
-            requiredScore += switchThreshold;
+            score += stickyBonus;
         }
 
-        if (!result || score > requiredScore)
+        if (!result || score > bestScore)
         {
             result = target;
             bestScore = score;
