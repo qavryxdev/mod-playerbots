@@ -38,6 +38,7 @@
 #include "IVMapMgr.h"
 #include "PathGenerator.h"
 #include "Playerbots.h"
+#include "TargetChurn.h"
 #include "PositionValue.h"
 #include "PvpTriggers.h"
 #include "PvpTactics.h"
@@ -6637,6 +6638,7 @@ bool BGTactics::Execute(Event /*event*/)
             if (AllianceAVShouldBreakIcebloodAssaultCombatLeash(bot, bg,
                                                                  currentTarget, enemyPlayerTarget))
             {
+                ai::debug::NoteTargetChange(bot, currentTarget, nullptr, "bg-iceblood-leash");
                 context->GetValue<Unit*>("current target")->Set(nullptr);
                 // Keep existing movement when we are only breaking an invalid leash combat state.
                 // Hard-stop chase only if a concrete target was engaged.
@@ -6680,11 +6682,21 @@ bool BGTactics::Execute(Event /*event*/)
         {
             if (ai::pvp::ShouldPrioritizeBattlegroundCapture(botAI))
             {
-                context->GetValue<Unit*>("current target")->Set(nullptr);
-                bot->AttackStop();
-                bot->SetTarget(ObjectGuid::Empty);
-                bot->SetSelection(ObjectGuid());
-                botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+                // Only when there is something to drop. This used to run unconditionally on every
+                // tick, so a bot committed to a capture spent every tick clearing a target it had
+                // already cleared, stopping an attack it was not making and changing to an engine it
+                // was already on - which is one half of a loop with the combat engine acquiring a new
+                // target in between.
+                Unit* const engagedTarget = context->GetValue<Unit*>("current target")->Get();
+                if (bot->GetVictim() || engagedTarget || bot->GetTarget())
+                {
+                    ai::debug::NoteTargetChange(bot, engagedTarget, nullptr, "bg-capture-gate");
+                    context->GetValue<Unit*>("current target")->Set(nullptr);
+                    bot->AttackStop();
+                    bot->SetTarget(ObjectGuid::Empty);
+                    bot->SetSelection(ObjectGuid());
+                    botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+                }
             }
             else
             {

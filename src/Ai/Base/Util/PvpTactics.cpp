@@ -1294,6 +1294,8 @@ namespace ai::pvp
     static bool IsNearestFriendlyToObjective(PlayerbotAI* botAI, Player* bot, PositionInfo const& objective)
     {
         float const contestRadius = 40.0f;
+        // How much closer an ally has to be before the role changes hands at all.
+        float const takeoverMargin = 6.0f;
         float const myDistance = bot->GetDistance(objective.x, objective.y, objective.z);
         if (myDistance > contestRadius)
             return false;
@@ -1313,12 +1315,17 @@ namespace ai::pvp
             if (theirDistance > contestRadius)
                 continue;
 
-            if (theirDistance < myDistance)
+            // Clearly closer: the objective is theirs to take.
+            if (theirDistance < myDistance - takeoverMargin)
                 return false;
 
-            // Equal distance has to break somewhere, or two bots both elect themselves and neither of
-            // them ends up being the one that goes.
-            if (theirDistance == myDistance && mate->GetGUID() < bot->GetGUID())
+            // Inside the margin the two are effectively the same distance away, and comparing the raw
+            // floats there is what made this unstable: bots milling around a flag swap places several
+            // times a second, so the role moved with them and every bot it touched wiped its target,
+            // stopped attacking and flipped engine - then took it all back on the next tick. Bots stood
+            // under the Frostwolf towers cycling between bowmen until the bowmen killed them. The GUID
+            // decides inside the band instead, which cannot change while they shuffle about.
+            if (theirDistance <= myDistance + takeoverMargin && mate->GetGUID() < bot->GetGUID())
                 return false;
         }
 

@@ -24,6 +24,11 @@ namespace ai::debug
     // never told anyone. Returns "valid" when nothing is wrong with it.
     char const* InvalidTargetReason(Player* bot, Unit* target);
 
+    // Sampled once per AI tick. Counts what the client actually shows as the bot target, which
+    // catches every writer - including the ones NoteTargetChange never sees, such as CastSpell
+    // borrowing the selection for a friendly cast and not always giving it back.
+    void NoteSelectionSample(Player* bot);
+
     void NoteTargetChange(Player* bot, Unit* oldTarget, Unit* newTarget, std::string const& source);
 }
 

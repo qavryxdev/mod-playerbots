@@ -2817,6 +2817,8 @@ void PlayerbotAI::DoNextAction(bool min)
         return;
     }
 
+    ai::debug::NoteSelectionSample(bot);
+
     // Clear targets if in combat but sticking with old data
     if (currentEngine == engines[BOT_STATE_NON_COMBAT] && bot->IsInCombat())
     {
