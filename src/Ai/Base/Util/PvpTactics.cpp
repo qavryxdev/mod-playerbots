@@ -31,6 +31,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <iterator>
 #include <mutex>
 #include <unordered_map>
@@ -43,6 +44,10 @@ namespace
     constexpr uint32 CombatPlanLifetimeMs = 2600;
     constexpr uint32 CaptureBannerSpellId = 21651;
     constexpr uint32 CaptureCacheLifetimeMs = 300;
+    // How long a bot may stand at a banner ignoring the fight, and how long it goes back to behaving
+    // normally afterwards before it is allowed to try again.
+    constexpr uint32 CaptureCommitTimeoutMs = 15000;
+    constexpr uint32 CaptureCommitCooldownMs = 12000;
     constexpr uint32 MaintenanceIntervalMs = 60000;
     constexpr uint32 StaleEntryMs = 300000;
 
@@ -218,6 +223,16 @@ namespace
         uint32 untilMs = 0;
     };
 
+    struct CaptureCommitState
+    {
+        float objectiveX = 0.0f;
+        float objectiveY = 0.0f;
+        bool valid = false;
+        uint32 startedMs = 0;
+        uint32 lapsedMs = 0;
+        uint32 touchedMs = 0;
+    };
+
     ShardedMap<ObjectGuid, CrowdControlReservation> crowdControlReservations;
     ShardedMap<ObjectGuid, DefensiveReservation> defensiveReservations;
     ShardedMap<ObjectGuid, CombatPlanState> combatPlans;
@@ -225,6 +240,7 @@ namespace
     ShardedMap<ObjectGuid, PressureCacheEntry> pressureCache;
     ShardedMap<ObjectGuid, DefenseObservation> defenseObservations;
     ShardedMap<ObjectGuid, CaptureCacheEntry> captureCache;
+    ShardedMap<ObjectGuid, CaptureCommitState> captureCommits;
 
     std::atomic<uint32> lastMaintenanceMs{0};
 
@@ -253,6 +269,8 @@ namespace
             [now](PressureCacheEntry const& entry) { return IsOlderThan(entry.untilMs, now, StaleEntryMs); });
         PruneShardedMap(captureCache,
             [now](CaptureCacheEntry const& entry) { return IsOlderThan(entry.untilMs, now, StaleEntryMs); });
+        PruneShardedMap(captureCommits,
+            [now](CaptureCommitState const& entry) { return IsOlderThan(entry.touchedMs, now, StaleEntryMs); });
         PruneShardedMap(defenseObservations, [now](DefenseObservation const& entry)
         {
             return !entry.activeMask && IsOlderThan(entry.lastSeenMs, now, StaleEntryMs) &&
@@ -1309,6 +1327,51 @@ namespace ai::pvp
         return false;
     }
 
+    // Standing at a banner ignoring everything is only safe while it cannot go on forever. Every tower
+    // and bunker has bowmen who shoot whoever walks up to their flag, and a neighbouring tower's
+    // archers reach the flags at the enemy base - so if their fire cancels the capture cast, a bot that
+    // ignores them would keep starting it again for as long as it stayed alive. The commitment
+    // therefore has a deadline. When it runs out the bot goes back to normal behaviour for a while,
+    // which is what lets it shoot back at the archers, and it may commit again after that. This does
+    // not decide whether the capture succeeds; it only bounds how long a bot may stand there trying.
+    static bool CaptureCommitStillAllowed(Player* bot, PositionInfo const& objective)
+    {
+        uint32 const now = getMSTime();
+        auto& shard = captureCommits.GetShard(bot->GetGUID());
+        std::lock_guard<std::mutex> guard(shard.mutex);
+        CaptureCommitState& state = shard.map[bot->GetGUID()];
+        state.touchedMs = now;
+
+        // A different objective is a fresh attempt, not a continuation of the last one.
+        bool const sameObjective = state.valid && std::fabs(state.objectiveX - objective.x) < 8.0f &&
+                                   std::fabs(state.objectiveY - objective.y) < 8.0f;
+        if (!sameObjective)
+        {
+            state.valid = true;
+            state.objectiveX = objective.x;
+            state.objectiveY = objective.y;
+            state.startedMs = now;
+            state.lapsedMs = 0;
+            return true;
+        }
+
+        if (state.lapsedMs)
+        {
+            if (getMSTimeDiff(state.lapsedMs, now) < CaptureCommitCooldownMs)
+                return false;
+
+            state.startedMs = now;
+            state.lapsedMs = 0;
+            return true;
+        }
+
+        if (getMSTimeDiff(state.startedMs, now) < CaptureCommitTimeoutMs)
+            return true;
+
+        state.lapsedMs = now;
+        return false;
+    }
+
     static bool ComputeShouldPrioritizeBattlegroundCapture(PlayerbotAI* botAI, Player* bot, bool hasObjective)
     {
         if (!hasObjective || HasHostilePlayerAttacker(bot))
@@ -1330,7 +1393,7 @@ namespace ai::pvp
         // defends itself, and hasObjective, which stops being true once the objective is taken.
         float const captureRadius = 40.0f;
         if (IsNearObjective(bot, objective, captureRadius))
-            return true;
+            return CaptureCommitStillAllowed(bot, objective);
 
         // Beyond that radius the older, softer rule still applies: walk in and commit while nothing is
         // contesting the objective, but do not ignore a fight to get there.
