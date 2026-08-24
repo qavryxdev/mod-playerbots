@@ -1287,54 +1287,31 @@ namespace ai::pvp
         }
     }
 
-    // Decides, without anyone being told, which bot commits to a capture while a fight is going on around
-    // it: the one standing closest to the objective. Every bot works the answer out for itself from the
-    // same world state, so there is no assignment to share, nothing to keep in sync and nothing that can
-    // go stale - which matters when bot AI runs on a worker pool.
-    static bool IsNearestFriendlyToObjective(PlayerbotAI* botAI, Player* bot, PositionInfo const& objective)
+    // What counts as "someone is attacking me" for the purpose of abandoning a capture. Deliberately
+    // players and their pets only: every tower and bunker has bowmen who shoot whoever walks up to
+    // their flag, so counting creatures would mean a tower capture never once got the commit-and-
+    // ignore-the-fight treatment - the one place it is needed most.
+    static bool HasHostilePlayerAttacker(Player* bot)
     {
-        float const contestRadius = 40.0f;
-        // How much closer an ally has to be before the role changes hands at all.
-        float const takeoverMargin = 6.0f;
-        float const myDistance = bot->GetDistance(objective.x, objective.y, objective.z);
-        if (myDistance > contestRadius)
+        if (!bot || !bot->IsAlive())
             return false;
 
-        GuidVector friends = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest friendly players")->Get();
-        for (ObjectGuid const& guid : friends)
+        for (Unit* attacker : bot->getAttackers())
         {
-            Unit* unit = botAI->GetUnit(guid);
-            Player* mate = unit ? unit->ToPlayer() : nullptr;
-            if (!mate || mate == bot || !mate->IsAlive() || mate->GetTeamId() != bot->GetTeamId())
+            if (!attacker || !attacker->IsAlive())
                 continue;
 
-            if (mate->GetMapId() != bot->GetMapId())
-                continue;
-
-            float const theirDistance = mate->GetDistance(objective.x, objective.y, objective.z);
-            if (theirDistance > contestRadius)
-                continue;
-
-            // Clearly closer: the objective is theirs to take.
-            if (theirDistance < myDistance - takeoverMargin)
-                return false;
-
-            // Inside the margin the two are effectively the same distance away, and comparing the raw
-            // floats there is what made this unstable: bots milling around a flag swap places several
-            // times a second, so the role moved with them and every bot it touched wiped its target,
-            // stopped attacking and flipped engine - then took it all back on the next tick. Bots stood
-            // under the Frostwolf towers cycling between bowmen until the bowmen killed them. The GUID
-            // decides inside the band instead, which cannot change while they shuffle about.
-            if (theirDistance <= myDistance + takeoverMargin && mate->GetGUID() < bot->GetGUID())
-                return false;
+            Unit const* owner = attacker->GetCharmerOrOwner();
+            if (attacker->IsPlayer() || (owner && owner->IsPlayer()))
+                return true;
         }
 
-        return true;
+        return false;
     }
 
     static bool ComputeShouldPrioritizeBattlegroundCapture(PlayerbotAI* botAI, Player* bot, bool hasObjective)
     {
-        if (!hasObjective || HasSelfDefenseAttacker(bot))
+        if (!hasObjective || HasHostilePlayerAttacker(bot))
             return false;
 
         if (HasCaptureBannerCast(bot) || IsCarryingBattlegroundFlag(bot))
@@ -1344,19 +1321,24 @@ namespace ai::pvp
         if (!GetActiveBattlegroundObjective(botAI, bot, objective))
             return false;
 
+        // Standing at the banner of an objective this bot is meant to take: take it, and ignore the
+        // fight going on around it. Every bot that has the objective and is inside this radius commits,
+        // not just one of them - a graveyard or tower nobody is willing to touch while two teams brawl
+        // next to it never changes hands, and the brawl decides nothing.
+        //
+        // The two ways out are above: HasSelfDefenseAttacker, so a bot someone actually swings at
+        // defends itself, and hasObjective, which stops being true once the objective is taken.
+        float const captureRadius = 40.0f;
+        if (IsNearObjective(bot, objective, captureRadius))
+            return true;
+
+        // Beyond that radius the older, softer rule still applies: walk in and commit while nothing is
+        // contesting the objective, but do not ignore a fight to get there.
         float const commitRadius = IsInAlteracValley(bot) ? 75.0f : 55.0f;
         if (!IsNearObjective(bot, objective, commitRadius))
             return false;
 
-        // Nothing contesting it: anyone in range can commit, as before.
-        if (!ScanCaptureObjectiveThreat(botAI))
-            return true;
-
-        // Contested. Somebody still has to take the objective or the fight around it decides nothing, so
-        // exactly one bot commits - the closest - and everyone else is free to fight. Refusing the
-        // capture to all of them, which is what a plain "there is a threat" answer does, means a
-        // graveyard nobody ever flips while two teams brawl next to it.
-        return IsNearestFriendlyToObjective(botAI, bot, objective);
+        return !ScanCaptureObjectiveThreat(botAI);
     }
 
     // This chain walks every battleground capture object and scans nearby enemies, and it used to run
@@ -1568,9 +1550,16 @@ namespace ai::pvp
         Player* playerTarget = target ? target->ToPlayer() : nullptr;
 
         // Holding an objective never justifies ignoring the enemy flag carrier.
+        //
+        // IsCaptureObjectiveThreat used to be a third way in here, and it defeated the whole state: it
+        // answers true for any enemy within 40 yards of the bot, so a bot standing at the banner with
+        // a fight going on around it engaged all of it and never took the objective. That clause is
+        // there for the bot walking in from further out - ScanCaptureObjectiveThreat still uses it to
+        // decide whether to commit at all - but once the bot is committed, the fight is exactly what
+        // it is supposed to be ignoring. What ends the state instead is being attacked, which is
+        // IsSelfDefenseTarget here and HasHostilePlayerAttacker in the decision itself.
         bool const engage = IsSelfDefenseTarget(bot, target) ||
-                            (playerTarget && IsCarryingBattlegroundFlag(playerTarget)) ||
-                            IsCaptureObjectiveThreat(botAI, target);
+                            (playerTarget && IsCarryingBattlegroundFlag(playerTarget));
         if (!engage)
             CountGate(gateCounters.captureObjectiveLock);
 
