@@ -1305,35 +1305,12 @@ namespace ai::pvp
         }
     }
 
-    // What counts as "someone is attacking me" for the purpose of abandoning a capture. Deliberately
-    // players and their pets only: every tower and bunker has bowmen who shoot whoever walks up to
-    // their flag, so counting creatures would mean a tower capture never once got the commit-and-
-    // ignore-the-fight treatment - the one place it is needed most.
-    static bool HasHostilePlayerAttacker(Player* bot)
-    {
-        if (!bot || !bot->IsAlive())
-            return false;
-
-        for (Unit* attacker : bot->getAttackers())
-        {
-            if (!attacker || !attacker->IsAlive())
-                continue;
-
-            Unit const* owner = attacker->GetCharmerOrOwner();
-            if (attacker->IsPlayer() || (owner && owner->IsPlayer()))
-                return true;
-        }
-
-        return false;
-    }
-
-    // Standing at a banner ignoring everything is only safe while it cannot go on forever. Every tower
-    // and bunker has bowmen who shoot whoever walks up to their flag, and a neighbouring tower's
-    // archers reach the flags at the enemy base - so if their fire cancels the capture cast, a bot that
-    // ignores them would keep starting it again for as long as it stayed alive. The commitment
-    // therefore has a deadline. When it runs out the bot goes back to normal behaviour for a while,
-    // which is what lets it shoot back at the archers, and it may commit again after that. This does
-    // not decide whether the capture succeeds; it only bounds how long a bot may stand there trying.
+    // A safety net, not the main defence. Being attacked already ends the commitment above, which is
+    // what covers the tower bowmen, but a bot can also fail to capture without anyone touching it: it
+    // cannot path to the banner, the objective flips under it, something else holds the channel. Rather
+    // than let it stand there indefinitely refusing to fight, the commitment expires, the bot behaves
+    // normally for a while and may then try again. This bounds how long a bot may stand there trying
+    // and decides nothing about whether the capture succeeds.
     static bool CaptureCommitStillAllowed(Player* bot, PositionInfo const& objective)
     {
         uint32 const now = getMSTime();
@@ -1374,7 +1351,12 @@ namespace ai::pvp
 
     static bool ComputeShouldPrioritizeBattlegroundCapture(PlayerbotAI* botAI, Player* bot, bool hasObjective)
     {
-        if (!hasObjective || HasHostilePlayerAttacker(bot))
+        // Any attacker ends the commitment, creatures included. The capture is a channel and damage
+        // breaks it on the spot, so a bot that stood at a banner ignoring the tower bowmen shooting it
+        // could never finish - it would restart the channel until it died. Dealing with whatever is
+        // hitting it first and capturing afterwards is the only order that can work, and it is what the
+        // bowman handling in the target scorer is there for.
+        if (!hasObjective || HasSelfDefenseAttacker(bot))
             return false;
 
         if (HasCaptureBannerCast(bot) || IsCarryingBattlegroundFlag(bot))
@@ -1620,7 +1602,7 @@ namespace ai::pvp
         // there for the bot walking in from further out - ScanCaptureObjectiveThreat still uses it to
         // decide whether to commit at all - but once the bot is committed, the fight is exactly what
         // it is supposed to be ignoring. What ends the state instead is being attacked, which is
-        // IsSelfDefenseTarget here and HasHostilePlayerAttacker in the decision itself.
+        // IsSelfDefenseTarget here and HasSelfDefenseAttacker in the decision itself.
         bool const engage = IsSelfDefenseTarget(bot, target) ||
                             (playerTarget && IsCarryingBattlegroundFlag(playerTarget));
         if (!engage)
